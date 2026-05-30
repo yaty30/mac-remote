@@ -1,0 +1,55 @@
+{
+  "name": "remote-control-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local Wi-Fi iPhone remote control desktop host.",
+  "author": "Personal project",
+  "engines": {
+    "node": ">=20.19.4"
+  },
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-static.mjs",
+    "dev": "npm run build && electron .",
+    "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
+    "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "local.remote-control.desktop",
+    "productName": "Remote Control Desktop",
+    "electronVersion": "42.3.0",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@nut-tree-fork/**/*"
+    ],
+    "npmRebuild": true,
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dir",
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    }
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.10",
+    "electron": "42.3.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.2"
+  }
+}

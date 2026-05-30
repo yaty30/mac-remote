@@ -1,0 +1,28 @@
+{
+  "name": "remote-control",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20.19.4"
+  },
+  "workspaces": [
+    "desktop",
+    "mobile"
+  ],
+  "scripts": {
+    "dev": "concurrently -n desktop,mobile -c cyan,green \"npm run desktop:dev\" \"npm run mobile:start -- --clear\"",
+    "start:all": "npm run dev",
+    "desktop:install": "npm install --workspace desktop",
+    "desktop:dev": "npm run dev --workspace desktop",
+    "desktop:pack:mac": "npm run pack:mac --workspace desktop",
+    "desktop:dist:mac": "npm run dist:mac --workspace desktop",
+    "mobile:install": "npm install --workspace mobile",
+    "mobile:start": "npm run start --workspace mobile"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "@react-native-community/slider": "^5.2.0"
+  }
+}

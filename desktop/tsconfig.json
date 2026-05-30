@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node", "electron"]
+  },
+  "include": [
+    "electron/**/*.ts",
+    "mouse-control/**/*.ts",
+    "types/**/*.ts",
+    "websocket/**/*.ts"
+  ]
+}

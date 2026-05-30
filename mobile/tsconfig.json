@@ -1,0 +1,17 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true
+  },
+  "include": [
+    "App.tsx",
+    "components/**/*.tsx",
+    "gestures/**/*.ts",
+    "metro.config.js",
+    "screens/**/*.tsx",
+    "types/**/*.ts",
+    "types/**/*.d.ts",
+    "websocket/**/*.ts"
+  ]
+}

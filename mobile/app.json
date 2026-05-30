@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Remote Control",
+    "slug": "remote-control",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "local.remote-control.mobile"
+    }
+  }
+}
