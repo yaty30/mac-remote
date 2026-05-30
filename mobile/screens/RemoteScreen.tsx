@@ -1,5 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Slider from "@react-native-community/slider";
+import {
+  CameraView,
+  type ScanningResult,
+  useCameraPermissions,
+} from "expo-camera";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Keyboard,
@@ -23,11 +29,16 @@ import PrimeIcon from "../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
+const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
+const BRIGHTNESS_STEP = 10;
 
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
   const keyboardInputRef = useRef<TextInput>(null);
   const bufferRef = useRef("");
+  const scannerOpenRef = useRef(false);
+  const brightnessRef = useRef(50);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [host, setHost] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sensitivity, setSensitivity] = useState(1);
@@ -45,6 +56,29 @@ export function RemoteScreen() {
       socket.disconnect();
     };
   }, [socket]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    AsyncStorage.getItem(SENSITIVITY_STORAGE_KEY)
+      .then((saved) => {
+        if (cancelled || !saved) {
+          return;
+        }
+
+        const parsed = Number.parseFloat(saved);
+        if (Number.isFinite(parsed)) {
+          setSensitivity(Math.max(0.25, Math.min(3, parsed)));
+        }
+      })
+      .catch(() => {
+        // ignore storage errors
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,12 +101,36 @@ export function RemoteScreen() {
   }, [socket]);
 
   useEffect(() => {
+    const subscription = CameraView.onModernBarcodeScanned((event) => {
+      if (!scannerOpenRef.current) {
+        return;
+      }
+
+      scannerOpenRef.current = false;
+      CameraView.dismissScanner().catch(() => {
+        // scanner may already be dismissed on Android
+      });
+      connectFromScan(event);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
     if (status === "connected" && host.trim().length > 0) {
       AsyncStorage.setItem(HOST_STORAGE_KEY, host.trim()).catch(() => {
         // ignore storage errors
       });
     }
   }, [status, host]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(SENSITIVITY_STORAGE_KEY, String(sensitivity)).catch(
+      () => {
+        // ignore storage errors
+      },
+    );
+  }, [sensitivity]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () =>
@@ -88,15 +146,20 @@ export function RemoteScreen() {
     };
   }, []);
 
-  function connect() {
-    Keyboard.dismiss();
+  function connectToHost(nextHost: string) {
+    const cleanHost = nextHost.trim();
 
-    if (host.trim().length === 0) {
+    if (cleanHost.length === 0) {
       setStatus("error");
       return;
     }
 
-    socket.connect(host);
+    Keyboard.dismiss();
+    setHost(cleanHost);
+    AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
+      // ignore storage errors
+    });
+    socket.connect(cleanHost);
   }
 
   function sendShortcut(shortcut: ShortcutId) {
@@ -110,20 +173,52 @@ export function RemoteScreen() {
     });
   }
 
-  function adjustBrightness(delta: -1 | 1) {
-    setBrightness((current) => {
-      const next = Math.max(0, Math.min(100, current + delta * 10));
-      return next;
-    });
-    socket.sendBrightness(delta);
+  async function openScanner() {
+    const permission =
+      cameraPermission?.granted === true
+        ? cameraPermission
+        : await requestCameraPermission();
+
+    if (!permission.granted) {
+      setStatus("error");
+      return;
+    }
+
+    scannerOpenRef.current = true;
+    await CameraView.launchScanner({ barcodeTypes: ["qr"] });
   }
 
-  function adjustVolume(delta: -1 | 1) {
-    setVolume((current) => {
-      const next = Math.max(0, Math.min(100, current + delta * 10));
-      socket.sendVolume(next);
-      return next;
-    });
+  function connectFromScan(event: ScanningResult) {
+    const scannedHost = parsePairingPayload(event.data);
+
+    if (!scannedHost) {
+      setStatus("error");
+      return;
+    }
+
+    connectToHost(scannedHost);
+  }
+
+  function commitBrightness(nextValue: number) {
+    const next = Math.round(nextValue / BRIGHTNESS_STEP) * BRIGHTNESS_STEP;
+    const previous = brightnessRef.current;
+    const steps = Math.round((next - previous) / BRIGHTNESS_STEP);
+
+    if (steps !== 0) {
+      const delta = steps > 0 ? 1 : -1;
+      for (let index = 0; index < Math.abs(steps); index += 1) {
+        socket.sendBrightness(delta);
+      }
+    }
+
+    brightnessRef.current = next;
+    setBrightness(next);
+  }
+
+  function commitVolume(nextValue: number) {
+    const next = Math.round(nextValue);
+    setVolume(next);
+    socket.sendVolume(next);
   }
 
   function focusKeyboard() {
@@ -184,10 +279,8 @@ export function RemoteScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <Header
-        host={host}
         status={status}
-        onHostChange={setHost}
-        onConnect={connect}
+        onScan={openScanner}
         showSettings={showSettings}
         onToggleSettings={() => setShowSettings((visible) => !visible)}
       />
@@ -196,64 +289,57 @@ export function RemoteScreen() {
         <>
           <View style={styles.sensitivityCard}>
             <Text style={styles.sensitivityLabel}>Sensitivity</Text>
-            <View style={styles.sensitivityControls}>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustSensitivity(-0.25)}
-              >
-                <Ionicons name="remove" size={22} color="#ffffff" />
-              </Pressable>
-              <Text style={styles.sensitivityValue}>
-                {sensitivity.toFixed(2)}x
-              </Text>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustSensitivity(0.25)}
-              >
-                <Ionicons name="add" size={22} color="#ffffff" />
-              </Pressable>
+            <View style={styles.sliderRow}>
+              <Slider
+                style={styles.slider}
+                minimumValue={0.25}
+                maximumValue={3}
+                step={0.05}
+                value={sensitivity}
+                minimumTrackTintColor="#2f6df6"
+                maximumTrackTintColor="#303746"
+                thumbTintColor="#ffffff"
+                onValueChange={setSensitivity}
+              />
+              <Text style={styles.sensitivityValue}>{sensitivity.toFixed(2)}x</Text>
             </View>
           </View>
 
           <View style={styles.sensitivityCard}>
             <Text style={styles.sensitivityLabel}>Brightness</Text>
-            <View style={styles.sensitivityControls}>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustBrightness(-1)}
-              >
-                <Ionicons name="remove" size={22} color="#ffffff" />
-              </Pressable>
-              <Text style={styles.sensitivityValue}>
-                {brightness}%
-              </Text>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustBrightness(1)}
-              >
-                <Ionicons name="add" size={22} color="#ffffff" />
-              </Pressable>
+            <View style={styles.sliderRow}>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={100}
+                step={1}
+                value={brightness}
+                minimumTrackTintColor="#f8df8c"
+                maximumTrackTintColor="#303746"
+                thumbTintColor="#ffffff"
+                onValueChange={setBrightness}
+                onSlidingComplete={commitBrightness}
+              />
+              <Text style={styles.sensitivityValue}>{brightness}%</Text>
             </View>
           </View>
 
           <View style={styles.sensitivityCard}>
             <Text style={styles.sensitivityLabel}>Volume</Text>
-            <View style={styles.sensitivityControls}>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustVolume(-1)}
-              >
-                <Ionicons name="remove" size={22} color="#ffffff" />
-              </Pressable>
-              <Text style={styles.sensitivityValue}>
-                {volume}%
-              </Text>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => adjustVolume(1)}
-              >
-                <Ionicons name="add" size={22} color="#ffffff" />
-              </Pressable>
+            <View style={styles.sliderRow}>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={100}
+                step={1}
+                value={volume}
+                minimumTrackTintColor="#8ff0b2"
+                maximumTrackTintColor="#303746"
+                thumbTintColor="#ffffff"
+                onValueChange={setVolume}
+                onSlidingComplete={commitVolume}
+              />
+              <Text style={styles.sensitivityValue}>{volume}%</Text>
             </View>
           </View>
         </>
@@ -358,6 +444,33 @@ export function RemoteScreen() {
   );
 }
 
+function parsePairingPayload(raw: string): string | null {
+  const text = raw.trim();
+
+  if (text.startsWith("ws://") || text.startsWith("wss://")) {
+    return text;
+  }
+
+  try {
+    const parsed = JSON.parse(text) as unknown;
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "type" in parsed &&
+      "url" in parsed &&
+      parsed.type === "remote-control" &&
+      typeof parsed.url === "string"
+    ) {
+      return parsed.url;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 const styles = StyleSheet.create({
   screen: {
     backgroundColor: "#080a0e",
@@ -382,21 +495,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   sensitivityCard: {
-    alignItems: "center",
+    alignItems: "stretch",
     backgroundColor: "#151922",
     borderColor: "#252c37",
     borderRadius: 8,
     borderWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 12,
     marginHorizontal: 18,
-    minHeight: 52,
+    minHeight: 72,
     paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   sensitivityLabel: {
     color: "#c8d0dd",
     fontSize: 14,
     fontWeight: "800",
+  },
+  sliderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  slider: {
+    flex: 1,
+    height: 36,
   },
   sensitivityControls: {
     alignItems: "center",

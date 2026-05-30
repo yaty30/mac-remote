@@ -1,12 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
 
 interface HeaderProps {
-  host: string;
   status: ConnectionStatus;
-  onHostChange: (host: string) => void;
-  onConnect: () => void;
+  onScan: () => void;
   showSettings?: boolean;
   onToggleSettings?: () => void;
 }
@@ -20,10 +18,8 @@ const statusLabels: Record<ConnectionStatus, string> = {
 };
 
 export function Header({
-  host,
   status,
-  onHostChange,
-  onConnect,
+  onScan,
   showSettings = false,
   onToggleSettings,
 }: HeaderProps) {
@@ -49,32 +45,20 @@ export function Header({
           <Text style={styles.connectText}>Settings</Text>
         </Pressable>
 
-        <Pressable style={styles.connectButton} onPress={onConnect}>
+        <Pressable
+          style={[styles.connectButton, connected && styles.liveButton]}
+          onPress={connected ? undefined : onScan}
+        >
           <Ionicons
-            name={connected ? "checkmark" : "wifi"}
+            name={connected ? "checkmark" : "qr-code-outline"}
             size={20}
             color="#ffffff"
           />
           <Text style={styles.connectText}>
-            {connected ? "Live" : "Connect"}
+            {connected ? "Live" : "Scan"}
           </Text>
         </Pressable>
       </View>
-
-      {showSettings && (
-        <TextInput
-          value={host}
-          onChangeText={onHostChange}
-          placeholder="Mac IP address"
-          placeholderTextColor="#68707f"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="numbers-and-punctuation"
-          style={styles.input}
-          returnKeyType="go"
-          onSubmitEditing={onConnect}
-        />
-      )}
     </View>
   );
 }
@@ -127,20 +111,12 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 16,
   },
+  liveButton: {
+    backgroundColor: "#1b7f49",
+  },
   connectText: {
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "800",
-  },
-  input: {
-    backgroundColor: "#171a20",
-    borderColor: "#262b35",
-    borderRadius: 18,
-    borderWidth: 1,
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "700",
-    minHeight: 56,
-    paddingHorizontal: 16,
   },
 });

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
 import path from "node:path";
+import QRCode from "qrcode";
 import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
 import type { DesktopStatus, RemoteMessage } from "../types/protocol";
@@ -86,7 +87,7 @@ async function handleRemoteMessage(message: RemoteMessage): Promise<void> {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 520,
-    height: 620,
+    height: 780,
     resizable: false,
     title: "Remote Control Desktop",
     backgroundColor: "#0c0d10",
@@ -106,9 +107,36 @@ function createWindow(): void {
   }
 }
 
-function publishStatus(status: DesktopStatus): void {
-  latestStatus = status;
-  mainWindow?.webContents.send("status:update", status);
+async function publishStatus(status: DesktopStatus): Promise<void> {
+  latestStatus = await withPairingQr(status);
+  mainWindow?.webContents.send("status:update", latestStatus);
+}
+
+async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
+  const address = status.addresses[0];
+
+  if (!address) {
+    return status;
+  }
+
+  const pairingUrl = `ws://${address}:${status.port}`;
+  const payload = JSON.stringify({
+    type: "remote-control",
+    url: pairingUrl,
+  });
+
+  return {
+    ...status,
+    pairingUrl,
+    pairingQrDataUrl: await QRCode.toDataURL(payload, {
+      margin: 1,
+      scale: 7,
+      color: {
+        dark: "#0b0d12",
+        light: "#ffffff",
+      },
+    }),
+  };
 }
 
 app.whenReady().then(() => {
@@ -117,9 +145,15 @@ app.whenReady().then(() => {
   ipcMain.handle("status:get", () => latestStatus);
 
   remoteServer = new RemoteWebSocketServer(port, handleRemoteMessage);
-  publishStatus(remoteServer.getStatus());
+  publishStatus(remoteServer.getStatus()).catch((error) => {
+    console.error("[desktop] failed to publish initial status", error);
+  });
 
-  remoteServer.on("status", publishStatus);
+  remoteServer.on("status", (status) => {
+    publishStatus(status).catch((error) => {
+      console.error("[desktop] failed to render pairing QR", error);
+    });
+  });
   remoteServer.on("error", (error) => {
     console.error("[remote-server]", error);
     publishStatus({

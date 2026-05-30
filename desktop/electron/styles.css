@@ -127,3 +127,31 @@ h1 {
 .muted {
   color: #9ca3af;
 }
+
+.qrBox {
+  align-items: center;
+  align-self: center;
+  background: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  height: 196px;
+  justify-content: center;
+  width: 196px;
+}
+
+.qrImage {
+  display: block;
+  height: 180px;
+  width: 180px;
+}
+
+.qrUrl {
+  color: #ffffff;
+  font-size: 13px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.hidden {
+  display: none;
+}

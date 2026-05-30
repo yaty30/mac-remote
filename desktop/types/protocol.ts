@@ -80,5 +80,7 @@ export interface DesktopStatus {
   port: number;
   addresses: string[];
   connectedClients: number;
+  pairingUrl?: string;
+  pairingQrDataUrl?: string;
   errorMessage?: string;
 }
