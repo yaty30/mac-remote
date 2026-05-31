@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-type MediaTabId = "disney" | "youtube";
+type MediaTabId = "disney" | "netflix" | "youtube";
 
 contextBridge.exposeInMainWorld("mediaBrowser", {
   onSwitchTab: (callback: (tab: MediaTabId) => void) => {
