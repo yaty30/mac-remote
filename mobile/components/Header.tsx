@@ -7,6 +7,7 @@ interface HeaderProps {
   onScan: () => void;
   showSettings?: boolean;
   onToggleSettings?: () => void;
+  onSleep: () => void;
 }
 
 const statusLabels: Record<ConnectionStatus, string> = {
@@ -22,13 +23,14 @@ export function Header({
   onScan,
   showSettings = false,
   onToggleSettings,
+  onSleep,
 }: HeaderProps) {
   const connected = status === "connected";
 
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
-        <View>
+        <View style={styles.titleBlock}>
           <Text style={styles.title}>iMac Remote</Text>
           <View style={styles.statusRow}>
             <View
@@ -41,23 +43,26 @@ export function Header({
           </View>
         </View>
 
-        <Pressable style={styles.connectButton} onPress={onToggleSettings}>
-          <Text style={styles.connectText}>Settings</Text>
-        </Pressable>
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.connectButton, connected && styles.liveButton]}
+            onPress={connected ? undefined : onScan}
+          >
+            <Ionicons
+              name={connected ? "thumbs-up" : "qr-code-outline"}
+              size={20}
+              color="#ffffff"
+            />
+          </Pressable>
 
-        <Pressable
-          style={[styles.connectButton, connected && styles.liveButton]}
-          onPress={connected ? undefined : onScan}
-        >
-          <Ionicons
-            name={connected ? "checkmark" : "qr-code-outline"}
-            size={20}
-            color="#ffffff"
-          />
-          <Text style={styles.connectText}>
-            {connected ? "Live" : "Scan"}
-          </Text>
-        </Pressable>
+          <Pressable style={styles.connectButton} onPress={onToggleSettings}>
+            <Ionicons name="settings" size={20} color="#ffffff" />
+          </Pressable>
+
+          <Pressable style={styles.sleepButton} onPress={onSleep}>
+            <Ionicons name="power" size={20} color="#ffffff" />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -73,6 +78,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  titleBlock: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
   },
   title: {
     color: "#f8fafc",
@@ -101,6 +114,15 @@ const styles = StyleSheet.create({
     color: "#a5afbf",
     fontSize: 13,
     fontWeight: "700",
+  },
+  sleepButton: {
+    alignItems: "center",
+    backgroundColor: "#342b57",
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 52,
+    paddingHorizontal: 16,
   },
   connectButton: {
     alignItems: "center",

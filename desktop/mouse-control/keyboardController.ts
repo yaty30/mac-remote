@@ -64,6 +64,32 @@ export class KeyboardController {
 
     console.warn("[keyboard] setVolume is only implemented for macOS");
   }
+
+  async getOutputVolume(): Promise<number | undefined> {
+    if (process.platform !== "darwin") {
+      return undefined;
+    }
+
+    const output = await runAppleScriptOutput(
+      "output volume of (get volume settings)",
+    );
+    const volume = Number.parseInt(output.trim(), 10);
+
+    if (!Number.isFinite(volume)) {
+      return undefined;
+    }
+
+    return Math.max(0, Math.min(100, volume));
+  }
+
+  async sleep(): Promise<void> {
+    if (process.platform === "darwin") {
+      await runAppleScript('tell application "System Events" to sleep');
+      return;
+    }
+
+    console.warn("[keyboard] sleep is only implemented for macOS");
+  }
 }
 
 function switchMacSpace(direction: "left" | "right"): Promise<void> {
@@ -80,17 +106,21 @@ function runAppleScriptKeyCode(keyCode: string, modifier?: string): Promise<void
 }
 
 function runAppleScript(script: string): Promise<void> {
+  return runAppleScriptOutput(script).then(() => undefined);
+}
+
+function runAppleScriptOutput(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "osascript",
       ["-e", script],
-      (error) => {
+      (error, stdout) => {
         if (error) {
           reject(error);
           return;
         }
 
-        resolve();
+        resolve(stdout);
       },
     );
   });

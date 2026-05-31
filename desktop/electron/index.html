@@ -16,10 +16,23 @@
 
       <section class="panel">
         <span class="label">Scan to connect</span>
-        <div class="qrBox">
-          <img id="qrImage" class="qrImage hidden" alt="Remote Control pairing QR code" />
+        <div class="qrGrid">
+          <div class="qrItem">
+            <span class="qrTitle">Expo app</span>
+            <div class="qrBox">
+              <img id="expoQrImage" class="qrImage hidden" alt="Expo app QR code" />
+            </div>
+            <strong id="expoQrUrl" class="qrUrl">Starting...</strong>
+          </div>
+          <div class="qrItem">
+            <span class="qrTitle">Connect</span>
+            <div class="qrBox">
+              <img id="qrImage" class="qrImage hidden" alt="Remote Control pairing QR code" />
+            </div>
+            <strong id="qrUrl" class="qrUrl">Starting...</strong>
+          </div>
         </div>
-        <strong id="qrUrl" class="qrUrl">Starting...</strong>
+        <p class="hint">Open Expo Go, scan the Expo app QR, then scan the connect QR.</p>
       </section>
 
       <section class="panel">

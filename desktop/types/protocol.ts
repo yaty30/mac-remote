@@ -9,9 +9,12 @@ export type RemoteMessage =
   | SwipeSpacesMessage
   | AdjustBrightnessMessage
   | SetVolumeMessage
+  | SleepMessage
   | ShortcutMessage
   | TypeTextMessage
   | PressKeyMessage;
+
+export type HostMessage = HostStateMessage;
 
 export interface MoveMouseMessage {
   type: "moveMouse";
@@ -53,6 +56,15 @@ export interface SetVolumeMessage {
   value: number;
 }
 
+export interface SleepMessage {
+  type: "sleep";
+}
+
+export interface HostStateMessage {
+  type: "hostState";
+  volume?: number;
+}
+
 export interface ShortcutMessage {
   type: "shortcut";
   shortcut: ShortcutId;
@@ -82,5 +94,7 @@ export interface DesktopStatus {
   connectedClients: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
+  expoUrl?: string;
+  expoQrDataUrl?: string;
   errorMessage?: string;
 }

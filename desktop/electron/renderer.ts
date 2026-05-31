@@ -7,6 +7,8 @@ interface DesktopStatus {
   connectedClients: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
+  expoUrl?: string;
+  expoQrDataUrl?: string;
   errorMessage?: string;
 }
 
@@ -21,10 +23,21 @@ const clientCount = document.querySelector<HTMLElement>("#clientCount");
 const addressList = document.querySelector<HTMLDivElement>("#addressList");
 const qrImage = document.querySelector<HTMLImageElement>("#qrImage");
 const qrUrl = document.querySelector<HTMLElement>("#qrUrl");
+const expoQrImage = document.querySelector<HTMLImageElement>("#expoQrImage");
+const expoQrUrl = document.querySelector<HTMLElement>("#expoQrUrl");
 const desktopApi = (window as Window & { remoteDesktop?: RemoteDesktopApi }).remoteDesktop;
 
 function renderStatus(status: DesktopStatus): void {
-  if (!statusBadge || !serverUrl || !clientCount || !addressList || !qrImage || !qrUrl) {
+  if (
+    !statusBadge ||
+    !serverUrl ||
+    !clientCount ||
+    !addressList ||
+    !qrImage ||
+    !qrUrl ||
+    !expoQrImage ||
+    !expoQrUrl
+  ) {
     return;
   }
 
@@ -44,6 +57,7 @@ function renderStatus(status: DesktopStatus): void {
   const displayUrl = status.pairingUrl ?? (firstAddress ? `ws://${firstAddress}:${status.port}` : `Port ${status.port}`);
   serverUrl.textContent = status.errorMessage ?? displayUrl;
   qrUrl.textContent = status.errorMessage ?? displayUrl;
+  expoQrUrl.textContent = status.errorMessage ?? status.expoUrl ?? "Expo URL unavailable";
 
   if (status.pairingQrDataUrl) {
     qrImage.src = status.pairingQrDataUrl;
@@ -51,6 +65,14 @@ function renderStatus(status: DesktopStatus): void {
   } else {
     qrImage.removeAttribute("src");
     qrImage.classList.add("hidden");
+  }
+
+  if (status.expoQrDataUrl) {
+    expoQrImage.src = status.expoQrDataUrl;
+    expoQrImage.classList.remove("hidden");
+  } else {
+    expoQrImage.removeAttribute("src");
+    expoQrImage.classList.add("hidden");
   }
 
   addressList.replaceChildren(

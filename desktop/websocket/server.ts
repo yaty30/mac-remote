@@ -1,9 +1,10 @@
 import { EventEmitter } from "node:events";
 import { networkInterfaces } from "node:os";
-import { WebSocketServer } from "ws";
-import type { DesktopStatus, RemoteMessage } from "../types/protocol";
+import { WebSocket, WebSocketServer } from "ws";
+import type { DesktopStatus, HostMessage, RemoteMessage } from "../types/protocol";
 
-type MessageHandler = (message: RemoteMessage) => Promise<void>;
+type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
+type HostStateProvider = () => Promise<HostMessage>;
 
 interface RemoteServerEvents {
   status: [DesktopStatus];
@@ -18,6 +19,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   constructor(
     private readonly port: number,
     private readonly onMessage: MessageHandler,
+    private readonly getHostState?: HostStateProvider,
   ) {
     super();
 
@@ -49,11 +51,21 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     this.server.on("connection", (socket) => {
       this.connectedClients += 1;
       this.publishStatus();
+      this.sendHostState(socket).catch((error) => {
+        this.emit(
+          "error",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      });
 
       socket.on("message", async (raw) => {
         try {
           const message = parseRemoteMessage(raw.toString());
-          await this.onMessage(message);
+          const response = await this.onMessage(message);
+
+          if (response) {
+            sendJson(socket, response);
+          }
         } catch (error) {
           this.emit(
             "error",
@@ -69,6 +81,14 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     });
 
     this.server.on("error", (error) => this.emit("error", error));
+  }
+
+  private async sendHostState(socket: WebSocket): Promise<void> {
+    if (!this.getHostState) {
+      return;
+    }
+
+    sendJson(socket, await this.getHostState());
   }
 
   private publishStatus(): void {
@@ -162,6 +182,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     };
   }
 
+  if (data.type === "sleep") {
+    return { type: "sleep" };
+  }
+
   if (data.type === "shortcut") {
     if (
       data.shortcut === "netflix" ||
@@ -202,6 +226,14 @@ function parseRemoteMessage(raw: string): RemoteMessage {
   }
 
   throw new Error(`Unsupported message type: ${data.type}`);
+}
+
+function sendJson(socket: WebSocket, message: HostMessage): void {
+  if (socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  socket.send(JSON.stringify(message));
 }
 
 function clampDelta(value: number): number {

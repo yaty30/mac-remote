@@ -7,9 +7,9 @@
   },
   "main": "expo/AppEntry",
   "scripts": {
-    "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
+    "start": "expo start --host lan",
+    "ios": "expo start --host lan --ios",
+    "android": "expo start --host lan --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit"
   },

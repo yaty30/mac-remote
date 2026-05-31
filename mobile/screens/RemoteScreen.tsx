@@ -8,6 +8,8 @@ import {
 } from "expo-camera";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
+  type AppStateStatus,
   Keyboard,
   type NativeSyntheticEvent,
   Pressable,
@@ -31,6 +33,7 @@ import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
 const BRIGHTNESS_STEP = 10;
+const DEFAULT_SENSITIVITY = 2.3;
 
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -38,10 +41,12 @@ export function RemoteScreen() {
   const bufferRef = useRef("");
   const scannerOpenRef = useRef(false);
   const brightnessRef = useRef(50);
+  const hostRef = useRef("");
+  const statusRef = useRef<ConnectionStatus>("idle");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [host, setHost] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [sensitivity, setSensitivity] = useState(1);
+  const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
   const [brightness, setBrightness] = useState(50);
   const [volume, setVolume] = useState(50);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
@@ -49,12 +54,47 @@ export function RemoteScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = socket.onStatus(setStatus);
+    const unsubscribe = socket.onStatus((nextStatus) => {
+      statusRef.current = nextStatus;
+      setStatus(nextStatus);
+    });
 
     return () => {
       unsubscribe();
       socket.disconnect();
     };
+  }, [socket]);
+
+  useEffect(() => {
+    const unsubscribe = socket.onMessage((message) => {
+      if (message.type === "hostState" && typeof message.volume === "number") {
+        setVolume(Math.max(0, Math.min(100, Math.round(message.volume))));
+      }
+    });
+
+    return unsubscribe;
+  }, [socket]);
+
+  useEffect(() => {
+    hostRef.current = host;
+  }, [host]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextState: AppStateStatus) => {
+        if (
+          nextState === "active" &&
+          hostRef.current.trim().length > 0 &&
+          statusRef.current !== "connected" &&
+          statusRef.current !== "connecting"
+        ) {
+          socket.connect(hostRef.current);
+        }
+      },
+    );
+
+    return () => subscription.remove();
   }, [socket]);
 
   useEffect(() => {
@@ -166,6 +206,10 @@ export function RemoteScreen() {
     socket.sendShortcut(shortcut);
   }
 
+  function sendSleep() {
+    socket.sendSleep();
+  }
+
   function adjustSensitivity(delta: number) {
     setSensitivity((current) => {
       const next = Math.max(0.25, Math.min(3, current + delta));
@@ -199,7 +243,7 @@ export function RemoteScreen() {
     connectToHost(scannedHost);
   }
 
-  function commitBrightness(nextValue: number) {
+  function updateBrightness(nextValue: number) {
     const next = Math.round(nextValue / BRIGHTNESS_STEP) * BRIGHTNESS_STEP;
     const previous = brightnessRef.current;
     const steps = Math.round((next - previous) / BRIGHTNESS_STEP);
@@ -215,7 +259,7 @@ export function RemoteScreen() {
     setBrightness(next);
   }
 
-  function commitVolume(nextValue: number) {
+  function updateVolume(nextValue: number) {
     const next = Math.round(nextValue);
     setVolume(next);
     socket.sendVolume(next);
@@ -283,10 +327,24 @@ export function RemoteScreen() {
         onScan={openScanner}
         showSettings={showSettings}
         onToggleSettings={() => setShowSettings((visible) => !visible)}
+        onSleep={sendSleep}
       />
 
       {showSettings ? (
         <>
+          <View style={styles.sensitivityCard}>
+            <Text style={styles.sensitivityLabel}>Connected Host</Text>
+            <View style={styles.hostRow}>
+              <Text style={styles.hostValue}>
+                {host.trim().length > 0 ? host : "No host saved"}
+              </Text>
+              <Pressable style={[styles.connectButton]} onPress={openScanner}>
+                <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
+                <Text style={styles.connectText}>Scan</Text>
+              </Pressable>
+            </View>
+          </View>
+
           <View style={styles.sensitivityCard}>
             <Text style={styles.sensitivityLabel}>Sensitivity</Text>
             <View style={styles.sliderRow}>
@@ -301,7 +359,9 @@ export function RemoteScreen() {
                 thumbTintColor="#ffffff"
                 onValueChange={setSensitivity}
               />
-              <Text style={styles.sensitivityValue}>{sensitivity.toFixed(2)}x</Text>
+              <Text style={styles.sensitivityValue}>
+                {sensitivity.toFixed(2)}x
+              </Text>
             </View>
           </View>
 
@@ -317,8 +377,7 @@ export function RemoteScreen() {
                 minimumTrackTintColor="#f8df8c"
                 maximumTrackTintColor="#303746"
                 thumbTintColor="#ffffff"
-                onValueChange={setBrightness}
-                onSlidingComplete={commitBrightness}
+                onValueChange={updateBrightness}
               />
               <Text style={styles.sensitivityValue}>{brightness}%</Text>
             </View>
@@ -336,8 +395,7 @@ export function RemoteScreen() {
                 minimumTrackTintColor="#8ff0b2"
                 maximumTrackTintColor="#303746"
                 thumbTintColor="#ffffff"
-                onValueChange={setVolume}
-                onSlidingComplete={commitVolume}
+                onValueChange={updateVolume}
               />
               <Text style={styles.sensitivityValue}>{volume}%</Text>
             </View>
@@ -483,6 +541,20 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 18,
   },
+  connectButton: {
+    alignItems: "center",
+    backgroundColor: "#2f6df6",
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 52,
+    paddingHorizontal: 16,
+  },
+  connectText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
   desktopSwitchButton: {
     alignItems: "center",
     backgroundColor: "#191d25",
@@ -515,6 +587,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
+  },
+  hostRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  hostValue: {
+    color: "#ffffff",
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "900",
   },
   slider: {
     flex: 1,
