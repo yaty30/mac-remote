@@ -1,4 +1,4 @@
-type MediaTabId = "disney" | "netflix" | "youtube";
+type MediaTabId = "disney" | "youtube";
 
 type MediaBrowserApi = {
   onSwitchTab: (callback: (tab: MediaTabId) => void) => () => void;

@@ -32,10 +32,10 @@ const mouseController = new MouseController(
   Number.isFinite(sensitivity) ? sensitivity : 1.8,
 );
 const keyboardController = new KeyboardController();
-type MediaTabId = Extract<ShortcutId, "disney" | "netflix" | "youtube">;
+type MediaTabId = Extract<ShortcutId, "disney" | "youtube">;
 
 function isMediaTabShortcut(shortcut: ShortcutId): shortcut is MediaTabId {
-  return shortcut === "disney" || shortcut === "netflix" || shortcut === "youtube";
+  return shortcut === "disney" || shortcut === "youtube";
 }
 
 function requestAccessibilityPermission(): void {
