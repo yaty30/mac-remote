@@ -38,11 +38,13 @@ const DEFAULT_SENSITIVITY = 2.3;
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
   const keyboardInputRef = useRef<TextInput>(null);
+  const keyboardActiveRef = useRef(false);
   const bufferRef = useRef("");
   const scannerOpenRef = useRef(false);
   const brightnessRef = useRef(50);
   const hostRef = useRef("");
   const statusRef = useRef<ConnectionStatus>("idle");
+
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [host, setHost] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
@@ -52,6 +54,9 @@ export function RemoteScreen() {
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardOverlay, setKeyboardOverlay] = useState(false);
+  const [typedText, setTypedText] = useState("");
+  const [keyboardInputKey, setKeyboardInputKey] = useState(0);
 
   useEffect(() => {
     const unsubscribe = socket.onStatus((nextStatus) => {
@@ -173,18 +178,42 @@ export function RemoteScreen() {
   }, [sensitivity]);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener("keyboardDidHide", () =>
-      setKeyboardVisible(false),
-    );
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      setKeyboardVisible(true);
+    });
+
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardVisible(false);
+    });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!keyboardVisible) {
+      keyboardActiveRef.current = false;
+      setKeyboardOverlay(false);
+      clearKeyboardInput();
+    }
+  }, [keyboardVisible]);
+
+  function clearKeyboardInput() {
+    keyboardInputRef.current?.setNativeProps({ text: "" });
+    bufferRef.current = "";
+    setKeyboardBuffer("");
+    setTypedText("");
+    setKeyboardInputKey((current) => current + 1);
+  }
+
+  function dismissKeyboardInput() {
+    keyboardActiveRef.current = false;
+    Keyboard.dismiss();
+    setKeyboardOverlay(false);
+    clearKeyboardInput();
+  }
 
   function connectToHost(nextHost: string) {
     const cleanHost = nextHost.trim();
@@ -266,7 +295,13 @@ export function RemoteScreen() {
   }
 
   function focusKeyboard() {
-    keyboardInputRef.current?.focus();
+    keyboardActiveRef.current = true;
+    clearKeyboardInput();
+    setKeyboardOverlay(true);
+
+    requestAnimationFrame(() => {
+      keyboardInputRef.current?.focus();
+    });
   }
 
   function sendTextChunk(text: string) {
@@ -284,6 +319,10 @@ export function RemoteScreen() {
   }
 
   function handleKeyboardTextChange(nextText: string) {
+    if (!keyboardActiveRef.current) {
+      return;
+    }
+
     const prev = bufferRef.current;
 
     if (nextText === prev) {
@@ -307,12 +346,14 @@ export function RemoteScreen() {
     const nextBuffer = nextText.length > 80 ? "" : nextText;
     bufferRef.current = nextBuffer;
     setKeyboardBuffer(nextBuffer);
+    setTypedText(nextText);
   }
 
   function handleKeyboardKeyPress(
     event: NativeSyntheticEvent<TextInputKeyPressEventData>,
   ) {
     if (
+      keyboardActiveRef.current &&
       event.nativeEvent.key === "Backspace" &&
       bufferRef.current.length === 0
     ) {
@@ -322,6 +363,14 @@ export function RemoteScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <Pressable
+        style={{
+          ...styles.keyboardBg,
+          display: keyboardOverlay ? "flex" : "none",
+        }}
+        onPress={dismissKeyboardInput}
+      />
+
       <Header
         status={status}
         onScan={openScanner}
@@ -329,6 +378,25 @@ export function RemoteScreen() {
         onToggleSettings={() => setShowSettings((visible) => !visible)}
         onSleep={sendSleep}
       />
+
+      <View
+        style={{
+          ...styles.sensitivityCard,
+          position: "absolute",
+          bottom: 380,
+          left: 18,
+          right: 18,
+          zIndex: 998,
+          display: keyboardOverlay ? "flex" : "none",
+        }}
+      >
+        <Text style={styles.sensitivityLabel}>Input</Text>
+        <View style={{ ...styles.sliderRow, minHeight: 38, height: "auto" }}>
+          <Text style={{ ...styles.sensitivityValue, textAlign: "left" }}>
+            {typedText}
+          </Text>
+        </View>
+      </View>
 
       {showSettings ? (
         <>
@@ -454,7 +522,11 @@ export function RemoteScreen() {
           <View
             style={styles.trackpadWrap}
             onStartShouldSetResponder={() => keyboardVisible}
-            onResponderRelease={() => keyboardVisible && Keyboard.dismiss()}
+            onResponderRelease={() => {
+              if (keyboardVisible) {
+                dismissKeyboardInput();
+              }
+            }}
           >
             <Trackpad
               onMove={(dx, dy) =>
@@ -471,18 +543,18 @@ export function RemoteScreen() {
           <View style={styles.keyboardWrap}>
             <Pressable
               style={styles.keyboardButton}
-              onPress={keyboardVisible ? Keyboard.dismiss : focusKeyboard}
+              onPress={keyboardVisible ? dismissKeyboardInput : focusKeyboard}
             >
               <Ionicons
                 name={keyboardVisible ? "chevron-down" : "keypad-outline"}
                 size={22}
                 color="#ffffff"
               />
-              <Text style={[{ ...styles.keyboardButtonText }]}>
-                Type on Mac
-              </Text>
+              <Text style={styles.keyboardButtonText}>Type on Mac</Text>
             </Pressable>
+
             <TextInput
+              key={keyboardInputKey}
               ref={keyboardInputRef}
               value={keyboardBuffer}
               onChangeText={handleKeyboardTextChange}
@@ -628,6 +700,17 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: "58%",
     paddingHorizontal: 18,
+  },
+  keyboardBg: {
+    backgroundColor: "transparent",
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: "100%",
+    width: "100%",
+    zIndex: 999,
   },
   keyboardWrap: {
     minHeight: 58,
