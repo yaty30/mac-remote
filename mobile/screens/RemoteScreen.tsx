@@ -208,6 +208,13 @@ export function RemoteScreen() {
     setKeyboardInputKey((current) => current + 1);
   }
 
+  function clearKeyboardTextArea() {
+    keyboardInputRef.current?.setNativeProps({ text: "" });
+    bufferRef.current = "";
+    setKeyboardBuffer("");
+    setTypedText("");
+  }
+
   function dismissKeyboardInput() {
     keyboardActiveRef.current = false;
     Keyboard.dismiss();
@@ -341,6 +348,11 @@ export function RemoteScreen() {
         socket.sendKey("backspace");
       }
       sendTextChunk(nextText);
+    }
+
+    if (nextText.includes("\n")) {
+      clearKeyboardTextArea();
+      return;
     }
 
     const nextBuffer = nextText.length > 80 ? "" : nextText;
@@ -479,12 +491,6 @@ export function RemoteScreen() {
               onPress={sendShortcut}
             />
             <ShortcutButton
-              SvgIcon={PrimeIcon}
-              label="Amazon Prime"
-              shortcut="amazon"
-              onPress={sendShortcut}
-            />
-            <ShortcutButton
               SvgIcon={DisneyPlusIcon}
               label="Disney+"
               shortcut="disney"
@@ -494,6 +500,12 @@ export function RemoteScreen() {
               SvgIcon={NetflixIcon}
               label="Netflix"
               shortcut="netflix"
+              onPress={sendShortcut}
+            />
+            <ShortcutButton
+              SvgIcon={PrimeIcon}
+              label="Amazon Prime"
+              shortcut="amazon"
               onPress={sendShortcut}
             />
             <ShortcutButton
