@@ -23,7 +23,7 @@ export async function runShortcut(shortcut: ShortcutId): Promise<void> {
       await openMac("https://www.disneyplus.com", ["-a", "Safari"]);
       break;
     case "amazon":
-      await openMac("https://www.primevideo.com", ["-a", "Safari"]);
+      await openMac("Prime Video", ["-a"]);
       break;
     case "youtube":
       await openMac("https://www.youtube.com", ["-a", "Safari"]);

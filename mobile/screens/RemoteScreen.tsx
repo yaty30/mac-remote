@@ -473,15 +473,9 @@ export function RemoteScreen() {
         <>
           <View style={styles.shortcuts}>
             <ShortcutButton
-              SvgIcon={NetflixIcon}
-              label="Netflix"
-              shortcut="netflix"
-              onPress={sendShortcut}
-            />
-            <ShortcutButton
-              SvgIcon={DisneyPlusIcon}
-              label="Disney+"
-              shortcut="disney"
+              icon="logo-youtube"
+              label="YouTube"
+              shortcut="youtube"
               onPress={sendShortcut}
             />
             <ShortcutButton
@@ -491,9 +485,15 @@ export function RemoteScreen() {
               onPress={sendShortcut}
             />
             <ShortcutButton
-              icon="logo-youtube"
-              label="YouTube"
-              shortcut="youtube"
+              SvgIcon={DisneyPlusIcon}
+              label="Disney+"
+              shortcut="disney"
+              onPress={sendShortcut}
+            />
+            <ShortcutButton
+              SvgIcon={NetflixIcon}
+              label="Netflix"
+              shortcut="netflix"
               onPress={sendShortcut}
             />
             <ShortcutButton

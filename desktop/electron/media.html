@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Media Browser</title>
+    <link rel="stylesheet" href="./media.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brandMark">M</div>
+        <div>
+          <div class="brandTitle">Media Browser</div>
+          <div id="statusLabel" class="status">YouTube</div>
+        </div>
+      </div>
+
+      <nav class="tabs" aria-label="Media services">
+        <button class="tab active" type="button" data-tab="youtube" aria-selected="true">
+          YouTube
+        </button>
+        <button class="tab" type="button" data-tab="disney" aria-selected="false">
+          Disney+
+        </button>
+      </nav>
+
+      <div class="windowControls" aria-label="Window controls">
+        <button class="windowButton" type="button" data-window-action="minimize" aria-label="Minimize">
+          <svg class="lucide" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14"></path>
+          </svg>
+        </button>
+        <button
+          id="maximizeButton"
+          class="windowButton"
+          type="button"
+          data-window-action="toggle-maximize"
+          aria-label="Expand"
+        >
+          <svg class="lucide maximizeIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 3h6v6"></path>
+            <path d="M9 21H3v-6"></path>
+            <path d="m21 3-7 7"></path>
+            <path d="m3 21 7-7"></path>
+          </svg>
+          <svg class="lucide restoreIcon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 14h6v6"></path>
+            <path d="M20 10h-6V4"></path>
+            <path d="m14 10 7-7"></path>
+            <path d="m3 21 7-7"></path>
+          </svg>
+        </button>
+        <button class="windowButton closeButton" type="button" data-window-action="close" aria-label="Close">
+          <svg class="lucide" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="views">
+      <webview
+        class="mediaView active"
+        data-view="youtube"
+        src="https://www.youtube.com"
+        partition="persist:media-youtube"
+        allowpopups
+      ></webview>
+      <webview
+        class="mediaView"
+        data-view="disney"
+        src="https://www.disneyplus.com"
+        partition="persist:media-disney"
+        allowpopups
+      ></webview>
+    </main>
+
+    <script src="./mediaRenderer.js"></script>
+  </body>
+</html>

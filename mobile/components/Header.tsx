@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
+import { useState } from "react";
 
 interface HeaderProps {
   status: ConnectionStatus;
@@ -26,6 +27,7 @@ export function Header({
   onSleep,
 }: HeaderProps) {
   const connected = status === "connected";
+  const [sleep, setSleep] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -59,8 +61,18 @@ export function Header({
             <Ionicons name="settings" size={20} color="#ffffff" />
           </Pressable>
 
-          <Pressable style={styles.sleepButton} onPress={onSleep}>
-            <Ionicons name="power" size={20} color="#ffffff" />
+          <Pressable
+            style={styles.sleepButton}
+            onPress={() => {
+              setSleep((s) => !s);
+              onSleep();
+            }}
+          >
+            <Ionicons
+              name="power"
+              size={20}
+              color={sleep ? "#ff1111" : "#ffffff"}
+            />
           </Pressable>
         </View>
       </View>

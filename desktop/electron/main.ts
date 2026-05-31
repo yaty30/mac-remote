@@ -4,7 +4,12 @@ import path from "node:path";
 import QRCode from "qrcode";
 import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
-import type { DesktopStatus, HostMessage, RemoteMessage } from "../types/protocol";
+import type {
+  DesktopStatus,
+  HostMessage,
+  RemoteMessage,
+  ShortcutId,
+} from "../types/protocol";
 import { RemoteWebSocketServer } from "../websocket/server";
 import { runShortcut } from "../websocket/shortcuts";
 
@@ -14,6 +19,7 @@ const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
 
 let mainWindow: BrowserWindow | null = null;
+let mediaWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
@@ -26,6 +32,11 @@ const mouseController = new MouseController(
   Number.isFinite(sensitivity) ? sensitivity : 1.8,
 );
 const keyboardController = new KeyboardController();
+type MediaTabId = Extract<ShortcutId, "disney" | "youtube">;
+
+function isMediaTabShortcut(shortcut: ShortcutId): shortcut is MediaTabId {
+  return shortcut === "disney" || shortcut === "youtube";
+}
 
 function requestAccessibilityPermission(): void {
   if (process.platform !== "darwin") {
@@ -91,7 +102,11 @@ async function handleRemoteMessage(
       await keyboardController.sleep();
       break;
     case "shortcut":
-      await runShortcut(message.shortcut);
+      if (isMediaTabShortcut(message.shortcut)) {
+        showMediaWindow(message.shortcut);
+      } else {
+        await runShortcut(message.shortcut);
+      }
       break;
     case "typeText":
       await keyboardController.typeText(message.text);
@@ -127,6 +142,60 @@ function createWindow(): void {
   if (process.env.REMOTE_DEVTOOLS === "1") {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
+}
+
+function createMediaWindow(): void {
+  mediaWindow = new BrowserWindow({
+    width: 1440,
+    height: 960,
+    minWidth: 920,
+    minHeight: 620,
+    title: "Media Browser",
+    frame: false,
+    fullscreen: true,
+    backgroundColor: "#090b10",
+    webPreferences: {
+      preload: path.join(__dirname, "mediaPreload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true,
+    },
+  });
+
+  mediaWindow.loadFile(path.join(__dirname, "media.html"));
+
+  const sendMaximizedState = () => {
+    mediaWindow?.webContents.send(
+      "media-window:maximized",
+      mediaWindow.isMaximized(),
+    );
+  };
+
+  mediaWindow.on("maximize", sendMaximizedState);
+  mediaWindow.on("unmaximize", sendMaximizedState);
+  mediaWindow.webContents.once("did-finish-load", sendMaximizedState);
+
+  mediaWindow.on("closed", () => {
+    mediaWindow = null;
+  });
+}
+
+function showMediaWindow(tab: MediaTabId = "youtube"): void {
+  if (!mediaWindow || mediaWindow.isDestroyed()) {
+    createMediaWindow();
+  }
+
+  mediaWindow?.show();
+  mediaWindow?.focus();
+
+  if (mediaWindow?.webContents.isLoading()) {
+    mediaWindow.webContents.once("did-finish-load", () => {
+      mediaWindow?.webContents.send("media:switch-tab", tab);
+    });
+    return;
+  }
+
+  mediaWindow?.webContents.send("media:switch-tab", tab);
 }
 
 async function publishStatus(status: DesktopStatus): Promise<void> {
@@ -273,6 +342,30 @@ app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
   requestAccessibilityPermission();
   ipcMain.handle("status:get", () => latestStatus);
+  ipcMain.handle("media-window:minimize", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle("media-window:toggle-maximize", (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!targetWindow) {
+      return false;
+    }
+
+    if (targetWindow.isMaximized()) {
+      targetWindow.unmaximize();
+    } else {
+      targetWindow.maximize();
+    }
+
+    return targetWindow.isMaximized();
+  });
+  ipcMain.handle("media-window:close", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+  ipcMain.handle("media-window:is-maximized", (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
 
   remoteServer = new RemoteWebSocketServer(port, handleRemoteMessage, getHostState);
   publishStatus(remoteServer.getStatus()).catch((error) => {
@@ -294,10 +387,12 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  createMediaWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      createMediaWindow();
     }
   });
 });
