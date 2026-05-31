@@ -58,13 +58,13 @@ export async function runShortcut(shortcut: ShortcutId): Promise<void> {
       await openSafariTabOnce("https://www.netflix.com", "netflix.com");
       break;
     case "disney":
-      await openMac("https://www.disneyplus.com", ["-a", "Safari"]);
+      await openSafariTabOnce("https://www.disneyplus.com", "disneyplus.com");
       break;
     case "amazon":
       await openMac("Prime Video", ["-a"]);
       break;
     case "youtube":
-      await openMac("https://www.youtube.com", ["-a", "Safari"]);
+      await openSafariTabOnce("https://www.youtube.com", "youtube.com");
       break;
     case "spotify":
       await openMac("Spotify", ["-a"]);
