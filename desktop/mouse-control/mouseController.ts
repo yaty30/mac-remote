@@ -32,7 +32,7 @@ export class MouseController {
   }
 
   async scroll(dx: number, dy: number): Promise<void> {
-    const PIXELS_PER_TICK = 2.5;
+    const PIXELS_PER_TICK = 2;
 
     this.scrollAccumX += dx;
     this.scrollAccumY += dy;

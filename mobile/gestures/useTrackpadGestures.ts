@@ -19,7 +19,7 @@ interface TrackpadHandlers {
 
 const ZOOM_RATIO_THRESHOLD = 1.18;
 const SWIPE_DISTANCE = 60;
-const SCROLL_SENSITIVITY = 1.9;
+const SCROLL_SENSITIVITY = 3.2;
 
 export function useTrackpadGestures({
   onMove,

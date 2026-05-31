@@ -4,6 +4,8 @@ import { Key, keyboard } from "@nut-tree-fork/nut-js";
 const MAX_TEXT_CHUNK = 128;
 
 export class KeyboardController {
+  private displaySleeping = false;
+
   constructor() {
     keyboard.config.autoDelayMs = 0;
   }
@@ -84,11 +86,18 @@ export class KeyboardController {
 
   async sleep(): Promise<void> {
     if (process.platform === "darwin") {
-      await runAppleScript('tell application "System Events" to sleep');
+      if (this.displaySleeping) {
+        await runExecutable("caffeinate", ["-u", "-t", "2"]);
+        this.displaySleeping = false;
+        return;
+      }
+
+      await runExecutable("pmset", ["displaysleepnow"]);
+      this.displaySleeping = true;
       return;
     }
 
-    console.warn("[keyboard] sleep is only implemented for macOS");
+    console.warn("[keyboard] display sleep/wake is only implemented for macOS");
   }
 }
 
@@ -110,10 +119,14 @@ function runAppleScript(script: string): Promise<void> {
 }
 
 function runAppleScriptOutput(script: string): Promise<string> {
+  return runExecutable("osascript", ["-e", script]);
+}
+
+function runExecutable(file: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
-      "osascript",
-      ["-e", script],
+      file,
+      args,
       (error, stdout) => {
         if (error) {
           reject(error);
