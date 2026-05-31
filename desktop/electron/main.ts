@@ -152,7 +152,7 @@ function createMediaWindow(): void {
     minHeight: 620,
     title: "Media Browser",
     frame: false,
-    fullscreen: true,
+    show: false,
     backgroundColor: "#090b10",
     webPreferences: {
       preload: path.join(__dirname, "mediaPreload.js"),
@@ -163,6 +163,12 @@ function createMediaWindow(): void {
   });
 
   mediaWindow.loadFile(path.join(__dirname, "media.html"));
+  mediaWindow.once("ready-to-show", () => {
+    mediaWindow?.maximize();
+    mediaWindow?.show();
+  });
+
+  let wasMaximizedBeforeHtmlFullscreen = false;
 
   const sendMaximizedState = () => {
     mediaWindow?.webContents.send(
@@ -173,6 +179,15 @@ function createMediaWindow(): void {
 
   mediaWindow.on("maximize", sendMaximizedState);
   mediaWindow.on("unmaximize", sendMaximizedState);
+  mediaWindow.webContents.on("enter-html-full-screen", () => {
+    wasMaximizedBeforeHtmlFullscreen = mediaWindow?.isMaximized() ?? false;
+  });
+  mediaWindow.webContents.on("leave-html-full-screen", () => {
+    if (wasMaximizedBeforeHtmlFullscreen) {
+      mediaWindow?.maximize();
+    }
+    sendMaximizedState();
+  });
   mediaWindow.webContents.once("did-finish-load", sendMaximizedState);
 
   mediaWindow.on("closed", () => {
