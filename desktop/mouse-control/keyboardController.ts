@@ -18,8 +18,17 @@ export class KeyboardController {
     }
   }
 
-  async pressKey(key: "backspace" | "enter"): Promise<void> {
-    const nutKey = key === "backspace" ? Key.Backspace : Key.Return;
+  async pressKey(
+    key: "backspace" | "enter" | "leftArrow" | "rightArrow",
+  ): Promise<void> {
+    const keyMap = {
+      backspace: Key.Backspace,
+      enter: Key.Return,
+      leftArrow: Key.Left,
+      rightArrow: Key.Right,
+    } as const;
+    const nutKey = keyMap[key];
+
     await keyboard.pressKey(nutKey);
     await keyboard.releaseKey(nutKey);
   }

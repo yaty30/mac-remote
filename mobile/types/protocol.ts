@@ -10,6 +10,7 @@ export type ConnectionStatus =
 export type RemoteMessage =
   | MoveMouseMessage
   | LeftClickMessage
+  | DoubleClickMessage
   | RightClickMessage
   | ScrollMessage
   | ZoomMessage
@@ -31,6 +32,10 @@ export interface MoveMouseMessage {
 
 export interface LeftClickMessage {
   type: "leftClick";
+}
+
+export interface DoubleClickMessage {
+  type: "doubleClick";
 }
 
 export interface RightClickMessage {
@@ -84,5 +89,5 @@ export interface TypeTextMessage {
 
 export interface PressKeyMessage {
   type: "pressKey";
-  key: "backspace" | "enter";
+  key: "backspace" | "enter" | "leftArrow" | "rightArrow";
 }

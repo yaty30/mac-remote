@@ -11,6 +11,7 @@ import { State } from "react-native-gesture-handler";
 interface TrackpadHandlers {
   onMove: (dx: number, dy: number) => void;
   onClick: () => void;
+  onDoubleClick: () => void;
   onRightClick: () => void;
   onScroll: (dx: number, dy: number) => void;
   onZoom: (direction: "in" | "out") => void;
@@ -24,6 +25,7 @@ const SCROLL_SENSITIVITY = 3.2;
 export function useTrackpadGestures({
   onMove,
   onClick,
+  onDoubleClick,
   onRightClick,
   onScroll,
   onZoom,
@@ -155,6 +157,15 @@ export function useTrackpadGestures({
     [onClick],
   );
 
+  const handleDoubleTap = useCallback(
+    (event: TapGestureHandlerStateChangeEvent) => {
+      if (event.nativeEvent.state === State.ACTIVE) {
+        onDoubleClick();
+      }
+    },
+    [onDoubleClick],
+  );
+
   const handleTwoFingerTap = useCallback(
     (event: TapGestureHandlerStateChangeEvent) => {
       if (event.nativeEvent.state === State.ACTIVE) {
@@ -173,6 +184,7 @@ export function useTrackpadGestures({
     handlePinchState,
     handleThreePanState,
     handleSingleTap,
+    handleDoubleTap,
     handleTwoFingerTap,
   };
 }

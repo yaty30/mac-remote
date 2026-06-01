@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import type { ShortcutId } from "../types/protocol";
+import { withHaptic } from "../utils/haptics";
 
 interface ShortcutButtonProps {
   icon?: keyof typeof Ionicons.glyphMap;
@@ -23,7 +24,7 @@ export function ShortcutButton({
     <Pressable
       accessibilityLabel={label}
       style={styles.button}
-      onPress={() => onPress(shortcut)}
+      onPress={withHaptic(() => onPress(shortcut))}
     >
       {SvgIcon ? (
         <SvgIcon width={44} height={44} />

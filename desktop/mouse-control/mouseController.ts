@@ -27,6 +27,11 @@ export class MouseController {
     await mouse.click(Button.LEFT);
   }
 
+  async doubleClick(): Promise<void> {
+    await mouse.click(Button.LEFT);
+    await mouse.click(Button.LEFT);
+  }
+
   async rightClick(): Promise<void> {
     await mouse.click(Button.RIGHT);
   }

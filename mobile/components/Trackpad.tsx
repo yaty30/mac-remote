@@ -11,6 +11,7 @@ import { useTrackpadGestures } from "../gestures/useTrackpadGestures";
 interface TrackpadProps {
   onMove: (dx: number, dy: number) => void;
   onClick: () => void;
+  onDoubleClick: () => void;
   onRightClick: () => void;
   onScroll: (dx: number, dy: number) => void;
   onZoom: (direction: "in" | "out") => void;
@@ -20,6 +21,7 @@ interface TrackpadProps {
 export function Trackpad({
   onMove,
   onClick,
+  onDoubleClick,
   onRightClick,
   onScroll,
   onZoom,
@@ -34,10 +36,12 @@ export function Trackpad({
     handlePinchState,
     handleThreePanState,
     handleSingleTap,
+    handleDoubleTap,
     handleTwoFingerTap,
   } = useTrackpadGestures({
     onMove,
     onClick,
+    onDoubleClick,
     onRightClick,
     onScroll,
     onZoom,
@@ -45,6 +49,7 @@ export function Trackpad({
   });
 
   const singleTapRef = useRef(null);
+  const doubleTapRef = useRef(null);
   const twoTapRef = useRef(null);
   const singlePanRef = useRef(null);
   const twoPanRef = useRef(null);
@@ -57,57 +62,71 @@ export function Trackpad({
       maxDurationMs={180}
       maxDeltaX={12}
       maxDeltaY={12}
-      waitFor={twoTapRef}
+      waitFor={[doubleTapRef, twoTapRef]}
       onHandlerStateChange={handleSingleTap}
     >
       <TapGestureHandler
-        ref={twoTapRef}
-        minPointers={2}
-        maxDurationMs={220}
-        maxDeltaX={16}
-        maxDeltaY={16}
-        onHandlerStateChange={handleTwoFingerTap}
+        ref={doubleTapRef}
+        numberOfTaps={2}
+        maxDelayMs={260}
+        maxDurationMs={180}
+        maxDeltaX={14}
+        maxDeltaY={14}
+        onHandlerStateChange={handleDoubleTap}
       >
-        <PanGestureHandler
-          ref={threePanRef}
-          minPointers={3}
-          maxPointers={3}
-          onHandlerStateChange={handleThreePanState}
+        <TapGestureHandler
+          ref={twoTapRef}
+          minPointers={2}
+          maxDurationMs={220}
+          maxDeltaX={16}
+          maxDeltaY={16}
+          onHandlerStateChange={handleTwoFingerTap}
         >
-          <PinchGestureHandler
-            ref={pinchRef}
-            simultaneousHandlers={twoPanRef}
-            onGestureEvent={handlePinch}
-            onHandlerStateChange={handlePinchState}
+          <PanGestureHandler
+            ref={threePanRef}
+            minPointers={3}
+            maxPointers={3}
+            onHandlerStateChange={handleThreePanState}
           >
-            <PanGestureHandler
-              ref={twoPanRef}
-              minPointers={2}
-              maxPointers={2}
-              minDist={1}
-              simultaneousHandlers={[pinchRef, twoTapRef]}
-              onGestureEvent={handleTwoPan}
-              onHandlerStateChange={handleTwoPanState}
+            <PinchGestureHandler
+              ref={pinchRef}
+              simultaneousHandlers={twoPanRef}
+              onGestureEvent={handlePinch}
+              onHandlerStateChange={handlePinchState}
             >
               <PanGestureHandler
-                ref={singlePanRef}
-                minPointers={1}
-                maxPointers={1}
+                ref={twoPanRef}
+                minPointers={2}
+                maxPointers={2}
                 minDist={1}
-                shouldCancelWhenOutside={false}
-                onGestureEvent={handleSinglePan}
-                onHandlerStateChange={handleSinglePanState}
+                simultaneousHandlers={[pinchRef, twoTapRef]}
+                onGestureEvent={handleTwoPan}
+                onHandlerStateChange={handleTwoPanState}
               >
-                <View style={styles.trackpad}>
-                  <View style={styles.centerMark}>
-                    <Ionicons name="ellipse-outline" size={34} color="#6f7a8c" />
-                    <Text style={styles.label}>Trackpad</Text>
+                <PanGestureHandler
+                  ref={singlePanRef}
+                  minPointers={1}
+                  maxPointers={1}
+                  minDist={1}
+                  shouldCancelWhenOutside={false}
+                  onGestureEvent={handleSinglePan}
+                  onHandlerStateChange={handleSinglePanState}
+                >
+                  <View style={styles.trackpad}>
+                    <View style={styles.centerMark}>
+                      <Ionicons
+                        name="ellipse-outline"
+                        size={34}
+                        color="#6f7a8c"
+                      />
+                      <Text style={styles.label}>Trackpad</Text>
+                    </View>
                   </View>
-                </View>
+                </PanGestureHandler>
               </PanGestureHandler>
-            </PanGestureHandler>
-          </PinchGestureHandler>
-        </PanGestureHandler>
+            </PinchGestureHandler>
+          </PanGestureHandler>
+        </TapGestureHandler>
       </TapGestureHandler>
     </TapGestureHandler>
   );

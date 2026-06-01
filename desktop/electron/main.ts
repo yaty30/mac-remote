@@ -73,6 +73,9 @@ async function handleRemoteMessage(
     case "leftClick":
       await mouseController.leftClick();
       break;
+    case "doubleClick":
+      await mouseController.doubleClick();
+      break;
     case "rightClick":
       await mouseController.rightClick();
       break;

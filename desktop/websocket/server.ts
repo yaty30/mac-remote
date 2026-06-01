@@ -131,6 +131,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     return { type: "leftClick" };
   }
 
+  if (data.type === "doubleClick") {
+    return { type: "doubleClick" };
+  }
+
   if (data.type === "rightClick") {
     return { type: "rightClick" };
   }
@@ -215,7 +219,12 @@ function parseRemoteMessage(raw: string): RemoteMessage {
   }
 
   if (data.type === "pressKey") {
-    if (data.key === "backspace" || data.key === "enter") {
+    if (
+      data.key === "backspace" ||
+      data.key === "enter" ||
+      data.key === "leftArrow" ||
+      data.key === "rightArrow"
+    ) {
       return {
         type: "pressKey",
         key: data.key,

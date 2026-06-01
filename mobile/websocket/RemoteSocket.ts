@@ -93,6 +93,10 @@ export class RemoteSocket {
     this.send({ type: "leftClick" });
   }
 
+  sendDoubleClick(): void {
+    this.send({ type: "doubleClick" });
+  }
+
   sendRightClick(): void {
     this.send({ type: "rightClick" });
   }
@@ -129,7 +133,7 @@ export class RemoteSocket {
     this.send({ type: "typeText", text });
   }
 
-  sendKey(key: "backspace" | "enter"): void {
+  sendKey(key: "backspace" | "enter" | "leftArrow" | "rightArrow"): void {
     this.send({ type: "pressKey", key });
   }
 

@@ -25,6 +25,7 @@ import { ShortcutButton } from "../components/ShortcutButton";
 import { Trackpad } from "../components/Trackpad";
 import type { ConnectionStatus, ShortcutId } from "../types/protocol";
 import { RemoteSocket } from "../websocket/RemoteSocket";
+import { withHaptic } from "../utils/haptics";
 import DisneyPlusIcon from "../assets/shortcuts/disneyplus.svg";
 import NetflixIcon from "../assets/shortcuts/netflix.svg";
 import PrimeIcon from "../assets/shortcuts/prime.svg";
@@ -73,7 +74,8 @@ export function RemoteScreen() {
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
       if (message.type === "hostState" && typeof message.volume === "number") {
-        setVolume(Math.max(0, Math.min(100, Math.round(message.volume))));
+        const next = clampPercent(message.volume);
+        setVolume(next);
       }
     });
 
@@ -296,7 +298,7 @@ export function RemoteScreen() {
   }
 
   function updateVolume(nextValue: number) {
-    const next = Math.round(nextValue);
+    const next = clampPercent(nextValue);
     setVolume(next);
     socket.sendVolume(next);
   }
@@ -418,7 +420,10 @@ export function RemoteScreen() {
               <Text style={styles.hostValue}>
                 {host.trim().length > 0 ? host : "No host saved"}
               </Text>
-              <Pressable style={[styles.connectButton]} onPress={openScanner}>
+              <Pressable
+                style={[styles.connectButton]}
+                onPress={withHaptic(openScanner)}
+              >
                 <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
                 <Text style={styles.connectText}>Scan</Text>
               </Pressable>
@@ -519,15 +524,32 @@ export function RemoteScreen() {
           <View style={styles.shortcuts}>
             <Pressable
               style={styles.desktopSwitchButton}
-              onPress={() => socket.sendSwipeSpaces("left")}
+              onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
             >
               <Ionicons name="arrow-back" size={24} color="#ffffff" />
             </Pressable>
             <Pressable
               style={styles.desktopSwitchButton}
-              onPress={() => socket.sendSwipeSpaces("right")}
+              onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
             >
               <Ionicons name="arrow-forward" size={24} color="#ffffff" />
+            </Pressable>
+            <Pressable
+              style={styles.desktopSwitchButton}
+              onPress={withHaptic(() => socket.sendKey("leftArrow"))}
+            >
+              <Ionicons
+                name="play-forward"
+                size={24}
+                color="#ffffff"
+                style={{ transform: [{ rotate: "-180deg" }] }}
+              />
+            </Pressable>
+            <Pressable
+              style={styles.desktopSwitchButton}
+              onPress={withHaptic(() => socket.sendKey("rightArrow"))}
+            >
+              <Ionicons name="play-forward" size={24} color="#ffffff" />
             </Pressable>
           </View>
 
@@ -545,6 +567,7 @@ export function RemoteScreen() {
                 socket.sendMove(dx * sensitivity, dy * sensitivity)
               }
               onClick={() => socket.sendLeftClick()}
+              onDoubleClick={() => socket.sendDoubleClick()}
               onRightClick={() => socket.sendRightClick()}
               onScroll={(dx, dy) => socket.sendScroll(dx, dy)}
               onZoom={(direction) => socket.sendZoom(direction)}
@@ -555,7 +578,9 @@ export function RemoteScreen() {
           <View style={styles.keyboardWrap}>
             <Pressable
               style={styles.keyboardButton}
-              onPress={keyboardVisible ? dismissKeyboardInput : focusKeyboard}
+              onPress={withHaptic(
+                keyboardVisible ? dismissKeyboardInput : focusKeyboard,
+              )}
             >
               <Ionicons
                 name={keyboardVisible ? "chevron-down" : "keypad-outline"}
@@ -584,6 +609,14 @@ export function RemoteScreen() {
       )}
     </SafeAreaView>
   );
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function parsePairingPayload(raw: string): string | null {

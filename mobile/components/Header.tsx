@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
 import { useState } from "react";
+import { withHaptic } from "../utils/haptics";
 
 interface HeaderProps {
   status: ConnectionStatus;
@@ -48,7 +49,7 @@ export function Header({
         <View style={styles.actionRow}>
           <Pressable
             style={[styles.connectButton, connected && styles.liveButton]}
-            onPress={connected ? undefined : onScan}
+            onPress={connected ? undefined : withHaptic(onScan)}
           >
             <Ionicons
               name={connected ? "thumbs-up" : "qr-code-outline"}
@@ -57,16 +58,19 @@ export function Header({
             />
           </Pressable>
 
-          <Pressable style={styles.connectButton} onPress={onToggleSettings}>
+          <Pressable
+            style={styles.connectButton}
+            onPress={withHaptic(onToggleSettings)}
+          >
             <Ionicons name="settings" size={20} color="#ffffff" />
           </Pressable>
 
           <Pressable
             style={styles.sleepButton}
-            onPress={() => {
+            onPress={withHaptic(() => {
               setSleep((s) => !s);
               onSleep();
-            }}
+            })}
           >
             <Ionicons
               name="power"

@@ -12,6 +12,7 @@
     "screens/**/*.tsx",
     "types/**/*.ts",
     "types/**/*.d.ts",
+    "utils/**/*.ts",
     "websocket/**/*.ts"
   ]
 }
