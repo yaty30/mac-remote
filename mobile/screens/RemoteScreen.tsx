@@ -10,15 +10,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   type AppStateStatus,
+  Image,
   Keyboard,
+  Modal,
   type NativeSyntheticEvent,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   type TextInputKeyPressEventData,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "../components/Header";
 import { ShortcutButton } from "../components/ShortcutButton";
@@ -33,8 +37,16 @@ import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
+const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const BRIGHTNESS_STEP = 10;
 const DEFAULT_SENSITIVITY = 2.3;
+
+interface CustomShortcut {
+  id: string;
+  name: string;
+  url: string;
+  iconUri?: string;
+}
 
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -58,6 +70,13 @@ export function RemoteScreen() {
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [typedText, setTypedText] = useState("");
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
+  const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
+  const [shortcutModalVisible, setShortcutModalVisible] = useState(false);
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
+  const [shortcutName, setShortcutName] = useState("");
+  const [shortcutWebsite, setShortcutWebsite] = useState("");
+  const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
+  const [shortcutFormError, setShortcutFormError] = useState("");
 
   useEffect(() => {
     const unsubscribe = socket.onStatus((nextStatus) => {
@@ -146,6 +165,26 @@ export function RemoteScreen() {
       cancelled = true;
     };
   }, [socket]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    AsyncStorage.getItem(CUSTOM_SHORTCUTS_STORAGE_KEY)
+      .then((saved) => {
+        if (cancelled || !saved) {
+          return;
+        }
+
+        setCustomShortcuts(parseCustomShortcuts(saved));
+      })
+      .catch(() => {
+        // ignore storage errors
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const subscription = CameraView.onModernBarcodeScanned((event) => {
@@ -242,6 +281,106 @@ export function RemoteScreen() {
 
   function sendShortcut(shortcut: ShortcutId) {
     socket.sendShortcut(shortcut);
+  }
+
+  function sendCustomShortcut(shortcut: CustomShortcut) {
+    socket.sendWebsiteShortcut(shortcut.name, shortcut.url);
+  }
+
+  function openShortcutModal() {
+    setEditingShortcutId(null);
+    setShortcutName("");
+    setShortcutWebsite("");
+    setShortcutIconUri(undefined);
+    setShortcutFormError("");
+    setShortcutModalVisible(true);
+  }
+
+  function openEditShortcutModal(shortcut: CustomShortcut) {
+    setEditingShortcutId(shortcut.id);
+    setShortcutName(shortcut.name);
+    setShortcutWebsite(shortcut.url);
+    setShortcutIconUri(shortcut.iconUri);
+    setShortcutFormError("");
+    setShortcutModalVisible(true);
+  }
+
+  function closeShortcutModal() {
+    setShortcutModalVisible(false);
+    setEditingShortcutId(null);
+    setShortcutFormError("");
+  }
+
+  async function pickShortcutIcon() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      setShortcutFormError("Photo library permission is required to upload an icon.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]?.uri) {
+      setShortcutIconUri(result.assets[0].uri);
+      setShortcutFormError("");
+    }
+  }
+
+  function saveCustomShortcut() {
+    const name = shortcutName.trim();
+    const url = normalizeWebsiteUrl(shortcutWebsite);
+
+    if (!name) {
+      setShortcutFormError("Enter a shortcut name.");
+      return;
+    }
+
+    if (!url) {
+      setShortcutFormError("Enter a valid website.");
+      return;
+    }
+
+    const nextShortcut = {
+      id: editingShortcutId ?? `${Date.now()}`,
+      name: name.slice(0, 40),
+      url,
+      iconUri: shortcutIconUri,
+    };
+    const nextShortcuts = editingShortcutId
+      ? customShortcuts.map((shortcut) =>
+          shortcut.id === editingShortcutId ? nextShortcut : shortcut,
+        )
+      : [...customShortcuts, nextShortcut];
+
+    persistCustomShortcuts(nextShortcuts);
+    closeShortcutModal();
+  }
+
+  function deleteCustomShortcut() {
+    if (!editingShortcutId) {
+      return;
+    }
+
+    persistCustomShortcuts(
+      customShortcuts.filter((shortcut) => shortcut.id !== editingShortcutId),
+    );
+    closeShortcutModal();
+  }
+
+  function persistCustomShortcuts(nextShortcuts: CustomShortcut[]) {
+    setCustomShortcuts(nextShortcuts);
+    AsyncStorage.setItem(
+      CUSTOM_SHORTCUTS_STORAGE_KEY,
+      JSON.stringify(nextShortcuts),
+    ).catch(() => {
+      // ignore storage errors
+    });
   }
 
   function sendSleep() {
@@ -485,41 +624,62 @@ export function RemoteScreen() {
               <Text style={styles.sensitivityValue}>{volume}%</Text>
             </View>
           </View>
+
+          <View style={styles.sensitivityCard}>
+            <Text style={styles.sensitivityLabel}>Shortcuts</Text>
+            <Pressable
+              style={styles.addShortcutButton}
+              onPress={withHaptic(openShortcutModal)}
+            >
+              <Ionicons name="add" size={22} color="#ffffff" />
+              <Text style={styles.addShortcutText}>Add Shortcut</Text>
+            </Pressable>
+          </View>
         </>
       ) : (
         <>
-          <View style={styles.shortcuts}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.shortcutsScroller}
+            contentContainerStyle={styles.shortcuts}
+          >
             <ShortcutButton
               SvgIcon={NetflixIcon}
               label="Netflix"
-              shortcut="netflix"
-              onPress={sendShortcut}
+              onPress={() => sendShortcut("netflix")}
             />
             <ShortcutButton
               icon="logo-youtube"
               label="YouTube"
-              shortcut="youtube"
-              onPress={sendShortcut}
+              onPress={() => sendShortcut("youtube")}
             />
             <ShortcutButton
               SvgIcon={DisneyPlusIcon}
               label="Disney+"
-              shortcut="disney"
-              onPress={sendShortcut}
+              onPress={() => sendShortcut("disney")}
             />
             <ShortcutButton
               SvgIcon={PrimeIcon}
               label="Amazon Prime"
-              shortcut="amazon"
-              onPress={sendShortcut}
+              onPress={() => sendShortcut("amazon")}
             />
             <ShortcutButton
               SvgIcon={SpotifyIcon}
               label="Spotify"
-              shortcut="spotify"
-              onPress={sendShortcut}
+              onPress={() => sendShortcut("spotify")}
             />
-          </View>
+            {customShortcuts.map((shortcut) => (
+              <ShortcutButton
+                key={shortcut.id}
+                imageUri={shortcut.iconUri}
+                initial={shortcut.name}
+                label={shortcut.name}
+                onPress={() => sendCustomShortcut(shortcut)}
+                onLongPress={() => openEditShortcutModal(shortcut)}
+              />
+            ))}
+          </ScrollView>
 
           <View style={styles.shortcuts}>
             <Pressable
@@ -607,6 +767,120 @@ export function RemoteScreen() {
           </View>
         </>
       )}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={shortcutModalVisible}
+        onRequestClose={closeShortcutModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.shortcutModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingShortcutId ? "Edit Shortcut" : "Add Shortcut"}
+              </Text>
+              <Pressable
+                style={styles.modalIconButton}
+                onPress={withHaptic(closeShortcutModal)}
+              >
+                <Ionicons name="close" size={22} color="#ffffff" />
+              </Pressable>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>Name</Text>
+              <TextInput
+                value={shortcutName}
+                onChangeText={setShortcutName}
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="Netflix"
+                placeholderTextColor="#697180"
+                style={styles.formInput}
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>Website</Text>
+              <TextInput
+                value={shortcutWebsite}
+                onChangeText={setShortcutWebsite}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="netflix.com"
+                placeholderTextColor="#697180"
+                style={styles.formInput}
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>Icon</Text>
+              <View style={styles.iconUploadRow}>
+                <View style={styles.iconPreview}>
+                  {shortcutIconUri ? (
+                    <Image
+                      source={{ uri: shortcutIconUri }}
+                      style={styles.iconPreviewImage}
+                    />
+                  ) : (
+                    <Text style={styles.iconPreviewText}>
+                      {(shortcutName.trim()[0] ?? "?").toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <Pressable
+                  style={styles.uploadButton}
+                  onPress={withHaptic(pickShortcutIcon)}
+                >
+                  <Ionicons name="image-outline" size={20} color="#ffffff" />
+                  <Text style={styles.uploadButtonText}>Upload Image</Text>
+                </Pressable>
+              </View>
+              {shortcutIconUri ? (
+                <Pressable
+                  style={styles.removeIconButton}
+                  onPress={withHaptic(() => setShortcutIconUri(undefined))}
+                >
+                  <Text style={styles.removeIconText}>Remove Image</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            {shortcutFormError ? (
+              <Text style={styles.formError}>{shortcutFormError}</Text>
+            ) : null}
+
+            {editingShortcutId ? (
+              <Pressable
+                style={styles.deleteShortcutButton}
+                onPress={withHaptic(deleteCustomShortcut)}
+              >
+                <Ionicons name="trash-outline" size={20} color="#ffb4b4" />
+                <Text style={styles.deleteShortcutText}>Delete Shortcut</Text>
+              </Pressable>
+            ) : null}
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalActionButton, styles.cancelButton]}
+                onPress={withHaptic(closeShortcutModal)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalActionButton, styles.saveButton]}
+                onPress={withHaptic(saveCustomShortcut)}
+              >
+                <Text style={styles.saveButtonText}>
+                  {editingShortcutId ? "Save" : "Add"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -646,6 +920,75 @@ function parsePairingPayload(raw: string): string | null {
   return null;
 }
 
+function parseCustomShortcuts(raw: string): CustomShortcut[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((item): CustomShortcut[] => {
+      if (
+        typeof item !== "object" ||
+        item === null ||
+        !("id" in item) ||
+        !("name" in item) ||
+        !("url" in item) ||
+        typeof item.id !== "string" ||
+        typeof item.name !== "string" ||
+        typeof item.url !== "string"
+      ) {
+        return [];
+      }
+
+      const url = normalizeWebsiteUrl(item.url);
+
+      if (!item.name.trim() || !url) {
+        return [];
+      }
+
+      return [
+        {
+          id: item.id,
+          name: item.name.trim().slice(0, 40),
+          url,
+          iconUri:
+            "iconUri" in item && typeof item.iconUri === "string"
+              ? item.iconUri
+              : undefined,
+        },
+      ];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function normalizeWebsiteUrl(value: string): string | null {
+  const cleanValue = value.trim();
+
+  if (cleanValue.length === 0) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(cleanValue)
+    ? cleanValue
+    : `https://${cleanValue}`;
+
+  try {
+    const url = new URL(withProtocol);
+
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return null;
+    }
+
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 const styles = StyleSheet.create({
   screen: {
     backgroundColor: "#080a0e",
@@ -657,6 +1000,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     paddingHorizontal: 18,
+  },
+  shortcutsScroller: {
+    width: "100%",
   },
   connectButton: {
     alignItems: "center",
@@ -671,6 +1017,20 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "800",
+  },
+  addShortcutButton: {
+    alignItems: "center",
+    backgroundColor: "#2f6df6",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  addShortcutText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
   },
   desktopSwitchButton: {
     alignItems: "center",
@@ -780,5 +1140,155 @@ const styles = StyleSheet.create({
     opacity: 0,
     position: "absolute",
     width: 1,
+  },
+  modalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  shortcutModal: {
+    backgroundColor: "#151922",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 16,
+    padding: 16,
+    width: "100%",
+  },
+  modalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  modalTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  modalIconButton: {
+    alignItems: "center",
+    backgroundColor: "#242b36",
+    borderRadius: 8,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  formField: {
+    gap: 8,
+  },
+  formLabel: {
+    color: "#c8d0dd",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  formInput: {
+    backgroundColor: "#0d1016",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#ffffff",
+    fontSize: 16,
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  iconUploadRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  iconPreview: {
+    alignItems: "center",
+    backgroundColor: "#0d1016",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 56,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 56,
+  },
+  iconPreviewImage: {
+    height: "100%",
+    width: "100%",
+  },
+  iconPreviewText: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  uploadButton: {
+    alignItems: "center",
+    backgroundColor: "#242b36",
+    borderRadius: 8,
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  uploadButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  removeIconButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+  },
+  removeIconText: {
+    color: "#9fb6ff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  formError: {
+    color: "#ff8a8a",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  deleteShortcutButton: {
+    alignItems: "center",
+    backgroundColor: "#32191d",
+    borderColor: "#5b2730",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  deleteShortcutText: {
+    color: "#ffb4b4",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalActionButton: {
+    alignItems: "center",
+    borderRadius: 8,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 50,
+  },
+  cancelButton: {
+    backgroundColor: "#242b36",
+  },
+  cancelButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  saveButton: {
+    backgroundColor: "#2f6df6",
+  },
+  saveButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
   },
 });

@@ -10,7 +10,7 @@ import type {
   RemoteMessage,
 } from "../types/protocol";
 import { RemoteWebSocketServer } from "../websocket/server";
-import { runShortcut } from "../websocket/shortcuts";
+import { runShortcut, runWebsiteShortcut } from "../websocket/shortcuts";
 
 const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
 const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
@@ -99,6 +99,9 @@ async function handleRemoteMessage(
       break;
     case "shortcut":
       await runShortcut(message.shortcut);
+      break;
+    case "websiteShortcut":
+      await runWebsiteShortcut(message.url);
       break;
     case "typeText":
       await keyboardController.typeText(message.text);

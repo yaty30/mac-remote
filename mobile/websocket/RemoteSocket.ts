@@ -129,6 +129,10 @@ export class RemoteSocket {
     this.send({ type: "shortcut", shortcut });
   }
 
+  sendWebsiteShortcut(name: string, url: string): void {
+    this.send({ type: "websiteShortcut", name, url });
+  }
+
   sendText(text: string): void {
     this.send({ type: "typeText", text });
   }

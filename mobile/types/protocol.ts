@@ -1,4 +1,9 @@
-export type ShortcutId = "netflix" | "disney" | "amazon" | "youtube" | "spotify";
+export type ShortcutId =
+  | "netflix"
+  | "disney"
+  | "amazon"
+  | "youtube"
+  | "spotify";
 
 export type ConnectionStatus =
   | "idle"
@@ -19,6 +24,7 @@ export type RemoteMessage =
   | SetVolumeMessage
   | SleepMessage
   | ShortcutMessage
+  | WebsiteShortcutMessage
   | TypeTextMessage
   | PressKeyMessage;
 
@@ -80,6 +86,12 @@ export interface HostStateMessage {
 export interface ShortcutMessage {
   type: "shortcut";
   shortcut: ShortcutId;
+}
+
+export interface WebsiteShortcutMessage {
+  type: "websiteShortcut";
+  name: string;
+  url: string;
 }
 
 export interface TypeTextMessage {

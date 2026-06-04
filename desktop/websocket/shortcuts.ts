@@ -38,18 +38,22 @@ tell application "Safari"
   activate
   repeat with safariWindow in windows
     repeat with safariTab in tabs of safariWindow
-      if (URL of safariTab contains "${urlNeedle}") then
+      if (URL of safariTab contains "${escapeAppleScriptString(urlNeedle)}") then
         set current tab of safariWindow to safariTab
         set index of safariWindow to 1
         return
       end if
     end repeat
   end repeat
-  open location "${url}"
+  open location "${escapeAppleScriptString(url)}"
 end tell
 `;
 
   await runAppleScript(script);
+}
+
+export async function runWebsiteShortcut(url: string): Promise<void> {
+  await openSafariTabOnce(url, getUrlNeedle(url));
 }
 
 export async function runShortcut(shortcut: ShortcutId): Promise<void> {
@@ -74,4 +78,16 @@ export async function runShortcut(shortcut: ShortcutId): Promise<void> {
       throw new Error(`Unsupported shortcut: ${exhaustive}`);
     }
   }
+}
+
+function getUrlNeedle(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function escapeAppleScriptString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

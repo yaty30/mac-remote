@@ -207,6 +207,25 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid shortcut payload");
   }
 
+  if (data.type === "websiteShortcut") {
+    if (typeof data.name !== "string" || typeof data.url !== "string") {
+      throw new Error("Invalid websiteShortcut payload");
+    }
+
+    const name = data.name.trim().slice(0, 40);
+    const url = normalizeWebsiteUrl(data.url);
+
+    if (!name || !url) {
+      throw new Error("Invalid websiteShortcut payload");
+    }
+
+    return {
+      type: "websiteShortcut",
+      name,
+      url,
+    };
+  }
+
   if (data.type === "typeText") {
     if (typeof data.text !== "string") {
       throw new Error("Invalid typeText payload");
@@ -267,6 +286,30 @@ function clampPercent(value: number): number {
   }
 
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeWebsiteUrl(value: string): string | null {
+  const cleanValue = value.trim();
+
+  if (cleanValue.length === 0) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(cleanValue)
+    ? cleanValue
+    : `https://${cleanValue}`;
+
+  try {
+    const url = new URL(withProtocol);
+
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return null;
+    }
+
+    return url.toString().slice(0, 2048);
+  } catch {
+    return null;
+  }
 }
 
 function getLocalIPv4Addresses(): string[] {
