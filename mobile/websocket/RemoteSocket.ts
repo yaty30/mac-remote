@@ -3,6 +3,7 @@ import type {
   HostMessage,
   RemoteMessage,
   ShortcutId,
+  TextCommand,
 } from "../types/protocol";
 
 type StatusListener = (status: ConnectionStatus) => void;
@@ -135,6 +136,10 @@ export class RemoteSocket {
 
   sendText(text: string): void {
     this.send({ type: "typeText", text });
+  }
+
+  sendTextCommand(command: TextCommand): void {
+    this.send({ type: "textCommand", command });
   }
 
   sendKey(key: "backspace" | "enter" | "leftArrow" | "rightArrow"): void {

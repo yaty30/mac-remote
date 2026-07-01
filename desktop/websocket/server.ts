@@ -237,6 +237,22 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     };
   }
 
+  if (data.type === "textCommand") {
+    if (
+      data.command === "selectAll" ||
+      data.command === "copy" ||
+      data.command === "paste" ||
+      data.command === "clear"
+    ) {
+      return {
+        type: "textCommand",
+        command: data.command,
+      };
+    }
+
+    throw new Error("Invalid textCommand payload");
+  }
+
   if (data.type === "pressKey") {
     if (
       data.key === "backspace" ||

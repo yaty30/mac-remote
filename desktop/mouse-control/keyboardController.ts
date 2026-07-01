@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { Key, keyboard } from "@nut-tree-fork/nut-js";
+import type { TextCommand } from "../types/protocol";
 
 const MAX_TEXT_CHUNK = 128;
 
@@ -31,6 +32,27 @@ export class KeyboardController {
 
     await keyboard.pressKey(nutKey);
     await keyboard.releaseKey(nutKey);
+  }
+
+  async textCommand(command: TextCommand): Promise<void> {
+    if (command === "clear") {
+      await this.textCommand("selectAll");
+      await this.pressKey("backspace");
+      return;
+    }
+
+    const commandKey = process.platform === "darwin"
+      ? Key.LeftCmd
+      : Key.LeftControl;
+    const keyMap = {
+      selectAll: Key.A,
+      copy: Key.C,
+      paste: Key.V,
+    } as const;
+    const target = keyMap[command];
+
+    await keyboard.pressKey(commandKey, target);
+    await keyboard.releaseKey(commandKey, target);
   }
 
   async zoom(direction: "in" | "out"): Promise<void> {

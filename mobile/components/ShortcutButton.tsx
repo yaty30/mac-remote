@@ -31,7 +31,7 @@ export function ShortcutButton({
       onLongPress={withHaptic(onLongPress)}
     >
       {SvgIcon ? (
-        <SvgIcon width={44} height={44} />
+        <SvgIcon width={36} height={36} />
       ) : imageUri ? (
         <Image source={{ uri: imageUri }} style={styles.imageIcon} />
       ) : initial ? (
@@ -51,14 +51,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 70,
-    width: 68,
+    height: 70,
+    width: 70,
     paddingHorizontal: 8,
   },
   imageIcon: {
     borderRadius: 8,
-    height: 44,
-    width: 44,
+    height: 36,
+    width: 36,
   },
   initialIcon: {
     color: "#ffffff",

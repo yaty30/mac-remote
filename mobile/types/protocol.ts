@@ -26,6 +26,7 @@ export type RemoteMessage =
   | ShortcutMessage
   | WebsiteShortcutMessage
   | TypeTextMessage
+  | TextCommandMessage
   | PressKeyMessage;
 
 export type HostMessage = HostStateMessage;
@@ -98,6 +99,13 @@ export interface WebsiteShortcutMessage {
 export interface TypeTextMessage {
   type: "typeText";
   text: string;
+}
+
+export type TextCommand = "selectAll" | "copy" | "paste" | "clear";
+
+export interface TextCommandMessage {
+  type: "textCommand";
+  command: TextCommand;
 }
 
 export interface PressKeyMessage {

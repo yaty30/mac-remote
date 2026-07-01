@@ -27,7 +27,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "../components/Header";
 import { ShortcutButton } from "../components/ShortcutButton";
 import { Trackpad } from "../components/Trackpad";
-import type { ConnectionStatus, ShortcutId } from "../types/protocol";
+import type {
+  ConnectionStatus,
+  ShortcutId,
+  TextCommand,
+} from "../types/protocol";
 import { RemoteSocket } from "../websocket/RemoteSocket";
 import { withHaptic } from "../utils/haptics";
 import DisneyPlusIcon from "../assets/shortcuts/disneyplus.svg";
@@ -37,6 +41,7 @@ import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
+const DEVICES_STORAGE_KEY = "remote-control:devices";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const BRIGHTNESS_STEP = 10;
@@ -54,6 +59,13 @@ interface PairingPayload {
   hostName?: string;
 }
 
+interface SavedDevice {
+  id: string;
+  name: string;
+  host: string;
+  lastConnectedAt: number;
+}
+
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
   const keyboardInputRef = useRef<TextInput>(null);
@@ -67,6 +79,8 @@ export function RemoteScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [host, setHost] = useState("");
   const [hostName, setHostName] = useState("");
+  const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
+  const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
   const [brightness, setBrightness] = useState(50);
@@ -79,7 +93,9 @@ export function RemoteScreen() {
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
   const [shortcutModalVisible, setShortcutModalVisible] = useState(false);
-  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
+    null,
+  );
   const [shortcutName, setShortcutName] = useState("");
   const [shortcutWebsite, setShortcutWebsite] = useState("");
   const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
@@ -108,7 +124,7 @@ export function RemoteScreen() {
         const nextHostName = sanitizeHostName(message.hostName);
 
         if (nextHostName) {
-          persistHostName(nextHostName);
+          persistHostName(nextHostName, hostRef.current);
         }
       }
     });
@@ -167,19 +183,39 @@ export function RemoteScreen() {
     Promise.all([
       AsyncStorage.getItem(HOST_STORAGE_KEY),
       AsyncStorage.getItem(HOST_NAME_STORAGE_KEY),
+      AsyncStorage.getItem(DEVICES_STORAGE_KEY),
     ])
-      .then(([savedHost, savedHostName]) => {
+      .then(([savedHost, savedHostName, savedDevicesRaw]) => {
         if (cancelled) {
           return;
         }
 
-        if (savedHostName) {
-          setHostName(savedHostName);
+        const devices = parseSavedDevices(savedDevicesRaw);
+        const legacyHost = savedHost?.trim();
+        const legacyName = sanitizeHostName(savedHostName);
+        const nextDevices =
+          legacyHost && !devices.some((device) => device.host === legacyHost)
+            ? upsertDevice(devices, {
+                id: getDeviceId(legacyHost),
+                name: legacyName ?? getDeviceNameFromHost(legacyHost),
+                host: legacyHost,
+                lastConnectedAt: Date.now(),
+              })
+            : devices;
+
+        setSavedDevices(nextDevices);
+
+        if (legacyHost && nextDevices.length !== devices.length) {
+          persistSavedDevices(nextDevices);
         }
 
-        if (savedHost) {
-          setHost(savedHost);
-          socket.connect(savedHost);
+        if (legacyHost) {
+          const device = nextDevices.find((item) => item.host === legacyHost);
+
+          hostRef.current = legacyHost;
+          setHost(legacyHost);
+          setHostName(device?.name ?? legacyName ?? "");
+          socket.connect(legacyHost);
         }
       })
       .catch(() => {
@@ -288,11 +324,18 @@ export function RemoteScreen() {
     clearKeyboardInput();
   }
 
-  function persistHostName(nextHostName: string) {
+  function persistHostName(nextHostName: string, deviceHost = host) {
     setHostName(nextHostName);
     AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, nextHostName).catch(() => {
       // ignore storage errors
     });
+
+    if (deviceHost.trim()) {
+      persistDevice({
+        host: deviceHost,
+        name: nextHostName,
+      });
+    }
   }
 
   function connectToHost(nextHost: string, nextHostName?: string) {
@@ -304,14 +347,54 @@ export function RemoteScreen() {
     }
 
     Keyboard.dismiss();
+    setDeviceDropdownOpen(false);
+    hostRef.current = cleanHost;
     setHost(cleanHost);
-    if (nextHostName) {
-      persistHostName(nextHostName);
+    const matchingDevice = savedDevices.find(
+      (device) => device.host === cleanHost,
+    );
+    const displayName =
+      nextHostName ?? matchingDevice?.name ?? getDeviceNameFromHost(cleanHost);
+
+    if (displayName) {
+      setHostName(displayName);
+      AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, displayName).catch(() => {
+        // ignore storage errors
+      });
     }
     AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
       // ignore storage errors
     });
+    persistDevice({
+      host: cleanHost,
+      name: displayName,
+    });
     socket.connect(cleanHost);
+  }
+
+  function persistDevice(input: { host: string; name?: string }) {
+    const cleanHost = input.host.trim();
+
+    if (!cleanHost) {
+      return;
+    }
+
+    const nextDevice: SavedDevice = {
+      id: getDeviceId(cleanHost),
+      name: input.name?.trim() || getDeviceNameFromHost(cleanHost),
+      host: cleanHost,
+      lastConnectedAt: Date.now(),
+    };
+
+    setSavedDevices((currentDevices) => {
+      const nextDevices = upsertDevice(currentDevices, nextDevice);
+      persistSavedDevices(nextDevices);
+      return nextDevices;
+    });
+  }
+
+  function selectSavedDevice(device: SavedDevice) {
+    connectToHost(device.host, device.name);
   }
 
   function sendShortcut(shortcut: ShortcutId) {
@@ -350,7 +433,9 @@ export function RemoteScreen() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      setShortcutFormError("Photo library permission is required to upload an icon.");
+      setShortcutFormError(
+        "Photo library permission is required to upload an icon.",
+      );
       return;
     }
 
@@ -549,6 +634,18 @@ export function RemoteScreen() {
     }
   }
 
+  function sendKeyboardShortcut(command: TextCommand) {
+    socket.sendTextCommand(command);
+
+    if (command === "clear") {
+      clearKeyboardTextArea();
+    }
+
+    requestAnimationFrame(() => {
+      keyboardInputRef.current?.focus();
+    });
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <Pressable
@@ -575,7 +672,7 @@ export function RemoteScreen() {
           bottom: 380,
           left: 18,
           right: 18,
-          zIndex: 998,
+          zIndex: 1000,
           display: keyboardOverlay ? "flex" : "none",
         }}
       >
@@ -585,6 +682,36 @@ export function RemoteScreen() {
             {typedText}
           </Text>
         </View>
+        <View style={styles.keyboardShortcutRow}>
+          <Pressable
+            style={styles.keyboardShortcutButton}
+            onPress={withHaptic(() => sendKeyboardShortcut("selectAll"))}
+          >
+            <Ionicons name="scan-outline" size={18} color="#ffffff" />
+            <Text style={styles.keyboardShortcutText}>Select All</Text>
+          </Pressable>
+          <Pressable
+            style={styles.keyboardShortcutButton}
+            onPress={withHaptic(() => sendKeyboardShortcut("copy"))}
+          >
+            <Ionicons name="copy-outline" size={18} color="#ffffff" />
+            <Text style={styles.keyboardShortcutText}>Copy</Text>
+          </Pressable>
+          <Pressable
+            style={styles.keyboardShortcutButton}
+            onPress={withHaptic(() => sendKeyboardShortcut("paste"))}
+          >
+            <Ionicons name="clipboard-outline" size={18} color="#ffffff" />
+            <Text style={styles.keyboardShortcutText}>Paste</Text>
+          </Pressable>
+          <Pressable
+            style={styles.keyboardShortcutButton}
+            onPress={withHaptic(() => sendKeyboardShortcut("clear"))}
+          >
+            <Ionicons name="backspace-outline" size={18} color="#ffffff" />
+            <Text style={styles.keyboardShortcutText}>Clear</Text>
+          </Pressable>
+        </View>
       </View>
 
       {showSettings ? (
@@ -592,14 +719,26 @@ export function RemoteScreen() {
           <View style={styles.sensitivityCard}>
             <Text style={styles.sensitivityLabel}>Connected Device</Text>
             <View style={styles.hostRow}>
-              <View style={styles.hostTextBlock}>
-                <Text style={styles.hostValue}>
-                  {hostName || host || "No device saved"}
-                </Text>
-                {hostName && host ? (
-                  <Text style={styles.hostMeta}>{host}</Text>
-                ) : null}
-              </View>
+              <Pressable
+                style={styles.deviceSelectButton}
+                onPress={withHaptic(() =>
+                  setDeviceDropdownOpen((open) => !open),
+                )}
+              >
+                <View style={styles.hostTextBlock}>
+                  <Text style={styles.hostValue}>
+                    {hostName || host || "No device saved"}
+                  </Text>
+                  {hostName && host ? (
+                    <Text style={styles.hostMeta}>{host}</Text>
+                  ) : null}
+                </View>
+                <Ionicons
+                  name={deviceDropdownOpen ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#ffffff"
+                />
+              </Pressable>
               <Pressable
                 style={[styles.connectButton]}
                 onPress={withHaptic(openScanner)}
@@ -608,6 +747,48 @@ export function RemoteScreen() {
                 <Text style={styles.connectText}>Scan</Text>
               </Pressable>
             </View>
+            {deviceDropdownOpen ? (
+              <View style={styles.deviceDropdown}>
+                {savedDevices.length > 0 ? (
+                  <ScrollView style={styles.deviceDropdownList}>
+                    {savedDevices.map((device) => {
+                      const selected = device.host === host;
+
+                      return (
+                        <Pressable
+                          key={device.id}
+                          style={[
+                            styles.deviceOption,
+                            selected && styles.deviceOptionSelected,
+                          ]}
+                          onPress={withHaptic(() => selectSavedDevice(device))}
+                        >
+                          <View style={styles.hostTextBlock}>
+                            <Text style={styles.deviceOptionName}>
+                              {device.name}
+                            </Text>
+                            <Text style={styles.deviceOptionHost}>
+                              {device.host}
+                            </Text>
+                          </View>
+                          {selected ? (
+                            <Ionicons
+                              name="checkmark"
+                              size={20}
+                              color="#74f0a7"
+                            />
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.emptyDeviceText}>
+                    Scan a desktop QR code to save it here.
+                  </Text>
+                )}
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.sensitivityCard}>
@@ -774,6 +955,23 @@ export function RemoteScreen() {
               onZoom={(direction) => socket.sendZoom(direction)}
               onSwipeSpaces={(direction) => socket.sendSwipeSpaces(direction)}
             />
+          </View>
+
+          <View style={styles.mouseButtonRow}>
+            <Pressable
+              style={styles.mouseButton}
+              onPress={withHaptic(() => socket.sendLeftClick())}
+            >
+              <Ionicons name="radio-button-off" size={22} color="#ffffff" />
+              <Text style={styles.mouseButtonText}>Left Click</Text>
+            </Pressable>
+            <Pressable
+              style={styles.mouseButton}
+              onPress={withHaptic(() => socket.sendRightClick())}
+            >
+              <Ionicons name="ellipsis-horizontal" size={24} color="#ffffff" />
+              <Text style={styles.mouseButtonText}>Right Click</Text>
+            </Pressable>
           </View>
 
           <View style={styles.keyboardWrap}>
@@ -979,6 +1177,93 @@ function sanitizeHostName(value: unknown): string | null {
   return cleanValue ? cleanValue.slice(0, 80) : null;
 }
 
+function parseSavedDevices(raw: string | null): SavedDevice[] {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((item): SavedDevice[] => {
+      if (
+        typeof item !== "object" ||
+        item === null ||
+        !("host" in item) ||
+        typeof item.host !== "string"
+      ) {
+        return [];
+      }
+
+      const host = item.host.trim();
+
+      if (!host) {
+        return [];
+      }
+
+      const name =
+        "name" in item && typeof item.name === "string"
+          ? item.name.trim().slice(0, 80)
+          : "";
+      const lastConnectedAt =
+        "lastConnectedAt" in item &&
+        typeof item.lastConnectedAt === "number" &&
+        Number.isFinite(item.lastConnectedAt)
+          ? item.lastConnectedAt
+          : 0;
+
+      return [
+        {
+          id: getDeviceId(host),
+          name: name || getDeviceNameFromHost(host),
+          host,
+          lastConnectedAt,
+        },
+      ];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function upsertDevice(
+  devices: SavedDevice[],
+  nextDevice: SavedDevice,
+): SavedDevice[] {
+  const withoutCurrent = devices.filter(
+    (device) => device.host !== nextDevice.host,
+  );
+
+  return [nextDevice, ...withoutCurrent]
+    .sort((left, right) => right.lastConnectedAt - left.lastConnectedAt)
+    .slice(0, 20);
+}
+
+function persistSavedDevices(devices: SavedDevice[]) {
+  AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(devices)).catch(
+    () => {
+      // ignore storage errors
+    },
+  );
+}
+
+function getDeviceId(host: string): string {
+  return host.trim().toLowerCase();
+}
+
+function getDeviceNameFromHost(host: string): string {
+  const cleanHost = host
+    .trim()
+    .replace(/^wss?:\/\//, "")
+    .replace(/\/$/, "");
+
+  return cleanHost || "Desktop";
+}
+
 function parseCustomShortcuts(raw: string): CustomShortcut[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -1061,6 +1346,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   shortcutsScroller: {
+    flexGrow: 0,
+    flexShrink: 0,
+    height: 70,
     width: "100%",
   },
   connectButton: {
@@ -1134,6 +1422,19 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  deviceSelectButton: {
+    alignItems: "center",
+    backgroundColor: "#0d1016",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
   hostValue: {
     color: "#ffffff",
     fontSize: 15,
@@ -1143,6 +1444,45 @@ const styles = StyleSheet.create({
     color: "#8e98a8",
     fontSize: 12,
     fontWeight: "700",
+  },
+  deviceDropdown: {
+    backgroundColor: "#0d1016",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  deviceDropdownList: {
+    maxHeight: 220,
+  },
+  deviceOption: {
+    alignItems: "center",
+    borderBottomColor: "#202632",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  deviceOptionSelected: {
+    backgroundColor: "#14231c",
+  },
+  deviceOptionName: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  deviceOptionHost: {
+    color: "#8e98a8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  emptyDeviceText: {
+    color: "#8e98a8",
+    fontSize: 13,
+    fontWeight: "700",
+    padding: 12,
   },
   slider: {
     flex: 1,
@@ -1168,10 +1508,55 @@ const styles = StyleSheet.create({
     minWidth: 48,
     textAlign: "center",
   },
+  keyboardShortcutRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  keyboardShortcutButton: {
+    alignItems: "center",
+    backgroundColor: "#242b36",
+    borderRadius: 8,
+    flex: 1,
+    gap: 4,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 4,
+  },
+  keyboardShortcutText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
   trackpadWrap: {
     flex: 1,
-    minHeight: "58%",
+    flexShrink: 1,
+    minHeight: 0,
     paddingHorizontal: 18,
+  },
+  mouseButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 52,
+    paddingHorizontal: 18,
+  },
+  mouseButton: {
+    alignItems: "center",
+    backgroundColor: "#191d25",
+    borderColor: "#2a303c",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    minHeight: 52,
+    paddingHorizontal: 12,
+  },
+  mouseButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
   },
   keyboardBg: {
     backgroundColor: "transparent",

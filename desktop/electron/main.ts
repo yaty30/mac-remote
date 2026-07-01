@@ -111,6 +111,9 @@ async function handleRemoteMessage(
     case "typeText":
       await keyboardController.typeText(message.text);
       break;
+    case "textCommand":
+      await keyboardController.textCommand(message.command);
+      break;
     case "pressKey":
       await keyboardController.pressKey(message.key);
       break;
