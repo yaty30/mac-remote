@@ -2,6 +2,7 @@ type ConnectionStatus = "starting" | "waiting" | "connected" | "disconnected" | 
 
 interface DesktopStatus {
   status: ConnectionStatus;
+  hostName?: string;
   port: number;
   addresses: string[];
   connectedClients: number;
@@ -18,6 +19,7 @@ interface RemoteDesktopApi {
 }
 
 const statusBadge = document.querySelector<HTMLDivElement>("#statusBadge");
+const deviceName = document.querySelector<HTMLHeadingElement>("#deviceName");
 const serverUrl = document.querySelector<HTMLElement>("#serverUrl");
 const clientCount = document.querySelector<HTMLElement>("#clientCount");
 const addressList = document.querySelector<HTMLDivElement>("#addressList");
@@ -30,6 +32,7 @@ const desktopApi = (window as Window & { remoteDesktop?: RemoteDesktopApi }).rem
 function renderStatus(status: DesktopStatus): void {
   if (
     !statusBadge ||
+    !deviceName ||
     !serverUrl ||
     !clientCount ||
     !addressList ||
@@ -49,6 +52,7 @@ function renderStatus(status: DesktopStatus): void {
     error: "Error"
   };
 
+  deviceName.textContent = status.hostName ?? "Ready for iPhone control";
   statusBadge.textContent = statusText[status.status];
   statusBadge.className = `status ${status.status}`;
   clientCount.textContent = String(status.connectedClients);

@@ -6,6 +6,7 @@ import { withHaptic } from "../utils/haptics";
 
 interface HeaderProps {
   status: ConnectionStatus;
+  title?: string;
   onScan: () => void;
   showSettings?: boolean;
   onToggleSettings?: () => void;
@@ -22,6 +23,7 @@ const statusLabels: Record<ConnectionStatus, string> = {
 
 export function Header({
   status,
+  title = "iMac Remote",
   onScan,
   showSettings = false,
   onToggleSettings,
@@ -34,7 +36,9 @@ export function Header({
     <View style={styles.container}>
       <View style={styles.topRow}>
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>iMac Remote</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+            {title}
+          </Text>
           <View style={styles.statusRow}>
             <View
               style={[

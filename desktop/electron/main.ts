@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
+import { execFileSync } from "node:child_process";
 import { createSocket } from "node:dgram";
+import { hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
 import { KeyboardController } from "../mouse-control/keyboardController";
@@ -16,11 +18,13 @@ const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
 const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
 const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
+const hostName = getDeviceName();
 
 let mainWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
+  hostName,
   port,
   addresses: [],
   connectedClients: 0,
@@ -59,6 +63,7 @@ async function getHostState(): Promise<HostMessage> {
 
   return {
     type: "hostState",
+    hostName,
     volume,
   };
 }
@@ -155,11 +160,13 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
   const expoUrl = await resolveExpoUrl(status.addresses);
   const payload = JSON.stringify({
     type: "remote-control",
+    name: hostName,
     url: pairingUrl,
   });
 
   return {
     ...status,
+    hostName,
     pairingUrl,
     expoUrl,
     pairingQrDataUrl: await QRCode.toDataURL(payload, {
@@ -277,6 +284,33 @@ function getAddressPriority(address: string): number {
   }
 
   return 1;
+}
+
+function getDeviceName(): string {
+  const override = process.env.REMOTE_DEVICE_NAME?.trim();
+
+  if (override) {
+    return override.slice(0, 80);
+  }
+
+  if (process.platform === "darwin") {
+    for (const key of ["ComputerName", "LocalHostName"]) {
+      try {
+        const value = execFileSync("scutil", ["--get", key], {
+          encoding: "utf8",
+          timeout: 500,
+        }).trim();
+
+        if (value) {
+          return value.slice(0, 80);
+        }
+      } catch {
+        // fall back to the system hostname below
+      }
+    }
+  }
+
+  return hostname().replace(/\.local$/i, "").slice(0, 80) || "Desktop";
 }
 
 app.whenReady().then(() => {

@@ -36,6 +36,7 @@ import PrimeIcon from "../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
+const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const BRIGHTNESS_STEP = 10;
@@ -46,6 +47,11 @@ interface CustomShortcut {
   name: string;
   url: string;
   iconUri?: string;
+}
+
+interface PairingPayload {
+  url: string;
+  hostName?: string;
 }
 
 export function RemoteScreen() {
@@ -60,6 +66,7 @@ export function RemoteScreen() {
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [host, setHost] = useState("");
+  const [hostName, setHostName] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
   const [brightness, setBrightness] = useState(50);
@@ -92,9 +99,17 @@ export function RemoteScreen() {
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
-      if (message.type === "hostState" && typeof message.volume === "number") {
-        const next = clampPercent(message.volume);
-        setVolume(next);
+      if (message.type === "hostState") {
+        if (typeof message.volume === "number") {
+          const next = clampPercent(message.volume);
+          setVolume(next);
+        }
+
+        const nextHostName = sanitizeHostName(message.hostName);
+
+        if (nextHostName) {
+          persistHostName(nextHostName);
+        }
       }
     });
 
@@ -149,13 +164,23 @@ export function RemoteScreen() {
   useEffect(() => {
     let cancelled = false;
 
-    AsyncStorage.getItem(HOST_STORAGE_KEY)
-      .then((saved) => {
-        if (cancelled || !saved) {
+    Promise.all([
+      AsyncStorage.getItem(HOST_STORAGE_KEY),
+      AsyncStorage.getItem(HOST_NAME_STORAGE_KEY),
+    ])
+      .then(([savedHost, savedHostName]) => {
+        if (cancelled) {
           return;
         }
-        setHost(saved);
-        socket.connect(saved);
+
+        if (savedHostName) {
+          setHostName(savedHostName);
+        }
+
+        if (savedHost) {
+          setHost(savedHost);
+          socket.connect(savedHost);
+        }
       })
       .catch(() => {
         // ignore storage errors
@@ -263,7 +288,14 @@ export function RemoteScreen() {
     clearKeyboardInput();
   }
 
-  function connectToHost(nextHost: string) {
+  function persistHostName(nextHostName: string) {
+    setHostName(nextHostName);
+    AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, nextHostName).catch(() => {
+      // ignore storage errors
+    });
+  }
+
+  function connectToHost(nextHost: string, nextHostName?: string) {
     const cleanHost = nextHost.trim();
 
     if (cleanHost.length === 0) {
@@ -273,6 +305,9 @@ export function RemoteScreen() {
 
     Keyboard.dismiss();
     setHost(cleanHost);
+    if (nextHostName) {
+      persistHostName(nextHostName);
+    }
     AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
       // ignore storage errors
     });
@@ -410,14 +445,14 @@ export function RemoteScreen() {
   }
 
   function connectFromScan(event: ScanningResult) {
-    const scannedHost = parsePairingPayload(event.data);
+    const pairing = parsePairingPayload(event.data);
 
-    if (!scannedHost) {
+    if (!pairing) {
       setStatus("error");
       return;
     }
 
-    connectToHost(scannedHost);
+    connectToHost(pairing.url, pairing.hostName);
   }
 
   function updateBrightness(nextValue: number) {
@@ -526,6 +561,7 @@ export function RemoteScreen() {
 
       <Header
         status={status}
+        title={hostName || "iMac Remote"}
         onScan={openScanner}
         showSettings={showSettings}
         onToggleSettings={() => setShowSettings((visible) => !visible)}
@@ -554,11 +590,16 @@ export function RemoteScreen() {
       {showSettings ? (
         <>
           <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Connected Host</Text>
+            <Text style={styles.sensitivityLabel}>Connected Device</Text>
             <View style={styles.hostRow}>
-              <Text style={styles.hostValue}>
-                {host.trim().length > 0 ? host : "No host saved"}
-              </Text>
+              <View style={styles.hostTextBlock}>
+                <Text style={styles.hostValue}>
+                  {hostName || host || "No device saved"}
+                </Text>
+                {hostName && host ? (
+                  <Text style={styles.hostMeta}>{host}</Text>
+                ) : null}
+              </View>
               <Pressable
                 style={[styles.connectButton]}
                 onPress={withHaptic(openScanner)}
@@ -893,11 +934,11 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function parsePairingPayload(raw: string): string | null {
+function parsePairingPayload(raw: string): PairingPayload | null {
   const text = raw.trim();
 
   if (text.startsWith("ws://") || text.startsWith("wss://")) {
-    return text;
+    return { url: text };
   }
 
   try {
@@ -911,13 +952,31 @@ function parsePairingPayload(raw: string): string | null {
       parsed.type === "remote-control" &&
       typeof parsed.url === "string"
     ) {
-      return parsed.url;
+      const hostName =
+        ("hostName" in parsed && sanitizeHostName(parsed.hostName)) ||
+        ("name" in parsed && sanitizeHostName(parsed.name)) ||
+        undefined;
+
+      return {
+        url: parsed.url,
+        hostName,
+      };
     }
   } catch {
     return null;
   }
 
   return null;
+}
+
+function sanitizeHostName(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const cleanValue = value.trim().replace(/\.local$/i, "");
+
+  return cleanValue ? cleanValue.slice(0, 80) : null;
 }
 
 function parseCustomShortcuts(raw: string): CustomShortcut[] {
@@ -1071,11 +1130,19 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "space-between",
   },
+  hostTextBlock: {
+    flex: 1,
+    gap: 4,
+  },
   hostValue: {
     color: "#ffffff",
-    flex: 1,
     fontSize: 15,
     fontWeight: "900",
+  },
+  hostMeta: {
+    color: "#8e98a8",
+    fontSize: 12,
+    fontWeight: "700",
   },
   slider: {
     flex: 1,

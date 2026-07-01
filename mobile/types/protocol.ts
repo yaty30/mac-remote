@@ -80,6 +80,7 @@ export interface SleepMessage {
 
 export interface HostStateMessage {
   type: "hostState";
+  hostName?: string;
   volume?: number;
 }
 
