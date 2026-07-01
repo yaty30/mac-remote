@@ -27,48 +27,56 @@ function runAppleScript(script: string): Promise<void> {
   });
 }
 
-async function openSafariTabOnce(url: string, urlNeedle: string): Promise<void> {
+async function openChromeTabOnce(url: string, urlNeedle: string): Promise<void> {
   if (process.platform !== "darwin") {
     await openMac(url);
     return;
   }
 
   const script = `
-tell application "Safari"
+tell application "Google Chrome"
   activate
-  repeat with safariWindow in windows
-    repeat with safariTab in tabs of safariWindow
-      if (URL of safariTab contains "${escapeAppleScriptString(urlNeedle)}") then
-        set current tab of safariWindow to safariTab
-        set index of safariWindow to 1
+  set targetUrl to "${escapeAppleScriptString(url)}"
+  set targetNeedle to "${escapeAppleScriptString(urlNeedle)}"
+  repeat with chromeWindow in windows
+    set tabIndex to 1
+    repeat with chromeTab in tabs of chromeWindow
+      if (URL of chromeTab contains targetNeedle) then
+        set active tab index of chromeWindow to tabIndex
+        set index of chromeWindow to 1
         return
       end if
+      set tabIndex to tabIndex + 1
     end repeat
   end repeat
-  open location "${escapeAppleScriptString(url)}"
+  open location targetUrl
 end tell
 `;
 
-  await runAppleScript(script);
+  try {
+    await runAppleScript(script);
+  } catch {
+    await openMac(url, ["-a", "Google Chrome"]);
+  }
 }
 
 export async function runWebsiteShortcut(url: string): Promise<void> {
-  await openSafariTabOnce(url, getUrlNeedle(url));
+  await openChromeTabOnce(url, getUrlNeedle(url));
 }
 
 export async function runShortcut(shortcut: ShortcutId): Promise<void> {
   switch (shortcut) {
     case "netflix":
-      await openSafariTabOnce("https://www.netflix.com", "netflix.com");
+      await openChromeTabOnce("https://www.netflix.com", "netflix.com");
       break;
     case "disney":
-      await openSafariTabOnce("https://www.disneyplus.com", "disneyplus.com");
+      await openChromeTabOnce("https://www.disneyplus.com", "disneyplus.com");
       break;
     case "amazon":
       await openMac("Prime Video", ["-a"]);
       break;
     case "youtube":
-      await openSafariTabOnce("https://www.youtube.com", "youtube.com");
+      await openChromeTabOnce("https://www.youtube.com", "youtube.com");
       break;
     case "spotify":
       await openMac("Spotify", ["-a"]);
