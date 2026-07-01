@@ -5,7 +5,7 @@
   "engines": {
     "node": ">=20.19.4"
   },
-  "main": "expo/AppEntry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start --host lan",
     "ios": "expo start --host lan --ios",
