@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -17,6 +18,7 @@ import {
   TapGestureHandler,
 } from "react-native-gesture-handler";
 import { useTrackpadGestures } from "../gestures/useTrackpadGestures";
+import { triggerButtonHaptic } from "../utils/haptics";
 
 interface TrackpadProps {
   onMove: (dx: number, dy: number) => void;
@@ -33,9 +35,23 @@ const SCROLL_DOT_SIZE = 50;
 const SCROLL_DOT_MIN_FRAME_DELTA = 1.2;
 const SCROLL_DOT_MAX_FRAME_DELTA = 26;
 const SCROLL_DOT_MAX_SPEED_DISTANCE = 140;
+const SCROLL_DOT_STORAGE_KEY = "remote-control:scroll-dot-position";
+const SCROLL_DOT_LONG_PRESS_MS = 900;
+const SCROLL_DOT_LONG_PRESS_CANCEL_DISTANCE = 36;
+const SCROLL_DOT_EDGE_PADDING = 8;
 const TRACKPAD_MARK_ICON_SIZE = 34;
 const TRACKPAD_MARK_LABEL_LINE_HEIGHT = 16;
 const TRACKPAD_TOUCH_MARK_ANIMATION_ENABLED = false;
+
+interface ScrollDotPosition {
+  left: number;
+  top: number;
+}
+
+interface ScrollDotSavedPosition {
+  xRatio: number;
+  yRatio: number;
+}
 
 export function Trackpad({
   onMove,
@@ -75,10 +91,20 @@ export function Trackpad({
   const scrollDotSpeed = useRef(0);
   const scrollDotVisualY = useRef(0);
   const scrollDotFrame = useRef<number | null>(null);
+  const scrollDotLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const scrollDotHomeRef = useRef<ScrollDotPosition | null>(null);
+  const scrollDotDragStart = useRef<ScrollDotPosition | null>(null);
+  const scrollDotSavedPosition = useRef<ScrollDotSavedPosition | null>(null);
+  const scrollDotPlacementMode = useRef(false);
   const trackpadLayout = useRef({ width: 0, height: 0 });
   const touchMarkX = useRef(new Animated.Value(0)).current;
   const touchMarkY = useRef(new Animated.Value(0)).current;
   const [scrollDotActive, setScrollDotActive] = useState(false);
+  const [scrollDotPlacing, setScrollDotPlacing] = useState(false);
+  const [scrollDotHome, setScrollDotHome] =
+    useState<ScrollDotPosition | null>(null);
 
   const resetTouchMark = useCallback(() => {
     if (!TRACKPAD_TOUCH_MARK_ANIMATION_ENABLED) {
@@ -128,16 +154,80 @@ export function Trackpad({
     [touchMarkX, touchMarkY],
   );
 
-  const handleTrackpadLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-
-    trackpadLayout.current = { width, height };
+  const applyScrollDotHome = useCallback((position: ScrollDotPosition) => {
+    scrollDotHomeRef.current = position;
+    setScrollDotHome(position);
   }, []);
+
+  const resolveScrollDotHome = useCallback(
+    (
+      width: number,
+      height: number,
+      savedPosition: ScrollDotSavedPosition | null,
+    ): ScrollDotPosition => {
+      if (savedPosition) {
+        return clampScrollDotPosition(
+          savedPosition.xRatio * width - SCROLL_DOT_SIZE / 2,
+          savedPosition.yRatio * height - SCROLL_DOT_SIZE / 2,
+          width,
+          height,
+        );
+      }
+
+      return clampScrollDotPosition(
+        10,
+        height / 2 - SCROLL_DOT_SIZE / 2,
+        width,
+        height,
+      );
+    },
+    [],
+  );
+
+  const saveScrollDotHome = useCallback((position: ScrollDotPosition) => {
+    const { width, height } = trackpadLayout.current;
+
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
+    const savedPosition = {
+      xRatio: clamp((position.left + SCROLL_DOT_SIZE / 2) / width, 0, 1),
+      yRatio: clamp((position.top + SCROLL_DOT_SIZE / 2) / height, 0, 1),
+    };
+
+    scrollDotSavedPosition.current = savedPosition;
+    AsyncStorage.setItem(
+      SCROLL_DOT_STORAGE_KEY,
+      JSON.stringify(savedPosition),
+    ).catch(() => {
+      // Ignore persistence failures; the dot still works for this session.
+    });
+  }, []);
+
+  const handleTrackpadLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+
+      trackpadLayout.current = { width, height };
+      applyScrollDotHome(
+        resolveScrollDotHome(width, height, scrollDotSavedPosition.current),
+      );
+    },
+    [applyScrollDotHome, resolveScrollDotHome],
+  );
 
   const stopScrollDotLoop = useCallback(() => {
     if (scrollDotFrame.current !== null) {
       cancelAnimationFrame(scrollDotFrame.current);
       scrollDotFrame.current = null;
+    }
+  }, []);
+
+  const clearScrollDotLongPressTimer = useCallback(() => {
+    if (scrollDotLongPressTimer.current !== null) {
+      clearTimeout(scrollDotLongPressTimer.current);
+      scrollDotLongPressTimer.current = null;
     }
   }, []);
 
@@ -165,6 +255,57 @@ export function Trackpad({
   }, [runScrollDotLoop]);
 
   useEffect(() => stopScrollDotLoop, [stopScrollDotLoop]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    AsyncStorage.getItem(SCROLL_DOT_STORAGE_KEY)
+      .then((value) => {
+        if (!mounted || !value) {
+          return;
+        }
+
+        const parsed = JSON.parse(value) as Partial<ScrollDotSavedPosition>;
+
+        if (
+          typeof parsed.xRatio !== "number" ||
+          typeof parsed.yRatio !== "number" ||
+          !Number.isFinite(parsed.xRatio) ||
+          !Number.isFinite(parsed.yRatio)
+        ) {
+          return;
+        }
+
+        const savedPosition = {
+          xRatio: clamp(parsed.xRatio, 0, 1),
+          yRatio: clamp(parsed.yRatio, 0, 1),
+        };
+        const { width, height } = trackpadLayout.current;
+
+        scrollDotSavedPosition.current = savedPosition;
+
+        if (width > 0 && height > 0) {
+          applyScrollDotHome(
+            resolveScrollDotHome(width, height, savedPosition),
+          );
+        }
+      })
+      .catch(() => {
+        // Keep the default position if saved data is unavailable.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [applyScrollDotHome, resolveScrollDotHome]);
+
+  useEffect(
+    () => () => {
+      clearScrollDotLongPressTimer();
+      stopScrollDotLoop();
+    },
+    [clearScrollDotLongPressTimer, stopScrollDotLoop],
+  );
 
   const animateScrollDotHome = useCallback(
     (onFinished?: () => void) => {
@@ -210,7 +351,36 @@ export function Trackpad({
 
   const handleScrollDotPan = useCallback(
     (event: PanGestureHandlerGestureEvent) => {
-      const { translationY } = event.nativeEvent;
+      const { translationX, translationY } = event.nativeEvent;
+
+      if (scrollDotPlacementMode.current) {
+        const { width, height } = trackpadLayout.current;
+        const start = scrollDotDragStart.current;
+
+        if (width > 0 && height > 0 && start) {
+          const nextPosition = clampScrollDotPosition(
+            start.left + translationX,
+            start.top + translationY,
+            width,
+            height,
+          );
+
+          applyScrollDotHome(nextPosition);
+        }
+
+        scrollDotSpeed.current = 0;
+        scrollDotVisualY.current = 0;
+        scrollDotY.setValue(0);
+        return;
+      }
+
+      if (
+        Math.hypot(translationX, translationY) >
+        SCROLL_DOT_LONG_PRESS_CANCEL_DISTANCE
+      ) {
+        clearScrollDotLongPressTimer();
+      }
+
       const clampedY = clamp(translationY, -SCROLL_DOT_RANGE, SCROLL_DOT_RANGE);
       const speed = clamp(translationY / SCROLL_DOT_MAX_SPEED_DISTANCE, -1, 1);
 
@@ -218,7 +388,7 @@ export function Trackpad({
       scrollDotVisualY.current = clampedY;
       scrollDotY.setValue(clampedY);
     },
-    [scrollDotY],
+    [applyScrollDotHome, clearScrollDotLongPressTimer, scrollDotY],
   );
 
   const handleScrollDotState = useCallback(
@@ -227,22 +397,58 @@ export function Trackpad({
 
       if (state === State.BEGAN) {
         resetTouchMark();
+        clearScrollDotLongPressTimer();
+        scrollDotPlacementMode.current = false;
+        scrollDotDragStart.current = scrollDotHomeRef.current;
         scrollDotSpeed.current = 0;
         scrollDotVisualY.current = 0;
         scrollDotY.stopAnimation();
         scrollDotY.setValue(0);
+        setScrollDotPlacing(false);
         setScrollDotActive(true);
         startScrollDotLoop();
+        scrollDotLongPressTimer.current = setTimeout(() => {
+          scrollDotPlacementMode.current = true;
+          scrollDotDragStart.current = scrollDotHomeRef.current;
+          scrollDotSpeed.current = 0;
+          scrollDotVisualY.current = 0;
+          scrollDotY.stopAnimation();
+          scrollDotY.setValue(0);
+          stopScrollDotLoop();
+          setScrollDotPlacing(true);
+          triggerButtonHaptic();
+        }, SCROLL_DOT_LONG_PRESS_MS);
         return;
       }
 
       if (
         state === State.END ||
         state === State.CANCELLED ||
-        state === State.FAILED
+        state === State.FAILED ||
+        event.nativeEvent.oldState === State.ACTIVE
       ) {
+        const wasPlacing = scrollDotPlacementMode.current;
+        const position = scrollDotHomeRef.current;
+
+        clearScrollDotLongPressTimer();
+        scrollDotPlacementMode.current = false;
+        scrollDotDragStart.current = null;
         scrollDotSpeed.current = 0;
+        scrollDotVisualY.current = 0;
+        scrollDotY.setValue(0);
+        setScrollDotPlacing(false);
         stopScrollDotLoop();
+
+        if (wasPlacing) {
+          setScrollDotActive(false);
+
+          if (position) {
+            saveScrollDotHome(position);
+          }
+
+          return;
+        }
+
         animateScrollDotHome(() => {
           scrollDotVisualY.current = 0;
           setScrollDotActive(false);
@@ -251,7 +457,9 @@ export function Trackpad({
     },
     [
       animateScrollDotHome,
+      clearScrollDotLongPressTimer,
       resetTouchMark,
+      saveScrollDotHome,
       scrollDotY,
       startScrollDotLoop,
       stopScrollDotLoop,
@@ -286,6 +494,21 @@ export function Trackpad({
     },
     [handleSinglePanState, moveTouchMark, resetTouchMark],
   );
+
+  const scrollDotPositionStyle = scrollDotHome
+    ? {
+        left: scrollDotHome.left,
+        marginTop: 0,
+        top: scrollDotHome.top,
+      }
+    : null;
+  const scrollDotRailPositionStyle = scrollDotHome
+    ? {
+        left: scrollDotHome.left + SCROLL_DOT_SIZE / 2 - 15,
+        marginTop: 0,
+        top: scrollDotHome.top + SCROLL_DOT_SIZE / 2 - 59,
+      }
+    : null;
 
   return (
     <TapGestureHandler
@@ -342,7 +565,10 @@ export function Trackpad({
                   onTouchCancel={resetTouchMark}
                   onTouchEnd={resetTouchMark}
                 >
-                  <View pointerEvents="none" style={styles.scrollDotRail}>
+                  <View
+                    pointerEvents="none"
+                    style={[styles.scrollDotRail, scrollDotRailPositionStyle]}
+                  >
                     <View style={styles.scrollDotRailLine} />
                     <View style={styles.scrollDotRailTick} />
                   </View>
@@ -359,7 +585,9 @@ export function Trackpad({
                     <Animated.View
                       style={[
                         styles.scrollDot,
+                        scrollDotPositionStyle,
                         scrollDotActive ? styles.scrollDotActive : null,
+                        scrollDotPlacing ? styles.scrollDotPlacing : null,
                         { transform: [{ translateY: scrollDotY }] },
                       ]}
                     >
@@ -367,6 +595,9 @@ export function Trackpad({
                         style={[
                           styles.scrollDotFace,
                           scrollDotActive ? styles.scrollDotFaceActive : null,
+                          scrollDotPlacing
+                            ? styles.scrollDotFacePlacing
+                            : null,
                         ]}
                       >
                         <Ionicons
@@ -482,6 +713,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#1e2a44",
     borderColor: "#9fb6ff",
   },
+  scrollDotPlacing: {
+    backgroundColor: "#243824",
+    borderColor: "#8ff0b2",
+    shadowOpacity: 0.44,
+  },
   scrollDotFace: {
     alignItems: "center",
     backgroundColor: "#111722",
@@ -495,6 +731,10 @@ const styles = StyleSheet.create({
   scrollDotFaceActive: {
     backgroundColor: "#50596d",
     borderColor: "#273157",
+  },
+  scrollDotFacePlacing: {
+    backgroundColor: "#1f3a2a",
+    borderColor: "#8ff0b2",
   },
   scrollDotGrip: {
     alignItems: "center",
@@ -565,4 +805,25 @@ const styles = StyleSheet.create({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function clampScrollDotPosition(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): ScrollDotPosition {
+  const maxLeft = Math.max(
+    SCROLL_DOT_EDGE_PADDING,
+    width - SCROLL_DOT_SIZE - SCROLL_DOT_EDGE_PADDING,
+  );
+  const maxTop = Math.max(
+    SCROLL_DOT_EDGE_PADDING,
+    height - SCROLL_DOT_SIZE - SCROLL_DOT_EDGE_PADDING,
+  );
+
+  return {
+    left: clamp(left, SCROLL_DOT_EDGE_PADDING, maxLeft),
+    top: clamp(top, SCROLL_DOT_EDGE_PADDING, maxTop),
+  };
 }
