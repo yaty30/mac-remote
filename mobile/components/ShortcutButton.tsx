@@ -6,6 +6,7 @@ import { withHaptic } from "../utils/haptics";
 
 interface ShortcutButtonProps {
   icon?: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
   imageUri?: string;
   initial?: string;
   SvgIcon?: ComponentType<SvgProps>;
@@ -16,6 +17,7 @@ interface ShortcutButtonProps {
 
 export function ShortcutButton({
   icon,
+  iconColor = "#ff0033",
   imageUri,
   initial,
   SvgIcon,
@@ -37,7 +39,7 @@ export function ShortcutButton({
       ) : initial ? (
         <Text style={styles.initialIcon}>{initial.slice(0, 1).toUpperCase()}</Text>
       ) : (
-        <Ionicons name={icon ?? "apps-outline"} size={32} color="#ff0033" />
+        <Ionicons name={icon ?? "apps-outline"} size={32} color={iconColor} />
       )}
     </Pressable>
   );

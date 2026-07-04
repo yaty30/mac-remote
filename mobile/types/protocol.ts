@@ -101,7 +101,7 @@ export interface TypeTextMessage {
   text: string;
 }
 
-export type TextCommand = "selectAll" | "copy" | "paste" | "clear";
+export type TextCommand = "selectAll" | "copy" | "paste" | "clear" | "reload";
 
 export interface TextCommandMessage {
   type: "textCommand";

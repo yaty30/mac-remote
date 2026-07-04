@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   type AppStateStatus,
+  Animated,
+  Easing,
   Image,
   Keyboard,
   Modal,
@@ -89,6 +91,7 @@ export function RemoteScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
+  const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
   const [typedText, setTypedText] = useState("");
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
@@ -100,6 +103,7 @@ export function RemoteScreen() {
   const [shortcutWebsite, setShortcutWebsite] = useState("");
   const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
   const [shortcutFormError, setShortcutFormError] = useState("");
+  const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const unsubscribe = socket.onStatus((nextStatus) => {
@@ -301,6 +305,31 @@ export function RemoteScreen() {
       clearKeyboardInput();
     }
   }, [keyboardVisible]);
+
+  useEffect(() => {
+    if (keyboardOverlay) {
+      setKeyboardUiMounted(true);
+      keyboardPanelAnim.setValue(0);
+      Animated.timing(keyboardPanelAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
+    Animated.timing(keyboardPanelAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setKeyboardUiMounted(false);
+      }
+    });
+  }, [keyboardOverlay, keyboardPanelAnim]);
 
   function clearKeyboardInput() {
     keyboardInputRef.current?.setNativeProps({ text: "" });
@@ -646,15 +675,39 @@ export function RemoteScreen() {
     });
   }
 
+  const keyboardPanelAnimatedStyle = {
+    opacity: keyboardPanelAnim,
+    transform: [
+      {
+        translateY: keyboardPanelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [22, 0],
+        }),
+      },
+      {
+        scale: keyboardPanelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.98, 1],
+        }),
+      },
+    ],
+  };
+  const keyboardBackdropAnimatedStyle = {
+    opacity: keyboardPanelAnim,
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
-      <Pressable
-        style={{
-          ...styles.keyboardBg,
-          display: keyboardOverlay ? "flex" : "none",
-        }}
-        onPress={dismissKeyboardInput}
-      />
+      {keyboardUiMounted ? (
+        <Animated.View
+          style={[styles.keyboardBg, keyboardBackdropAnimatedStyle]}
+        >
+          <Pressable
+            style={styles.keyboardBgPressable}
+            onPress={dismissKeyboardInput}
+          />
+        </Animated.View>
+      ) : null}
 
       <Header
         status={status}
@@ -665,23 +718,42 @@ export function RemoteScreen() {
         onSleep={sendSleep}
       />
 
-      <View
-        style={{
-          ...styles.sensitivityCard,
-          position: "absolute",
-          bottom: 380,
-          left: 18,
-          right: 18,
-          zIndex: 1000,
-          display: keyboardOverlay ? "flex" : "none",
-        }}
+      <Animated.View
+        style={[
+          styles.keyboardPanel,
+          keyboardUiMounted ? null : styles.keyboardPanelHidden,
+          keyboardPanelAnimatedStyle,
+        ]}
+        pointerEvents={keyboardUiMounted ? "auto" : "none"}
       >
-        <Text style={styles.sensitivityLabel}>Input</Text>
-        <View style={{ ...styles.sliderRow, minHeight: 38, height: "auto" }}>
-          <Text style={{ ...styles.sensitivityValue, textAlign: "left" }}>
-            {typedText}
-          </Text>
+        <View style={styles.keyboardPanelHeader}>
+          <View style={styles.keyboardPanelTitleRow}>
+            <View style={styles.keyboardPanelIcon}>
+              <Ionicons name="keypad-outline" size={18} color="#ffffff" />
+            </View>
+            <Text style={styles.keyboardPanelTitle}>Keyboard</Text>
+          </View>
+          <Pressable
+            style={styles.keyboardPanelClose}
+            onPress={withHaptic(dismissKeyboardInput)}
+          >
+            <Ionicons name="close" size={20} color="#ec3434" />
+          </Pressable>
         </View>
+
+        <View style={styles.keyboardPreview}>
+          <Text
+            numberOfLines={5}
+            style={[
+              styles.keyboardPreviewText,
+              typedText ? null : styles.keyboardPreviewTextEmpty,
+            ]}
+          >
+            {typedText || " "}
+          </Text>
+          <View style={styles.keyboardPreviewCursor} />
+        </View>
+
         <View style={styles.keyboardShortcutRow}>
           <Pressable
             style={styles.keyboardShortcutButton}
@@ -712,7 +784,7 @@ export function RemoteScreen() {
             <Text style={styles.keyboardShortcutText}>Clear</Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       {showSettings ? (
         <>
@@ -901,6 +973,12 @@ export function RemoteScreen() {
                 onLongPress={() => openEditShortcutModal(shortcut)}
               />
             ))}
+            <ShortcutButton
+              icon="add"
+              iconColor="#9fb6ff"
+              label="Add Shortcut"
+              onPress={openShortcutModal}
+            />
           </ScrollView>
 
           <View style={styles.shortcuts}>
@@ -960,10 +1038,23 @@ export function RemoteScreen() {
           <View style={styles.mouseButtonRow}>
             <Pressable
               style={styles.mouseButton}
-              onPress={withHaptic(() => socket.sendLeftClick())}
+              onPress={withHaptic(() => socket.sendTextCommand("reload"))}
             >
-              <Ionicons name="radio-button-off" size={22} color="#ffffff" />
-              <Text style={styles.mouseButtonText}>Left Click</Text>
+              <Ionicons name="refresh" size={22} color="#ffffff" />
+              <Text style={styles.mouseButtonText}>Reload</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.mouseButton, styles.keyboardMouseButton]}
+              onPress={withHaptic(
+                keyboardVisible ? dismissKeyboardInput : focusKeyboard,
+              )}
+            >
+              <Ionicons
+                name={keyboardVisible ? "chevron-down" : "keypad-outline"}
+                size={22}
+                color="#ffffff"
+              />
+              <Text style={styles.mouseButtonText}>Keyboard</Text>
             </Pressable>
             <Pressable
               style={styles.mouseButton}
@@ -974,36 +1065,20 @@ export function RemoteScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.keyboardWrap}>
-            <Pressable
-              style={styles.keyboardButton}
-              onPress={withHaptic(
-                keyboardVisible ? dismissKeyboardInput : focusKeyboard,
-              )}
-            >
-              <Ionicons
-                name={keyboardVisible ? "chevron-down" : "keypad-outline"}
-                size={22}
-                color="#ffffff"
-              />
-              <Text style={styles.keyboardButtonText}>Type on Mac</Text>
-            </Pressable>
-
-            <TextInput
-              key={keyboardInputKey}
-              ref={keyboardInputRef}
-              value={keyboardBuffer}
-              onChangeText={handleKeyboardTextChange}
-              onKeyPress={handleKeyboardKeyPress}
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              multiline
-              blurOnSubmit={false}
-              keyboardAppearance="dark"
-              style={styles.hiddenInput}
-            />
-          </View>
+          <TextInput
+            key={keyboardInputKey}
+            ref={keyboardInputRef}
+            value={keyboardBuffer}
+            onChangeText={handleKeyboardTextChange}
+            onKeyPress={handleKeyboardKeyPress}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            multiline
+            blurOnSubmit={false}
+            keyboardAppearance="dark"
+            style={styles.hiddenInput}
+          />
         </>
       )}
 
@@ -1508,16 +1583,97 @@ const styles = StyleSheet.create({
     minWidth: 48,
     textAlign: "center",
   },
+  keyboardPanel: {
+    backgroundColor: "rgba(17, 23, 34, 0.88)",
+    borderColor: "rgba(159, 182, 255, 0.22)",
+    borderRadius: 8,
+    borderWidth: 1,
+    bottom: 356,
+    gap: 14,
+    left: 18,
+    padding: 14,
+    position: "absolute",
+    right: 18,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    zIndex: 1000,
+  },
+  keyboardPanelHidden: {
+    opacity: 0,
+  },
+  keyboardPanelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  keyboardPanelTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  keyboardPanelIcon: {
+    alignItems: "center",
+    backgroundColor: "#2f6df6",
+    borderRadius: 8,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  keyboardPanelTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  keyboardPanelClose: {
+    alignItems: "center",
+    backgroundColor: "#3d2020",
+    borderRadius: 8,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  keyboardPreview: {
+    alignItems: "flex-start",
+    backgroundColor: "rgba(8, 12, 19, 0.74)",
+    borderColor: "rgba(159, 182, 255, 0.18)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 118,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  keyboardPreviewText: {
+    color: "#ffffff",
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 22,
+  },
+  keyboardPreviewTextEmpty: {
+    color: "#5f6b7d",
+  },
+  keyboardPreviewCursor: {
+    backgroundColor: "#9fb6ff",
+    borderRadius: 1,
+    height: 22,
+    marginLeft: 2,
+    width: 2,
+  },
   keyboardShortcutRow: {
     flexDirection: "row",
     gap: 8,
   },
   keyboardShortcutButton: {
     alignItems: "center",
-    backgroundColor: "#242b36",
+    backgroundColor: "#202938",
+    borderColor: "#2d384a",
     borderRadius: 8,
+    borderWidth: 1,
     flex: 1,
-    gap: 4,
+    gap: 5,
     justifyContent: "center",
     minHeight: 48,
     paddingHorizontal: 4,
@@ -1553,13 +1709,17 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 12,
   },
+  keyboardMouseButton: {
+    backgroundColor: "#2f6df6",
+    borderColor: "#6f8fff",
+  },
   mouseButtonText: {
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "900",
   },
   keyboardBg: {
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(7, 10, 15, 0.8)",
     position: "absolute",
     top: 0,
     bottom: 0,
@@ -1569,23 +1729,8 @@ const styles = StyleSheet.create({
     width: "100%",
     zIndex: 999,
   },
-  keyboardWrap: {
-    minHeight: 58,
-    paddingHorizontal: 18,
-  },
-  keyboardButton: {
-    alignItems: "center",
-    backgroundColor: "#2f6df6",
-    borderRadius: 8,
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "center",
-    minHeight: 56,
-  },
-  keyboardButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "900",
+  keyboardBgPressable: {
+    flex: 1,
   },
   hiddenInput: {
     height: 1,
@@ -1595,7 +1740,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
     flex: 1,
     justifyContent: "center",
     padding: 18,

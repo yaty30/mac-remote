@@ -242,7 +242,8 @@ function parseRemoteMessage(raw: string): RemoteMessage {
       data.command === "selectAll" ||
       data.command === "copy" ||
       data.command === "paste" ||
-      data.command === "clear"
+      data.command === "clear" ||
+      data.command === "reload"
     ) {
       return {
         type: "textCommand",

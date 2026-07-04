@@ -48,6 +48,7 @@ export class KeyboardController {
       selectAll: Key.A,
       copy: Key.C,
       paste: Key.V,
+      reload: Key.R,
     } as const;
     const target = keyMap[command];
 
