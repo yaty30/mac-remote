@@ -1041,7 +1041,7 @@ export function RemoteScreen() {
               onPress={withHaptic(() => socket.sendTextCommand("reload"))}
             >
               <Ionicons name="refresh" size={22} color="#ffffff" />
-              <Text style={styles.mouseButtonText}>Reload</Text>
+              <Text style={styles.mouseButtonText}>Refresh</Text>
             </Pressable>
             <Pressable
               style={[styles.mouseButton, styles.keyboardMouseButton]}
