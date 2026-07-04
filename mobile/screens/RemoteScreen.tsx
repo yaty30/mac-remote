@@ -31,6 +31,7 @@ import { ShortcutButton } from "../components/ShortcutButton";
 import { Trackpad } from "../components/Trackpad";
 import type {
   ConnectionStatus,
+  HostDisplayInfo,
   ShortcutId,
   TextCommand,
 } from "../types/protocol";
@@ -87,6 +88,7 @@ export function RemoteScreen() {
   const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
   const [brightness, setBrightness] = useState(50);
   const [volume, setVolume] = useState(50);
+  const [hostDisplay, setHostDisplay] = useState<HostDisplayInfo | null>(null);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -104,6 +106,7 @@ export function RemoteScreen() {
   const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
   const [shortcutFormError, setShortcutFormError] = useState("");
   const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
+  const settingsAnim = useRef(new Animated.Value(showSettings ? 1 : 0)).current;
 
   useEffect(() => {
     const unsubscribe = socket.onStatus((nextStatus) => {
@@ -120,6 +123,10 @@ export function RemoteScreen() {
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
       if (message.type === "hostState") {
+        if (message.display) {
+          setHostDisplay(message.display);
+        }
+
         if (typeof message.volume === "number") {
           const next = clampPercent(message.volume);
           setVolume(next);
@@ -330,6 +337,30 @@ export function RemoteScreen() {
       }
     });
   }, [keyboardOverlay, keyboardPanelAnim]);
+
+  useEffect(() => {
+    if (showSettings) {
+      Animated.timing(settingsAnim, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [settingsAnim, showSettings]);
+
+  function toggleSettings() {
+    setShowSettings((visible) => {
+      const nextVisible = !visible;
+
+      if (nextVisible) {
+        settingsAnim.stopAnimation();
+        settingsAnim.setValue(0);
+      }
+
+      return nextVisible;
+    });
+  }
 
   function clearKeyboardInput() {
     keyboardInputRef.current?.setNativeProps({ text: "" });
@@ -570,6 +601,10 @@ export function RemoteScreen() {
   }
 
   function updateBrightness(nextValue: number) {
+    if (hostDisplay?.brightnessAdjustable === false) {
+      return;
+    }
+
     const next = Math.round(nextValue / BRIGHTNESS_STEP) * BRIGHTNESS_STEP;
     const previous = brightnessRef.current;
     const steps = Math.round((next - previous) / BRIGHTNESS_STEP);
@@ -586,6 +621,10 @@ export function RemoteScreen() {
   }
 
   function updateVolume(nextValue: number) {
+    if (hostDisplay?.volumeAdjustable === false) {
+      return;
+    }
+
     const next = clampPercent(nextValue);
     setVolume(next);
     socket.sendVolume(next);
@@ -695,6 +734,25 @@ export function RemoteScreen() {
   const keyboardBackdropAnimatedStyle = {
     opacity: keyboardPanelAnim,
   };
+  const settingsAnimatedStyle = {
+    opacity: settingsAnim,
+    transform: [
+      {
+        translateY: settingsAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  };
+  const brightnessAdjustable = hostDisplay?.brightnessAdjustable !== false;
+  const volumeAdjustable = hostDisplay?.volumeAdjustable !== false;
+  const monitorName = hostDisplay?.name ?? "Unknown monitor";
+  const monitorMeta = hostDisplay
+    ? hostDisplay.isTv
+      ? "TV detected"
+      : "Display detected"
+    : "Connect to host for display details";
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -714,7 +772,7 @@ export function RemoteScreen() {
         title={hostName || "iMac Remote"}
         onScan={openScanner}
         showSettings={showSettings}
-        onToggleSettings={() => setShowSettings((visible) => !visible)}
+        onToggleSettings={toggleSettings}
         onSleep={sendSleep}
       />
 
@@ -787,9 +845,28 @@ export function RemoteScreen() {
       </Animated.View>
 
       {showSettings ? (
-        <>
+        <Animated.ScrollView
+          showsVerticalScrollIndicator={false}
+          style={[styles.settingsScroll, settingsAnimatedStyle]}
+          contentContainerStyle={styles.settingsContent}
+        >
           <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Connected Device</Text>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="desktop-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Connected Device</Text>
+              </View>
+              <Text
+                style={[
+                  styles.settingsStatusText,
+                  status !== "connected" ? styles.settingsStatusOffline : null,
+                ]}
+              >
+                {status === "connected" ? "Online" : "Offline"}
+              </Text>
+            </View>
             <View style={styles.hostRow}>
               <Pressable
                 style={styles.deviceSelectButton}
@@ -864,7 +941,43 @@ export function RemoteScreen() {
           </View>
 
           <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Sensitivity</Text>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="tv-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Current Monitor</Text>
+              </View>
+            </View>
+            <View style={styles.monitorRow}>
+              <View
+                style={[
+                  styles.monitorIcon,
+                  hostDisplay?.isTv ? styles.monitorIconTv : null,
+                ]}
+              >
+                <Ionicons
+                  name={hostDisplay?.isTv ? "tv-outline" : "desktop-outline"}
+                  size={22}
+                  color="#ffffff"
+                />
+              </View>
+              <View style={styles.hostTextBlock}>
+                <Text style={styles.hostValue}>{monitorName}</Text>
+                <Text style={styles.hostMeta}>{monitorMeta}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.sensitivityCard}>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="speedometer-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Sensitivity</Text>
+              </View>
+            </View>
             <View style={styles.sliderRow}>
               <Slider
                 style={styles.slider}
@@ -884,52 +997,83 @@ export function RemoteScreen() {
           </View>
 
           <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Brightness</Text>
+            <View style={styles.settingHeaderRow}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="sunny-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Brightness</Text>
+              </View>
+              {!brightnessAdjustable ? (
+                <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
+              ) : null}
+            </View>
             <View style={styles.sliderRow}>
               <Slider
-                style={styles.slider}
+                disabled={!brightnessAdjustable}
+                style={[
+                  styles.slider,
+                  !brightnessAdjustable ? styles.disabledControl : null,
+                ]}
                 minimumValue={0}
                 maximumValue={100}
                 step={1}
                 value={brightness}
                 minimumTrackTintColor="#f8df8c"
                 maximumTrackTintColor="#303746"
-                thumbTintColor="#ffffff"
+                thumbTintColor={brightnessAdjustable ? "#ffffff" : "#697180"}
                 onValueChange={updateBrightness}
               />
-              <Text style={styles.sensitivityValue}>{brightness}%</Text>
+              <Text
+                style={[
+                  styles.sensitivityValue,
+                  !brightnessAdjustable ? styles.disabledText : null,
+                ]}
+              >
+                {brightness}%
+              </Text>
             </View>
           </View>
 
           <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Volume</Text>
+            <View style={styles.settingHeaderRow}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="volume-high-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Volume</Text>
+              </View>
+              {!volumeAdjustable ? (
+                <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
+              ) : null}
+            </View>
             <View style={styles.sliderRow}>
               <Slider
-                style={styles.slider}
+                disabled={!volumeAdjustable}
+                style={[
+                  styles.slider,
+                  !volumeAdjustable ? styles.disabledControl : null,
+                ]}
                 minimumValue={0}
                 maximumValue={100}
                 step={1}
                 value={volume}
                 minimumTrackTintColor="#8ff0b2"
                 maximumTrackTintColor="#303746"
-                thumbTintColor="#ffffff"
+                thumbTintColor={volumeAdjustable ? "#ffffff" : "#697180"}
                 onValueChange={updateVolume}
               />
-              <Text style={styles.sensitivityValue}>{volume}%</Text>
+              <Text
+                style={[
+                  styles.sensitivityValue,
+                  !volumeAdjustable ? styles.disabledText : null,
+                ]}
+              >
+                {volume}%
+              </Text>
             </View>
           </View>
-
-          <View style={styles.sensitivityCard}>
-            <Text style={styles.sensitivityLabel}>Shortcuts</Text>
-            <Pressable
-              style={styles.addShortcutButton}
-              onPress={withHaptic(openShortcutModal)}
-            >
-              <Ionicons name="add" size={22} color="#ffffff" />
-              <Text style={styles.addShortcutText}>Add Shortcut</Text>
-            </Pressable>
-          </View>
-        </>
+        </Animated.ScrollView>
       ) : (
         <>
           <ScrollView
@@ -982,35 +1126,69 @@ export function RemoteScreen() {
           </ScrollView>
 
           <View style={styles.shortcuts}>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
-            >
-              <Ionicons name="arrow-back" size={24} color="#ffffff" />
-            </Pressable>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
-            >
-              <Ionicons name="arrow-forward" size={24} color="#ffffff" />
-            </Pressable>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              onPress={withHaptic(() => socket.sendKey("leftArrow"))}
-            >
-              <Ionicons
-                name="play-forward"
-                size={24}
-                color="#ffffff"
-                style={{ transform: [{ rotate: "-180deg" }] }}
-              />
-            </Pressable>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              onPress={withHaptic(() => socket.sendKey("rightArrow"))}
-            >
-              <Ionicons name="play-forward" size={24} color="#ffffff" />
-            </Pressable>
+            <View style={styles.shortcutGroup}>
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Previous desktop"
+                onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
+              >
+                <Ionicons
+                  name="chevron-back-circle-outline"
+                  size={25}
+                  color="#ffffff"
+                />
+              </Pressable>
+              <View style={styles.shortcutDivider} />
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Next desktop"
+                onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
+              >
+                <Ionicons
+                  name="chevron-forward-circle-outline"
+                  size={25}
+                  color="#ffffff"
+                />
+              </Pressable>
+            </View>
+
+            <View style={styles.shortcutGroup}>
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Previous browser page"
+                onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
+              >
+                <Ionicons name="arrow-undo-outline" size={24} color="#ffffff" />
+              </Pressable>
+              <View style={styles.shortcutDivider} />
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Next browser page"
+                onPress={withHaptic(() =>
+                  socket.sendTextCommand("browserForward"),
+                )}
+              >
+                <Ionicons name="arrow-redo-outline" size={24} color="#ffffff" />
+              </Pressable>
+            </View>
+
+            <View style={styles.shortcutGroup}>
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Left arrow key"
+                onPress={withHaptic(() => socket.sendKey("leftArrow"))}
+              >
+                <Ionicons name="play-back" size={24} color="#ffffff" />
+              </Pressable>
+              <View style={styles.shortcutDivider} />
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Right arrow key"
+                onPress={withHaptic(() => socket.sendKey("rightArrow"))}
+              >
+                <Ionicons name="play-forward" size={24} color="#ffffff" />
+              </Pressable>
+            </View>
           </View>
 
           <View
@@ -1417,8 +1595,24 @@ const styles = StyleSheet.create({
   },
   shortcuts: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 18,
+  },
+  shortcutGroup: {
+    alignItems: "center",
+    backgroundColor: "#151a23",
+    borderColor: "#2a303c",
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    minHeight: 56,
+    overflow: "hidden",
+  },
+  shortcutDivider: {
+    backgroundColor: "#2a303c",
+    height: 26,
+    width: 1,
   },
   shortcutsScroller: {
     flexGrow: 0,
@@ -1440,35 +1634,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
-  addShortcutButton: {
-    alignItems: "center",
-    backgroundColor: "#2f6df6",
-    borderRadius: 8,
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "center",
-    minHeight: 52,
-  },
-  addShortcutText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "900",
-  },
   desktopSwitchButton: {
     alignItems: "center",
-    backgroundColor: "#191d25",
-    borderColor: "#2a303c",
-    borderRadius: 8,
-    borderWidth: 1,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
-    minHeight: 56,
-    paddingHorizontal: 8,
+    minHeight: 54,
+  },
+  settingsScroll: {
+    flex: 1,
+  },
+  settingsContent: {
+    gap: 12,
+    paddingBottom: 18,
   },
   sensitivityCard: {
     alignItems: "stretch",
-    backgroundColor: "#151922",
-    borderColor: "#252c37",
+    backgroundColor: "#131923",
+    borderColor: "#273143",
     borderRadius: 8,
     borderWidth: 1,
     gap: 12,
@@ -1477,9 +1660,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
+  settingsCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  settingsCardTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: 10,
+  },
+  settingsCardIcon: {
+    alignItems: "center",
+    backgroundColor: "#202938",
+    borderColor: "#303b4e",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  settingsStatusText: {
+    color: "#8ff0b2",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  settingsStatusOffline: {
+    color: "#9aa5b6",
+  },
   sensitivityLabel: {
     color: "#c8d0dd",
     fontSize: 14,
+    fontWeight: "800",
+  },
+  settingHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  settingUnavailable: {
+    color: "#9aa5b6",
+    fontSize: 12,
     fontWeight: "800",
   },
   sliderRow: {
@@ -1519,6 +1741,26 @@ const styles = StyleSheet.create({
     color: "#8e98a8",
     fontSize: 12,
     fontWeight: "700",
+  },
+  monitorRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 48,
+  },
+  monitorIcon: {
+    alignItems: "center",
+    backgroundColor: "#242b36",
+    borderColor: "#303746",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  monitorIconTv: {
+    backgroundColor: "#27301f",
+    borderColor: "#50643a",
   },
   deviceDropdown: {
     backgroundColor: "#0d1016",
@@ -1582,6 +1824,12 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     minWidth: 48,
     textAlign: "center",
+  },
+  disabledControl: {
+    opacity: 0.45,
+  },
+  disabledText: {
+    color: "#697180",
   },
   keyboardPanel: {
     backgroundColor: "rgba(17, 23, 34, 0.88)",

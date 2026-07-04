@@ -31,6 +31,14 @@ export type RemoteMessage =
 
 export type HostMessage = HostStateMessage;
 
+export interface HostDisplayInfo {
+  id: number;
+  name: string;
+  isTv: boolean;
+  brightnessAdjustable: boolean;
+  volumeAdjustable: boolean;
+}
+
 export interface MoveMouseMessage {
   type: "moveMouse";
   dx: number;
@@ -83,6 +91,7 @@ export interface HostStateMessage {
   type: "hostState";
   hostName?: string;
   volume?: number;
+  display?: HostDisplayInfo;
 }
 
 export interface ShortcutMessage {
@@ -101,7 +110,14 @@ export interface TypeTextMessage {
   text: string;
 }
 
-export type TextCommand = "selectAll" | "copy" | "paste" | "clear" | "reload";
+export type TextCommand =
+  | "selectAll"
+  | "copy"
+  | "paste"
+  | "clear"
+  | "reload"
+  | "browserBack"
+  | "browserForward";
 
 export interface TextCommandMessage {
   type: "textCommand";

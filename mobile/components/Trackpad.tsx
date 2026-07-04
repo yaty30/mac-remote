@@ -49,8 +49,6 @@ export function Trackpad({
   const {
     handleSinglePan,
     handleSinglePanState,
-    handleTwoPan,
-    handleTwoPanState,
     handlePinch,
     handlePinchState,
     handleThreePanState,
@@ -62,7 +60,6 @@ export function Trackpad({
     onClick,
     onDoubleClick,
     onRightClick,
-    onScroll,
     onZoom,
     onSwipeSpaces,
   });
@@ -71,7 +68,6 @@ export function Trackpad({
   const doubleTapRef = useRef(null);
   const twoTapRef = useRef(null);
   const singlePanRef = useRef(null);
-  const twoPanRef = useRef(null);
   const threePanRef = useRef(null);
   const pinchRef = useRef(null);
   const scrollDotPanRef = useRef(null);
@@ -325,118 +321,107 @@ export function Trackpad({
           >
             <PinchGestureHandler
               ref={pinchRef}
-              simultaneousHandlers={twoPanRef}
               onGestureEvent={handlePinch}
               onHandlerStateChange={handlePinchState}
             >
               <PanGestureHandler
-                ref={twoPanRef}
-                minPointers={2}
-                maxPointers={2}
+                ref={singlePanRef}
+                minPointers={1}
+                maxPointers={1}
                 minDist={1}
-                simultaneousHandlers={[pinchRef, twoTapRef]}
-                onGestureEvent={handleTwoPan}
-                onHandlerStateChange={handleTwoPanState}
+                waitFor={scrollDotPanRef}
+                shouldCancelWhenOutside={false}
+                onGestureEvent={handleTouchMarkSinglePan}
+                onHandlerStateChange={handleTouchMarkSinglePanState}
               >
-                <PanGestureHandler
-                  ref={singlePanRef}
-                  minPointers={1}
-                  maxPointers={1}
-                  minDist={1}
-                  waitFor={scrollDotPanRef}
-                  shouldCancelWhenOutside={false}
-                  onGestureEvent={handleTouchMarkSinglePan}
-                  onHandlerStateChange={handleTouchMarkSinglePanState}
+                <View
+                  style={styles.trackpad}
+                  onLayout={handleTrackpadLayout}
+                  onResponderRelease={resetTouchMark}
+                  onResponderTerminate={resetTouchMark}
+                  onTouchCancel={resetTouchMark}
+                  onTouchEnd={resetTouchMark}
                 >
-                  <View
-                    style={styles.trackpad}
-                    onLayout={handleTrackpadLayout}
-                    onResponderRelease={resetTouchMark}
-                    onResponderTerminate={resetTouchMark}
-                    onTouchCancel={resetTouchMark}
-                    onTouchEnd={resetTouchMark}
+                  <View pointerEvents="none" style={styles.scrollDotRail}>
+                    <View style={styles.scrollDotRailLine} />
+                    <View style={styles.scrollDotRailTick} />
+                  </View>
+                  <PanGestureHandler
+                    ref={scrollDotPanRef}
+                    minPointers={1}
+                    maxPointers={1}
+                    minDist={0}
+                    hitSlop={{ top: 18, right: 18, bottom: 18, left: 0 }}
+                    shouldCancelWhenOutside={false}
+                    onGestureEvent={handleScrollDotPan}
+                    onHandlerStateChange={handleScrollDotState}
                   >
-                    <View pointerEvents="none" style={styles.scrollDotRail}>
-                      <View style={styles.scrollDotRailLine} />
-                      <View style={styles.scrollDotRailTick} />
-                    </View>
-                    <PanGestureHandler
-                      ref={scrollDotPanRef}
-                      minPointers={1}
-                      maxPointers={1}
-                      minDist={0}
-                      hitSlop={{ top: 18, right: 18, bottom: 18, left: 0 }}
-                      shouldCancelWhenOutside={false}
-                      onGestureEvent={handleScrollDotPan}
-                      onHandlerStateChange={handleScrollDotState}
+                    <Animated.View
+                      style={[
+                        styles.scrollDot,
+                        scrollDotActive ? styles.scrollDotActive : null,
+                        { transform: [{ translateY: scrollDotY }] },
+                      ]}
                     >
-                      <Animated.View
+                      <View
                         style={[
-                          styles.scrollDot,
-                          scrollDotActive ? styles.scrollDotActive : null,
-                          { transform: [{ translateY: scrollDotY }] },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.scrollDotFace,
-                            scrollDotActive ? styles.scrollDotFaceActive : null,
-                          ]}
-                        >
-                          <Ionicons
-                            name="chevron-up"
-                            size={13}
-                            color={scrollDotActive ? "#ffffff" : "#aeb8c8"}
-                          />
-                          <View
-                            style={[
-                              styles.scrollDotGrip,
-                              scrollDotActive
-                                ? styles.scrollDotGripActive
-                                : null,
-                            ]}
-                          >
-                            <View style={styles.scrollDotGripLine} />
-                            <View style={styles.scrollDotGripLine} />
-                            <View style={styles.scrollDotGripLine} />
-                          </View>
-                          <Ionicons
-                            name="chevron-down"
-                            size={13}
-                            color={scrollDotActive ? "#ffffff" : "#aeb8c8"}
-                          />
-                        </View>
-                      </Animated.View>
-                    </PanGestureHandler>
-                    {/* {scrollDotActive ? (
-                      <View pointerEvents="none" style={styles.scrollCursor}>
-                        <Ionicons name="caret-up" size={15} color="#e9eef8" />
-                        <View style={styles.scrollCursorDot} />
-                        <Ionicons name="caret-down" size={15} color="#e9eef8" />
-                      </View>
-                    ) : null} */}
-                    <View style={styles.centerMark}>
-                      <Animated.View
-                        style={[
-                          styles.touchMark,
-                          {
-                            transform: [
-                              { translateX: touchMarkX },
-                              { translateY: touchMarkY },
-                            ],
-                          },
+                          styles.scrollDotFace,
+                          scrollDotActive ? styles.scrollDotFaceActive : null,
                         ]}
                       >
                         <Ionicons
-                          name="ellipse-outline"
-                          size={TRACKPAD_MARK_ICON_SIZE}
-                          color="#6f7a8c"
+                          name="chevron-up"
+                          size={13}
+                          color={scrollDotActive ? "#ffffff" : "#aeb8c8"}
                         />
-                      </Animated.View>
-                      <Text style={styles.label}>Trackpad</Text>
+                        <View
+                          style={[
+                            styles.scrollDotGrip,
+                            scrollDotActive
+                              ? styles.scrollDotGripActive
+                              : null,
+                          ]}
+                        >
+                          <View style={styles.scrollDotGripLine} />
+                          <View style={styles.scrollDotGripLine} />
+                          <View style={styles.scrollDotGripLine} />
+                        </View>
+                        <Ionicons
+                          name="chevron-down"
+                          size={13}
+                          color={scrollDotActive ? "#ffffff" : "#aeb8c8"}
+                        />
+                      </View>
+                    </Animated.View>
+                  </PanGestureHandler>
+                  {/* {scrollDotActive ? (
+                    <View pointerEvents="none" style={styles.scrollCursor}>
+                      <Ionicons name="caret-up" size={15} color="#e9eef8" />
+                      <View style={styles.scrollCursorDot} />
+                      <Ionicons name="caret-down" size={15} color="#e9eef8" />
                     </View>
+                  ) : null} */}
+                  <View style={styles.centerMark}>
+                    <Animated.View
+                      style={[
+                        styles.touchMark,
+                        {
+                          transform: [
+                            { translateX: touchMarkX },
+                            { translateY: touchMarkY },
+                          ],
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="ellipse-outline"
+                        size={TRACKPAD_MARK_ICON_SIZE}
+                        color="#6f7a8c"
+                      />
+                    </Animated.View>
+                    <Text style={styles.label}>Trackpad</Text>
                   </View>
-                </PanGestureHandler>
+                </View>
               </PanGestureHandler>
             </PinchGestureHandler>
           </PanGestureHandler>

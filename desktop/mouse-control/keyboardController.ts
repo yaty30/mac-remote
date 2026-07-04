@@ -41,6 +41,17 @@ export class KeyboardController {
       return;
     }
 
+    if (command === "browserBack" || command === "browserForward") {
+      const browserModifier = process.platform === "darwin"
+        ? Key.LeftCmd
+        : Key.LeftAlt;
+      const arrow = command === "browserBack" ? Key.Left : Key.Right;
+
+      await keyboard.pressKey(browserModifier, arrow);
+      await keyboard.releaseKey(browserModifier, arrow);
+      return;
+    }
+
     const commandKey = process.platform === "darwin"
       ? Key.LeftCmd
       : Key.LeftControl;

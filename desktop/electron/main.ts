@@ -1,4 +1,10 @@
-import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  screen as electronScreen,
+  systemPreferences,
+} from "electron";
 import { execFileSync } from "node:child_process";
 import { createSocket } from "node:dgram";
 import { hostname } from "node:os";
@@ -8,6 +14,7 @@ import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
 import type {
   DesktopStatus,
+  HostDisplayInfo,
   HostMessage,
   RemoteMessage,
 } from "../types/protocol";
@@ -65,6 +72,7 @@ async function getHostState(): Promise<HostMessage> {
     type: "hostState",
     hostName,
     volume,
+    display: getCurrentDisplayInfo(),
   };
 }
 
@@ -93,12 +101,29 @@ async function handleRemoteMessage(
     case "swipeSpaces":
       await keyboardController.switchSpace(message.direction);
       break;
-    case "adjustBrightness":
+    case "adjustBrightness": {
+      const display = getCurrentDisplayInfo();
+      if (!display.brightnessAdjustable) {
+        return { type: "hostState", hostName, display };
+      }
+
       await keyboardController.adjustBrightness(message.delta);
       break;
-    case "setVolume":
+    }
+    case "setVolume": {
+      const display = getCurrentDisplayInfo();
+      if (!display.volumeAdjustable) {
+        return await getHostState();
+      }
+
       await keyboardController.setVolume(message.value);
-      return { type: "hostState", volume: message.value };
+      return {
+        type: "hostState",
+        hostName,
+        volume: message.value,
+        display,
+      };
+    }
     case "sleep":
       await keyboardController.sleep();
       break;
@@ -314,6 +339,36 @@ function getDeviceName(): string {
   }
 
   return hostname().replace(/\.local$/i, "").slice(0, 80) || "Desktop";
+}
+
+function getCurrentDisplayInfo(): HostDisplayInfo {
+  const cursorPoint = electronScreen.getCursorScreenPoint();
+  const display = electronScreen.getDisplayNearestPoint(cursorPoint);
+  const name = getDisplayName(display);
+  const isTv = isTvDisplayName(name);
+
+  return {
+    id: display.id,
+    name,
+    isTv,
+    brightnessAdjustable: process.platform === "darwin" && !isTv,
+    volumeAdjustable: !isTv,
+  };
+}
+
+function getDisplayName(display: Electron.Display): string {
+  const label = display.label.trim();
+
+  if (label) {
+    return label.slice(0, 80);
+  }
+
+  const { width, height } = display.size;
+  return `${display.internal ? "Built-in" : "External"} Display ${width}x${height}`;
+}
+
+function isTvDisplayName(name: string): boolean {
+  return /\b(tv|television|oled|qled|bravia|roku)\b/i.test(name);
 }
 
 app.whenReady().then(() => {
