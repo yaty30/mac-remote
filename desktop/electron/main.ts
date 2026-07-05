@@ -1,8 +1,10 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   screen as electronScreen,
+  shell,
   systemPreferences,
 } from "electron";
 import { execFileSync } from "node:child_process";
@@ -32,6 +34,8 @@ let remoteServer: RemoteWebSocketServer | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
   hostName,
+  protocolVersion,
+  platform: process.platform,
   port,
   addresses: [],
   connectedClients: 0,
@@ -59,8 +63,23 @@ function requestAccessibilityPermission(): void {
   }
 }
 
+function getAccessibilityTrusted(): boolean | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  return systemPreferences.isTrustedAccessibilityClient(false);
+}
+
 async function getHostState(): Promise<HostMessage> {
+  let brightness: number | undefined;
   let volume: number | undefined;
+
+  try {
+    brightness = await keyboardController.getDisplayBrightness();
+  } catch (error) {
+    console.warn("[desktop] failed to read display brightness", error);
+  }
 
   try {
     volume = await keyboardController.getOutputVolume();
@@ -71,6 +90,7 @@ async function getHostState(): Promise<HostMessage> {
   return {
     type: "hostState",
     hostName,
+    brightness,
     volume,
     display: getCurrentDisplayInfo(),
   };
@@ -101,14 +121,16 @@ async function handleRemoteMessage(
     case "swipeSpaces":
       await keyboardController.switchSpace(message.direction);
       break;
+    case "requestHostState":
+      return await getHostState();
     case "adjustBrightness": {
       const display = getCurrentDisplayInfo();
       if (!display.brightnessAdjustable) {
-        return { type: "hostState", hostName, display };
+        return await getHostState();
       }
 
       await keyboardController.adjustBrightness(message.delta);
-      break;
+      return await getHostState();
     }
     case "setVolume": {
       const display = getCurrentDisplayInfo();
@@ -117,12 +139,7 @@ async function handleRemoteMessage(
       }
 
       await keyboardController.setVolume(message.value);
-      return {
-        type: "hostState",
-        hostName,
-        volume: message.value,
-        display,
-      };
+      return await getHostState();
     }
     case "sleep":
       await keyboardController.sleep();
@@ -151,11 +168,14 @@ async function handleRemoteMessage(
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 520,
-    height: 780,
-    resizable: false,
-    title: "Remote Control Desktop",
-    backgroundColor: "#0c0d10",
+    width: 1010,
+    height: 700,
+    minWidth: 720,
+    minHeight: 520,
+    resizable: true,
+    frame: false,
+    title: "Mac Remote",
+    backgroundColor: "#080808",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
@@ -173,8 +193,19 @@ function createWindow(): void {
 }
 
 async function publishStatus(status: DesktopStatus): Promise<void> {
-  latestStatus = await withPairingQr(status);
+  latestStatus = await withPairingQr(withDesktopContext(status));
   mainWindow?.webContents.send("status:update", latestStatus);
+}
+
+function withDesktopContext(status: DesktopStatus): DesktopStatus {
+  return {
+    ...status,
+    hostName,
+    protocolVersion,
+    platform: process.platform,
+    accessibilityTrusted: getAccessibilityTrusted(),
+    display: getCurrentDisplayInfo(),
+  };
 }
 
 async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
@@ -224,14 +255,17 @@ async function resolveExpoUrl(addresses: string[]): Promise<string> {
   }
 
   const explicitHost = process.env.REACT_NATIVE_PACKAGER_HOSTNAME?.trim();
-  const host = explicitHost || (await resolveLanAddress(addresses)) || "127.0.0.1";
+  const host =
+    explicitHost || (await resolveLanAddress(addresses)) || "127.0.0.1";
   const expoPort = await findExpoPort();
 
   return `exp://${host}:${expoPort}`;
 }
 
 async function resolveLanAddress(addresses: string[]): Promise<string | null> {
-  return (await getDefaultRouteAddress(addresses)) || chooseLanAddress(addresses);
+  return (
+    (await getDefaultRouteAddress(addresses)) || chooseLanAddress(addresses)
+  );
 }
 
 async function findExpoPort(): Promise<number> {
@@ -338,7 +372,11 @@ function getDeviceName(): string {
     }
   }
 
-  return hostname().replace(/\.local$/i, "").slice(0, 80) || "Desktop";
+  return (
+    hostname()
+      .replace(/\.local$/i, "")
+      .slice(0, 80) || "Desktop"
+  );
 }
 
 function getCurrentDisplayInfo(): HostDisplayInfo {
@@ -375,8 +413,57 @@ app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
   requestAccessibilityPermission();
   ipcMain.handle("status:get", () => latestStatus);
+  ipcMain.handle("clipboard:write", (_event, text: unknown) => {
+    if (typeof text !== "string") {
+      return false;
+    }
 
-  remoteServer = new RemoteWebSocketServer(port, handleRemoteMessage, getHostState);
+    clipboard.writeText(text.slice(0, 2048));
+    return true;
+  });
+  ipcMain.handle("settings:accessibility", () => {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+
+    shell.openExternal(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+    );
+    return true;
+  });
+  ipcMain.handle("window:control", (_event, action: unknown) => {
+    if (!mainWindow) {
+      return false;
+    }
+
+    if (action === "minimize") {
+      mainWindow.minimize();
+      return true;
+    }
+
+    if (action === "maximize") {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+
+      return true;
+    }
+
+    if (action === "close") {
+      mainWindow.close();
+      return true;
+    }
+
+    return false;
+  });
+
+  remoteServer = new RemoteWebSocketServer(
+    port,
+    handleRemoteMessage,
+    getHostState,
+  );
   publishStatus(remoteServer.getStatus()).catch((error) => {
     console.error("[desktop] failed to publish initial status", error);
   });

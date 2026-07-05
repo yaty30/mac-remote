@@ -8,6 +8,7 @@ export type RemoteMessage =
   | ScrollMessage
   | ZoomMessage
   | SwipeSpacesMessage
+  | RequestHostStateMessage
   | AdjustBrightnessMessage
   | SetVolumeMessage
   | SleepMessage
@@ -61,6 +62,10 @@ export interface SwipeSpacesMessage {
   direction: "left" | "right";
 }
 
+export interface RequestHostStateMessage {
+  type: "requestHostState";
+}
+
 export interface AdjustBrightnessMessage {
   type: "adjustBrightness";
   delta: -1 | 1;
@@ -78,6 +83,7 @@ export interface SleepMessage {
 export interface HostStateMessage {
   type: "hostState";
   hostName?: string;
+  brightness?: number;
   volume?: number;
   display?: HostDisplayInfo;
 }
@@ -127,6 +133,10 @@ export type ConnectionStatus =
 export interface DesktopStatus {
   status: ConnectionStatus;
   hostName?: string;
+  protocolVersion?: string;
+  platform?: string;
+  accessibilityTrusted?: boolean;
+  display?: HostDisplayInfo;
   port: number;
   addresses: string[];
   connectedClients: number;

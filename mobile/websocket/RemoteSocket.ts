@@ -114,6 +114,10 @@ export class RemoteSocket {
     this.send({ type: "swipeSpaces", direction });
   }
 
+  requestHostState(): void {
+    this.send({ type: "requestHostState" }, true);
+  }
+
   sendBrightness(delta: -1 | 1): void {
     this.send({ type: "adjustBrightness", delta }, true);
   }

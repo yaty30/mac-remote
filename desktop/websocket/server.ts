@@ -167,6 +167,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid swipeSpaces payload");
   }
 
+  if (data.type === "requestHostState") {
+    return { type: "requestHostState" };
+  }
+
   if (data.type === "adjustBrightness") {
     if (data.delta === -1 || data.delta === 1) {
       return { type: "adjustBrightness", delta: data.delta };

@@ -47,7 +47,8 @@ const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
 const DEVICES_STORAGE_KEY = "remote-control:devices";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
-const BRIGHTNESS_STEP = 10;
+const MEDIA_CONTROL_STEPS = 16;
+const HOST_STATE_POLL_MS = 1500;
 const DEFAULT_SENSITIVITY = 2.3;
 
 interface CustomShortcut {
@@ -75,7 +76,6 @@ export function RemoteScreen() {
   const keyboardActiveRef = useRef(false);
   const bufferRef = useRef("");
   const scannerOpenRef = useRef(false);
-  const brightnessRef = useRef(50);
   const hostRef = useRef("");
   const statusRef = useRef<ConnectionStatus>("idle");
 
@@ -86,8 +86,8 @@ export function RemoteScreen() {
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
-  const [brightness, setBrightness] = useState(50);
-  const [volume, setVolume] = useState(50);
+  const [brightness, setBrightness] = useState<number | null>(null);
+  const [volume, setVolume] = useState<number | null>(null);
   const [hostDisplay, setHostDisplay] = useState<HostDisplayInfo | null>(null);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -127,9 +127,12 @@ export function RemoteScreen() {
           setHostDisplay(message.display);
         }
 
+        if (typeof message.brightness === "number") {
+          setBrightness(clampPercent(message.brightness));
+        }
+
         if (typeof message.volume === "number") {
-          const next = clampPercent(message.volume);
-          setVolume(next);
+          setVolume(clampPercent(message.volume));
         }
 
         const nextHostName = sanitizeHostName(message.hostName);
@@ -148,9 +151,27 @@ export function RemoteScreen() {
   }, [host]);
 
   useEffect(() => {
+    if (status !== "connected") {
+      return;
+    }
+
+    socket.requestHostState();
+    const interval = setInterval(() => {
+      socket.requestHostState();
+    }, HOST_STATE_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, [socket, status]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
       (nextState: AppStateStatus) => {
+        if (nextState === "active" && statusRef.current === "connected") {
+          socket.requestHostState();
+          return;
+        }
+
         if (
           nextState === "active" &&
           hostRef.current.trim().length > 0 &&
@@ -410,6 +431,9 @@ export function RemoteScreen() {
     setDeviceDropdownOpen(false);
     hostRef.current = cleanHost;
     setHost(cleanHost);
+    setBrightness(null);
+    setVolume(null);
+    setHostDisplay(null);
     const matchingDevice = savedDevices.find(
       (device) => device.host === cleanHost,
     );
@@ -600,32 +624,33 @@ export function RemoteScreen() {
     connectToHost(pairing.url, pairing.hostName);
   }
 
-  function updateBrightness(nextValue: number) {
-    if (hostDisplay?.brightnessAdjustable === false) {
+  function adjustBrightnessStep(delta: -1 | 1) {
+    if (hostDisplay?.brightnessAdjustable !== true) {
       return;
     }
 
-    const next = Math.round(nextValue / BRIGHTNESS_STEP) * BRIGHTNESS_STEP;
-    const previous = brightnessRef.current;
-    const steps = Math.round((next - previous) / BRIGHTNESS_STEP);
+    const currentStep = percentToStep(brightness);
 
-    if (steps !== 0) {
-      const delta = steps > 0 ? 1 : -1;
-      for (let index = 0; index < Math.abs(steps); index += 1) {
-        socket.sendBrightness(delta);
-      }
+    socket.sendBrightness(delta);
+
+    if (currentStep !== null) {
+      setBrightness(stepToPercent(currentStep + delta));
     }
-
-    brightnessRef.current = next;
-    setBrightness(next);
   }
 
-  function updateVolume(nextValue: number) {
-    if (hostDisplay?.volumeAdjustable === false) {
+  function adjustVolumeStep(delta: -1 | 1) {
+    if (hostDisplay?.volumeAdjustable !== true) {
       return;
     }
 
-    const next = clampPercent(nextValue);
+    const currentStep = percentToStep(volume);
+
+    if (currentStep === null) {
+      socket.requestHostState();
+      return;
+    }
+
+    const next = stepToPercent(currentStep + delta);
     setVolume(next);
     socket.sendVolume(next);
   }
@@ -745,8 +770,10 @@ export function RemoteScreen() {
       },
     ],
   };
-  const brightnessAdjustable = hostDisplay?.brightnessAdjustable !== false;
-  const volumeAdjustable = hostDisplay?.volumeAdjustable !== false;
+  const brightnessAdjustable = hostDisplay?.brightnessAdjustable === true;
+  const volumeAdjustable = hostDisplay?.volumeAdjustable === true;
+  const brightnessStep = percentToStep(brightness);
+  const volumeStep = percentToStep(volume);
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
   const monitorMeta = hostDisplay
     ? hostDisplay.isTv
@@ -1004,34 +1031,74 @@ export function RemoteScreen() {
                 </View>
                 <Text style={styles.sensitivityLabel}>Brightness</Text>
               </View>
-              {!brightnessAdjustable ? (
+              {hostDisplay?.brightnessAdjustable === false ? (
                 <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
               ) : null}
             </View>
-            <View style={styles.sliderRow}>
-              <Slider
-                disabled={!brightnessAdjustable}
+            <View style={styles.mediaControlRow}>
+              <Pressable
+                disabled={!brightnessAdjustable || brightnessStep === 0}
                 style={[
-                  styles.slider,
-                  !brightnessAdjustable ? styles.disabledControl : null,
+                  styles.mediaStepButton,
+                  !brightnessAdjustable || brightnessStep === 0
+                    ? styles.disabledControl
+                    : null,
                 ]}
-                minimumValue={0}
-                maximumValue={100}
-                step={1}
-                value={brightness}
-                minimumTrackTintColor="#f8df8c"
-                maximumTrackTintColor="#303746"
-                thumbTintColor={brightnessAdjustable ? "#ffffff" : "#697180"}
-                onValueChange={updateBrightness}
-              />
-              <Text
-                style={[
-                  styles.sensitivityValue,
-                  !brightnessAdjustable ? styles.disabledText : null,
-                ]}
+                onPress={withHaptic(() => adjustBrightnessStep(-1))}
               >
-                {brightness}%
-              </Text>
+                <Ionicons name="remove" size={22} color="#ffffff" />
+              </Pressable>
+              <View style={styles.mediaLevelWrap}>
+                <View style={styles.mediaValueRow}>
+                  <Text
+                    style={[
+                      styles.mediaValueText,
+                      !brightnessAdjustable ? styles.disabledText : null,
+                    ]}
+                  >
+                    {formatPercent(brightness)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.mediaStepText,
+                      !brightnessAdjustable ? styles.disabledText : null,
+                    ]}
+                  >
+                    {formatStep(brightnessStep)}
+                  </Text>
+                </View>
+                <View style={styles.mediaTickRow}>
+                  {Array.from({ length: MEDIA_CONTROL_STEPS }).map(
+                    (_, index) => (
+                      <View
+                        key={`brightness-${index}`}
+                        style={[
+                          styles.mediaTick,
+                          brightnessStep !== null && index < brightnessStep
+                            ? styles.brightnessTickActive
+                            : null,
+                          !brightnessAdjustable ? styles.disabledControl : null,
+                        ]}
+                      />
+                    ),
+                  )}
+                </View>
+              </View>
+              <Pressable
+                disabled={
+                  !brightnessAdjustable ||
+                  brightnessStep === MEDIA_CONTROL_STEPS
+                }
+                style={[
+                  styles.mediaStepButton,
+                  !brightnessAdjustable || brightnessStep === MEDIA_CONTROL_STEPS
+                    ? styles.disabledControl
+                    : null,
+                ]}
+                onPress={withHaptic(() => adjustBrightnessStep(1))}
+              >
+                <Ionicons name="add" size={22} color="#ffffff" />
+              </Pressable>
             </View>
           </View>
 
@@ -1043,34 +1110,79 @@ export function RemoteScreen() {
                 </View>
                 <Text style={styles.sensitivityLabel}>Volume</Text>
               </View>
-              {!volumeAdjustable ? (
+              {hostDisplay?.volumeAdjustable === false ? (
                 <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
               ) : null}
             </View>
-            <View style={styles.sliderRow}>
-              <Slider
-                disabled={!volumeAdjustable}
+            <View style={styles.mediaControlRow}>
+              <Pressable
+                disabled={
+                  !volumeAdjustable || volumeStep === null || volumeStep === 0
+                }
                 style={[
-                  styles.slider,
-                  !volumeAdjustable ? styles.disabledControl : null,
+                  styles.mediaStepButton,
+                  !volumeAdjustable || volumeStep === null || volumeStep === 0
+                    ? styles.disabledControl
+                    : null,
                 ]}
-                minimumValue={0}
-                maximumValue={100}
-                step={1}
-                value={volume}
-                minimumTrackTintColor="#8ff0b2"
-                maximumTrackTintColor="#303746"
-                thumbTintColor={volumeAdjustable ? "#ffffff" : "#697180"}
-                onValueChange={updateVolume}
-              />
-              <Text
-                style={[
-                  styles.sensitivityValue,
-                  !volumeAdjustable ? styles.disabledText : null,
-                ]}
+                onPress={withHaptic(() => adjustVolumeStep(-1))}
               >
-                {volume}%
-              </Text>
+                <Ionicons name="remove" size={22} color="#ffffff" />
+              </Pressable>
+              <View style={styles.mediaLevelWrap}>
+                <View style={styles.mediaValueRow}>
+                  <Text
+                    style={[
+                      styles.mediaValueText,
+                      !volumeAdjustable ? styles.disabledText : null,
+                    ]}
+                  >
+                    {formatPercent(volume)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.mediaStepText,
+                      !volumeAdjustable ? styles.disabledText : null,
+                    ]}
+                  >
+                    {formatStep(volumeStep)}
+                  </Text>
+                </View>
+                <View style={styles.mediaTickRow}>
+                  {Array.from({ length: MEDIA_CONTROL_STEPS }).map(
+                    (_, index) => (
+                      <View
+                        key={`volume-${index}`}
+                        style={[
+                          styles.mediaTick,
+                          volumeStep !== null && index < volumeStep
+                            ? styles.volumeTickActive
+                            : null,
+                          !volumeAdjustable ? styles.disabledControl : null,
+                        ]}
+                      />
+                    ),
+                  )}
+                </View>
+              </View>
+              <Pressable
+                disabled={
+                  !volumeAdjustable ||
+                  volumeStep === null ||
+                  volumeStep === MEDIA_CONTROL_STEPS
+                }
+                style={[
+                  styles.mediaStepButton,
+                  !volumeAdjustable ||
+                  volumeStep === null ||
+                  volumeStep === MEDIA_CONTROL_STEPS
+                    ? styles.disabledControl
+                    : null,
+                ]}
+                onPress={withHaptic(() => adjustVolumeStep(1))}
+              >
+                <Ionicons name="add" size={22} color="#ffffff" />
+              </Pressable>
             </View>
           </View>
         </Animated.ScrollView>
@@ -1383,6 +1495,34 @@ function clampPercent(value: number): number {
   }
 
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function percentToStep(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      MEDIA_CONTROL_STEPS,
+      Math.round((value / 100) * MEDIA_CONTROL_STEPS),
+    ),
+  );
+}
+
+function stepToPercent(step: number): number {
+  const clampedStep = Math.max(0, Math.min(MEDIA_CONTROL_STEPS, step));
+
+  return Math.round((clampedStep / MEDIA_CONTROL_STEPS) * 100);
+}
+
+function formatPercent(value: number | null): string {
+  return value === null ? "--%" : `${value}%`;
+}
+
+function formatStep(step: number | null): string {
+  return step === null ? "--/16" : `${step}/16`;
 }
 
 function parsePairingPayload(raw: string): PairingPayload | null {
@@ -1708,6 +1848,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
+  },
+  mediaControlRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  mediaStepButton: {
+    alignItems: "center",
+    backgroundColor: "#242b36",
+    borderColor: "#303b4e",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  mediaLevelWrap: {
+    flex: 1,
+    gap: 8,
+    minWidth: 0,
+  },
+  mediaValueRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  mediaValueText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  mediaStepText: {
+    color: "#9aa5b6",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  mediaTickRow: {
+    flexDirection: "row",
+    gap: 3,
+    height: 18,
+  },
+  mediaTick: {
+    backgroundColor: "#303746",
+    borderRadius: 3,
+    flex: 1,
+  },
+  brightnessTickActive: {
+    backgroundColor: "#f8df8c",
+  },
+  volumeTickActive: {
+    backgroundColor: "#8ff0b2",
   },
   hostRow: {
     alignItems: "center",

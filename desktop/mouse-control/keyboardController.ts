@@ -97,6 +97,7 @@ export class KeyboardController {
     }
 
     await runAppleScriptKeyCode(delta > 0 ? "144" : "145");
+    await delay(80);
   }
 
   async setVolume(value: number): Promise<void> {
@@ -125,6 +126,22 @@ export class KeyboardController {
     }
 
     return Math.max(0, Math.min(100, volume));
+  }
+
+  async getDisplayBrightness(): Promise<number | undefined> {
+    if (process.platform !== "darwin") {
+      return undefined;
+    }
+
+    const output = await runExecutable("ioreg", [
+      "-r",
+      "-c",
+      "AppleBacklightDisplay",
+      "-d",
+      "4",
+    ]);
+
+    return parseBrightnessOutput(output);
   }
 
   async sleep(): Promise<void> {
@@ -179,5 +196,58 @@ function runExecutable(file: string, args: string[]): Promise<string> {
         resolve(stdout);
       },
     );
+  });
+}
+
+function parseBrightnessOutput(output: string): number | undefined {
+  const parameterMatch = output.match(/"brightness"\s*=\s*\{([^}]*)\}/s);
+
+  if (parameterMatch) {
+    const block = parameterMatch[1];
+    const value = parseRegistryNumber(
+      block.match(/"?value"?\s*=\s*(\d+)/)?.[1],
+    );
+    const max = parseRegistryNumber(block.match(/"?max"?\s*=\s*(\d+)/)?.[1]);
+
+    if (value !== undefined && max !== undefined && max > 0) {
+      return clampPercent((value / max) * 100);
+    }
+  }
+
+  const value = parseRegistryNumber(
+    output.match(/"brightness"\s*=\s*(\d+)/)?.[1],
+  );
+  const max = parseRegistryNumber(
+    output.match(/"max brightness"\s*=\s*(\d+)/)?.[1],
+  );
+
+  if (value !== undefined && max !== undefined && max > 0) {
+    return clampPercent((value / max) * 100);
+  }
+
+  return undefined;
+}
+
+function parseRegistryNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
 }

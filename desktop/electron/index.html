@@ -3,54 +3,253 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Remote Control Desktop</title>
+    <title>Mac Remote</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">iMac Remote</p>
-        <h1 id="deviceName">Ready for iPhone control</h1>
-        <div id="statusBadge" class="status waiting">Waiting</div>
-      </section>
-
-      <section class="panel">
-        <span class="label">Scan to connect</span>
-        <div class="qrGrid">
-          <div class="qrItem">
-            <span class="qrTitle">Expo app</span>
-            <div class="qrBox">
-              <img id="expoQrImage" class="qrImage hidden" alt="Expo app QR code" />
-            </div>
-            <strong id="expoQrUrl" class="qrUrl">Starting...</strong>
+    <div class="window">
+      <header class="titlebar">
+        <div class="brand">
+          <div class="brandIcon" aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M22 12a7.85 7.85 0 0 1-3.7 6.6l-4 2.7a3.9 3.9 0 0 1-4.5 0l-4-2.7A7.57 7.57 0 0 1 2 12a10 10 0 0 1 20 0"
+              ></path>
+              <path
+                d="M10.7 11.3c-1.4-1.3-3.3-1.7-4.2-.8s-.5 2.8.8 4.2c1.4 1.4 3.2 1.8 4.2.8.9-.9.5-2.8-.8-4.2"
+              ></path>
+              <path
+                d="M17.5 10.5c-.9-.9-2.8-.5-4.2.8-1.4 1.4-1.8 3.2-.8 4.2.9.9 2.8.5 4.2-.8 1.3-1.4 1.7-3.3.8-4.2"
+              ></path>
+            </svg>
           </div>
-          <div class="qrItem">
-            <span class="qrTitle">Connect</span>
-            <div class="qrBox">
-              <img id="qrImage" class="qrImage hidden" alt="Remote Control pairing QR code" />
+          <strong>Mac Remote</strong>
+        </div>
+
+        <div class="windowControls">
+          <button
+            id="minimizeWindow"
+            class="windowButton"
+            type="button"
+            aria-label="Minimize"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 12h12"></path>
+            </svg>
+          </button>
+          <button
+            id="maximizeWindow"
+            class="windowButton"
+            type="button"
+            aria-label="Maximize"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+            </svg>
+          </button>
+          <button
+            id="closeWindow"
+            class="windowButton close"
+            type="button"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10"></path>
+              <path d="M17 7L7 17"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="appShell">
+        <section class="hero">
+          <div class="heroText">
+            <span class="eyebrow">Remote Control</span>
+            <h1 id="deviceName">Desktop Host</h1>
+            <div class="heroMeta">
+              <span id="clientMeta">0 phones connected</span>
+              <span class="metaDot"></span>
+              <span id="displayMeta">Waiting for display</span>
             </div>
-            <strong id="qrUrl" class="qrUrl">Starting...</strong>
           </div>
-        </div>
-        <p class="hint">Open Expo Go, scan the Expo app QR, then scan the connect QR.</p>
-      </section>
 
-      <section class="panel">
-        <div class="row">
-          <span>WebSocket</span>
-          <strong id="serverUrl">Starting...</strong>
-        </div>
-        <div class="row">
-          <span>Clients</span>
-          <strong id="clientCount">0</strong>
-        </div>
-      </section>
+          <div class="heroActions">
+            <div class="themeSwitch" role="group" aria-label="Theme">
+              <button id="lightTheme" class="themeOption" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2"></path>
+                  <path d="M12 20v2"></path>
+                  <path d="M4.93 4.93l1.41 1.41"></path>
+                  <path d="M17.66 17.66l1.41 1.41"></path>
+                  <path d="M2 12h2"></path>
+                  <path d="M20 12h2"></path>
+                  <path d="M6.34 17.66l-1.41 1.41"></path>
+                  <path d="M19.07 4.93l-1.41 1.41"></path>
+                </svg>
+                Light
+              </button>
+              <button id="darkTheme" class="themeOption" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3a6 6 0 0 0 9 7 9 9 0 1 1-9-7"></path>
+                </svg>
+                Dark
+              </button>
+            </div>
 
-      <section class="panel">
-        <span class="label">Local IP addresses</span>
-        <div id="addressList" class="addresses"></div>
-      </section>
-    </main>
+            <div id="statusBadge" class="status waiting">
+              <span class="statusDot"></span>
+              <span id="statusText">Ready</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboardGrid">
+          <section class="panel pairPanel">
+            <div class="pairHeader">
+              <div class="phoneIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="7" y="2" width="10" height="20" rx="2"></rect>
+                  <path d="M11 18h2"></path>
+                </svg>
+              </div>
+              <div>
+                <h2>Connect your iPhone</h2>
+                <p>Open the mobile app and scan this QR code.</p>
+              </div>
+            </div>
+
+            <div class="qrWrap">
+              <div class="qrBox primaryQr">
+                <img
+                  id="qrImage"
+                  class="qrImage hidden"
+                  alt="Mac Remote pairing QR code"
+                />
+                <span id="qrFallback" class="qrFallback">Starting...</span>
+              </div>
+            </div>
+            <!-- 
+            <button id="copyPairingUrl" class="primaryButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93"
+                ></path>
+                <path
+                  d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"
+                ></path>
+              </svg>
+              Copy pairing link
+            </button> -->
+
+            <div id="detailsPanel" class="detailsPanel hidden">
+              <div class="detailRow">
+                <span>Pairing URL</span>
+                <strong id="pairingUrlText">Waiting for URL...</strong>
+              </div>
+              <div class="detailRow">
+                <span>Server URL</span>
+                <button id="copyServerUrl" class="copyInline" type="button">
+                  <strong id="serverUrl">Starting...</strong>
+                </button>
+              </div>
+              <div class="detailRow">
+                <span>Local addresses</span>
+                <div id="addressList" class="addresses"></div>
+              </div>
+              <div class="developerContent">
+                <div class="qrBox smallQr">
+                  <img
+                    id="expoQrImage"
+                    class="qrImage hidden"
+                    alt="Expo app QR code"
+                  />
+                  <span id="expoFallback" class="qrFallback">Starting...</span>
+                </div>
+                <div class="developerText">
+                  <span>Developer Expo URL</span>
+                  <button id="copyExpoUrl" class="copyInline" type="button">
+                    <strong id="expoQrUrl">Starting...</strong>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="steps">
+              <div class="step">
+                <span class="stepIndex">1</span>
+                <span>Keep this desktop app open</span>
+              </div>
+              <span class="stepArrow"></span>
+              <div class="step">
+                <span class="stepIndex">2</span>
+                <span>Open the mobile remote app</span>
+              </div>
+              <span class="stepArrow"></span>
+              <div class="step">
+                <span class="stepIndex">3</span>
+                <span>Scan the QR code</span>
+              </div>
+            </div>
+          </section>
+
+          <aside class="sideColumn">
+            <section class="panel connectionPanel">
+              <div class="panelTitle">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                  <path d="M12 20h.01"></path>
+                </svg>
+                <h2>Connection</h2>
+              </div>
+              <div id="healthList" class="healthList"></div>
+              <button
+                id="openAccessibility"
+                class="secondaryButton"
+                type="button"
+              >
+                <span>Open Accessibility settings</span>
+                <strong id="accessibilityActionText">macOS permission</strong>
+              </button>
+            </section>
+
+            <section class="panel devicesPanel">
+              <div class="panelTitle">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="2" width="10" height="20" rx="2"></rect>
+                  <path d="M11 18h2"></path>
+                </svg>
+                <h2>Devices</h2>
+              </div>
+              <div class="deviceIllustration" aria-hidden="true">
+                <svg viewBox="0 0 96 96">
+                  <rect x="32" y="16" width="30" height="58" rx="7"></rect>
+                  <path d="M42 66h10"></path>
+                  <circle cx="64" cy="70" r="6"></circle>
+                </svg>
+              </div>
+              <strong id="clientCount" class="deviceCount"
+                >0 phones connected</strong
+              >
+              <span id="networkMeta" class="deviceMeta"
+                >Pair an iPhone to get started.</span
+              >
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
     <script src="./renderer.js"></script>
   </body>
 </html>

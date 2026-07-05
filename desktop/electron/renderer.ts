@@ -1,8 +1,29 @@
-type ConnectionStatus = "starting" | "waiting" | "connected" | "disconnected" | "error";
+type ConnectionStatus =
+  | "starting"
+  | "waiting"
+  | "connected"
+  | "disconnected"
+  | "error";
+
+type Theme = "light" | "dark";
+type WindowAction = "minimize" | "maximize" | "close";
+type HealthState = "ready" | "warning" | "error";
+
+interface HostDisplayInfo {
+  id: number;
+  name: string;
+  isTv: boolean;
+  brightnessAdjustable: boolean;
+  volumeAdjustable: boolean;
+}
 
 interface DesktopStatus {
   status: ConnectionStatus;
   hostName?: string;
+  protocolVersion?: string;
+  platform?: string;
+  accessibilityTrusted?: boolean;
+  display?: HostDisplayInfo;
   port: number;
   addresses: string[];
   connectedClients: number;
@@ -15,77 +36,144 @@ interface DesktopStatus {
 
 interface RemoteDesktopApi {
   getStatus: () => Promise<DesktopStatus>;
+  copyText: (text: string) => Promise<boolean>;
+  openAccessibilitySettings: () => Promise<boolean>;
+  controlWindow: (action: WindowAction) => Promise<boolean>;
   onStatus: (callback: (status: DesktopStatus) => void) => () => void;
 }
 
-const statusBadge = document.querySelector<HTMLDivElement>("#statusBadge");
-const deviceName = document.querySelector<HTMLHeadingElement>("#deviceName");
-const serverUrl = document.querySelector<HTMLElement>("#serverUrl");
-const clientCount = document.querySelector<HTMLElement>("#clientCount");
-const addressList = document.querySelector<HTMLDivElement>("#addressList");
-const qrImage = document.querySelector<HTMLImageElement>("#qrImage");
-const qrUrl = document.querySelector<HTMLElement>("#qrUrl");
-const expoQrImage = document.querySelector<HTMLImageElement>("#expoQrImage");
-const expoQrUrl = document.querySelector<HTMLElement>("#expoQrUrl");
-const desktopApi = (window as Window & { remoteDesktop?: RemoteDesktopApi }).remoteDesktop;
+const THEME_STORAGE_KEY = "mac-remote:desktop-theme";
+
+const statusBadge = query<HTMLDivElement>("#statusBadge");
+const statusText = query<HTMLSpanElement>("#statusText");
+const deviceName = query<HTMLHeadingElement>("#deviceName");
+const clientCount = query<HTMLElement>("#clientCount");
+const clientMeta = query<HTMLElement>("#clientMeta");
+const networkMeta = query<HTMLElement>("#networkMeta");
+const displayMeta = query<HTMLElement>("#displayMeta");
+const addressList = query<HTMLDivElement>("#addressList");
+const healthList = query<HTMLDivElement>("#healthList");
+const qrImage = query<HTMLImageElement>("#qrImage");
+const qrFallback = query<HTMLElement>("#qrFallback");
+const pairingUrlText = query<HTMLElement>("#pairingUrlText");
+const serverUrl = query<HTMLElement>("#serverUrl");
+const expoQrImage = query<HTMLImageElement>("#expoQrImage");
+const expoFallback = query<HTMLElement>("#expoFallback");
+const expoQrUrl = query<HTMLElement>("#expoQrUrl");
+const copyPairingUrl = query<HTMLButtonElement>("#copyPairingUrl");
+const copyServerUrl = query<HTMLButtonElement>("#copyServerUrl");
+const copyExpoUrl = query<HTMLButtonElement>("#copyExpoUrl");
+const openAccessibility = query<HTMLButtonElement>("#openAccessibility");
+const accessibilityActionText = query<HTMLElement>("#accessibilityActionText");
+const lightTheme = query<HTMLButtonElement>("#lightTheme");
+const darkTheme = query<HTMLButtonElement>("#darkTheme");
+const toggleDetails = query<HTMLButtonElement>("#toggleDetails");
+const detailsPanel = query<HTMLDivElement>("#detailsPanel");
+const minimizeWindow = query<HTMLButtonElement>("#minimizeWindow");
+const maximizeWindow = query<HTMLButtonElement>("#maximizeWindow");
+const closeWindow = query<HTMLButtonElement>("#closeWindow");
+const desktopApi = (
+  window as Window & { remoteDesktop?: RemoteDesktopApi }
+).remoteDesktop;
+
+let latestStatus: DesktopStatus | null = null;
+
+function query<T extends Element>(selector: string): T | null {
+  return document.querySelector<T>(selector);
+}
 
 function renderStatus(status: DesktopStatus): void {
+  latestStatus = status;
+
   if (
     !statusBadge ||
+    !statusText ||
     !deviceName ||
-    !serverUrl ||
     !clientCount ||
+    !clientMeta ||
+    !networkMeta ||
+    !displayMeta ||
     !addressList ||
+    !healthList ||
     !qrImage ||
-    !qrUrl ||
+    !qrFallback ||
+    !pairingUrlText ||
+    !serverUrl ||
     !expoQrImage ||
-    !expoQrUrl
+    !expoFallback ||
+    !expoQrUrl ||
+    !accessibilityActionText
   ) {
     return;
   }
 
-  const statusText: Record<DesktopStatus["status"], string> = {
-    starting: "Starting",
-    waiting: "Waiting",
-    connected: "Connected",
-    disconnected: "Disconnected",
-    error: "Error"
-  };
+  const statusLabel = getStatusLabel(status.status);
+  const primaryAddress = status.addresses[0] ?? null;
+  const displayUrl =
+    status.errorMessage ??
+    status.pairingUrl ??
+    (primaryAddress ? `ws://${primaryAddress}:${status.port}` : `Port ${status.port}`);
 
-  deviceName.textContent = status.hostName ?? "Ready for iPhone control";
-  statusBadge.textContent = statusText[status.status];
+  deviceName.textContent = status.hostName ?? "Mac Remote";
+  statusText.textContent = statusLabel;
   statusBadge.className = `status ${status.status}`;
-  clientCount.textContent = String(status.connectedClients);
 
-  const firstAddress = status.addresses[0];
-  const displayUrl = status.pairingUrl ?? (firstAddress ? `ws://${firstAddress}:${status.port}` : `Port ${status.port}`);
-  serverUrl.textContent = status.errorMessage ?? displayUrl;
-  qrUrl.textContent = status.errorMessage ?? displayUrl;
+  const clientLabel =
+    status.connectedClients === 1
+      ? "1 phone connected"
+      : `${status.connectedClients} phones connected`;
+  clientCount.textContent = clientLabel;
+  clientMeta.textContent = clientLabel;
+  displayMeta.textContent = getDisplayMeta(status.display);
+  networkMeta.textContent = getDeviceHint(status);
+  pairingUrlText.textContent = displayUrl;
+  serverUrl.textContent = displayUrl;
   expoQrUrl.textContent = status.errorMessage ?? status.expoUrl ?? "Expo URL unavailable";
+  accessibilityActionText.textContent =
+    status.platform === "darwin" ? "macOS permission" : "Not required";
 
-  if (status.pairingQrDataUrl) {
-    qrImage.src = status.pairingQrDataUrl;
-    qrImage.classList.remove("hidden");
-  } else {
-    qrImage.removeAttribute("src");
-    qrImage.classList.add("hidden");
+  renderQr(qrImage, qrFallback, status.pairingQrDataUrl, "Pairing QR unavailable");
+  renderQr(expoQrImage, expoFallback, status.expoQrDataUrl, "Expo QR unavailable");
+  renderAddresses(status);
+  renderHealth(status);
+  updateButtons(status);
+}
+
+function renderQr(
+  image: HTMLImageElement,
+  fallback: HTMLElement,
+  dataUrl: string | undefined,
+  emptyText: string,
+): void {
+  if (dataUrl) {
+    image.src = dataUrl;
+    image.classList.remove("hidden");
+    fallback.classList.add("hidden");
+    return;
   }
 
-  if (status.expoQrDataUrl) {
-    expoQrImage.src = status.expoQrDataUrl;
-    expoQrImage.classList.remove("hidden");
-  } else {
-    expoQrImage.removeAttribute("src");
-    expoQrImage.classList.add("hidden");
+  image.removeAttribute("src");
+  image.classList.add("hidden");
+  fallback.textContent = emptyText;
+  fallback.classList.remove("hidden");
+}
+
+function renderAddresses(status: DesktopStatus): void {
+  if (!addressList) {
+    return;
   }
 
   addressList.replaceChildren(
     ...status.addresses.map((address) => {
-      const item = document.createElement("div");
+      const item = document.createElement("button");
       item.className = "address";
+      item.type = "button";
       item.textContent = `${address}:${status.port}`;
+      item.addEventListener("click", () =>
+        copyText(`ws://${address}:${status.port}`, item),
+      );
       return item;
-    })
+    }),
   );
 
   if (status.addresses.length === 0) {
@@ -96,23 +184,254 @@ function renderStatus(status: DesktopStatus): void {
   }
 }
 
-if (desktopApi) {
-  desktopApi.getStatus().then(renderStatus).catch((error) => {
-    renderStatus({
-      status: "error",
-      port: 8787,
-      addresses: [],
-      connectedClients: 0,
-      errorMessage: error instanceof Error ? error.message : String(error)
-    });
+function renderHealth(status: DesktopStatus): void {
+  if (!healthList) {
+    return;
+  }
+
+  const checks = [
+    {
+      label: "Server",
+      detail: status.errorMessage ?? getServerDetail(status),
+      state: status.status === "error" ? "error" : "ready",
+    },
+    {
+      label: "Local network",
+      detail: status.addresses.length > 0 ? "Available" : "No Wi-Fi IP found",
+      state: status.addresses.length > 0 ? "ready" : "warning",
+    },
+    {
+      label: "Volume control",
+      detail: status.display?.volumeAdjustable === false ? "Unavailable" : "Available",
+      state: status.display?.volumeAdjustable === false ? "warning" : "ready",
+    },
+  ] satisfies Array<{
+    label: string;
+    detail: string;
+    state: HealthState;
+  }>;
+
+  healthList.replaceChildren(
+    ...checks.map((check) => {
+      const item = document.createElement("div");
+      const marker = document.createElement("span");
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const checkPath = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path",
+      );
+      const text = document.createElement("div");
+      const label = document.createElement("strong");
+      const detail = document.createElement("span");
+
+      item.className = `healthItem ${check.state}`;
+      marker.className = "healthMarker";
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      checkPath.setAttribute("d", "M20 6 9 17l-5-5");
+      icon.append(checkPath);
+      marker.append(icon);
+      label.textContent = check.label;
+      detail.textContent = check.detail;
+      text.append(label, detail);
+      item.append(marker, text);
+
+      return item;
+    }),
+  );
+}
+
+function updateButtons(status: DesktopStatus): void {
+  setButtonDisabled(copyPairingUrl, !status.pairingUrl);
+  setButtonDisabled(copyServerUrl, !status.pairingUrl && status.addresses.length === 0);
+  setButtonDisabled(copyExpoUrl, !status.expoUrl);
+  setButtonDisabled(openAccessibility, status.platform !== "darwin");
+}
+
+function setButtonDisabled(button: HTMLButtonElement | null, disabled: boolean): void {
+  if (!button) {
+    return;
+  }
+
+  button.disabled = disabled;
+}
+
+function getStatusLabel(status: ConnectionStatus): string {
+  const labels: Record<ConnectionStatus, string> = {
+    starting: "Starting",
+    waiting: "Ready",
+    connected: "Connected",
+    disconnected: "Disconnected",
+    error: "Needs attention",
+  };
+
+  return labels[status];
+}
+
+function getServerDetail(status: DesktopStatus): string {
+  if (status.status === "connected") {
+    return "Connected";
+  }
+
+  if (status.status === "waiting") {
+    return "Ready";
+  }
+
+  return getStatusLabel(status.status);
+}
+
+function getDisplayMeta(display: HostDisplayInfo | undefined): string {
+  if (!display) {
+    return "Waiting for display";
+  }
+
+  return `Controlling ${display.name}`;
+}
+
+function getDeviceHint(status: DesktopStatus): string {
+  if (status.connectedClients > 0) {
+    return "Connected and ready.";
+  }
+
+  if (status.addresses.length === 0) {
+    return "Connect this Mac and iPhone to the same Wi-Fi.";
+  }
+
+  return "Pair an iPhone to get started.";
+}
+
+function getAccessibilityDetail(status: DesktopStatus): string {
+  if (status.platform !== "darwin") {
+    return "Not required";
+  }
+
+  return status.accessibilityTrusted ? "Allowed" : "Needs permission";
+}
+
+function getAccessibilityState(status: DesktopStatus): HealthState {
+  if (status.platform !== "darwin" || status.accessibilityTrusted) {
+    return "ready";
+  }
+
+  return "warning";
+}
+
+function resolveInitialTheme(): Theme {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+
+  if (saved === "light" || saved === "dark") {
+    return saved;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
+}
+
+function setTheme(theme: Theme): void {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  lightTheme?.classList.toggle("active", theme === "light");
+  darkTheme?.classList.toggle("active", theme === "dark");
+}
+
+async function copyText(
+  text: string | undefined,
+  source: HTMLButtonElement | HTMLElement | null,
+): Promise<void> {
+  if (!text || !desktopApi) {
+    return;
+  }
+
+  const ok = await desktopApi.copyText(text);
+
+  if (ok && source instanceof HTMLButtonElement) {
+    flashButton(source);
+  }
+}
+
+function flashButton(button: HTMLButtonElement): void {
+  const previous = button.textContent ?? "";
+  const canSwapText = button.childElementCount === 0;
+
+  if (canSwapText) {
+    button.textContent = "Copied";
+  }
+
+  button.classList.add("copied");
+
+  setTimeout(() => {
+    if (canSwapText) {
+      button.textContent = previous;
+    }
+
+    button.classList.remove("copied");
+  }, 1100);
+}
+
+function attachActions(): void {
+  lightTheme?.addEventListener("click", () => setTheme("light"));
+  darkTheme?.addEventListener("click", () => setTheme("dark"));
+
+  minimizeWindow?.addEventListener("click", () => {
+    desktopApi?.controlWindow("minimize");
   });
-  desktopApi.onStatus(renderStatus);
-} else {
+  maximizeWindow?.addEventListener("click", () => {
+    desktopApi?.controlWindow("maximize");
+  });
+  closeWindow?.addEventListener("click", () => {
+    desktopApi?.controlWindow("close");
+  });
+
+  toggleDetails?.addEventListener("click", () => {
+    if (!detailsPanel || !toggleDetails) {
+      return;
+    }
+
+    const isHidden = detailsPanel.classList.toggle("hidden");
+    toggleDetails.textContent = isHidden
+      ? "Having trouble? Show connection details"
+      : "Hide connection details";
+  });
+
+  copyPairingUrl?.addEventListener("click", () => {
+    copyText(latestStatus?.pairingUrl, copyPairingUrl);
+  });
+
+  copyServerUrl?.addEventListener("click", () => {
+    const fallback = latestStatus?.addresses[0]
+      ? `ws://${latestStatus.addresses[0]}:${latestStatus.port}`
+      : undefined;
+    copyText(latestStatus?.pairingUrl ?? fallback, copyServerUrl);
+  });
+
+  copyExpoUrl?.addEventListener("click", () => {
+    copyText(latestStatus?.expoUrl, copyExpoUrl);
+  });
+
+  openAccessibility?.addEventListener("click", () => {
+    desktopApi?.openAccessibilitySettings();
+  });
+}
+
+function renderBridgeError(errorMessage: string): void {
   renderStatus({
     status: "error",
     port: 8787,
     addresses: [],
     connectedClients: 0,
-    errorMessage: "Preload bridge unavailable"
+    errorMessage,
   });
+}
+
+setTheme(resolveInitialTheme());
+attachActions();
+
+if (desktopApi) {
+  desktopApi.getStatus().then(renderStatus).catch((error) => {
+    renderBridgeError(error instanceof Error ? error.message : String(error));
+  });
+  desktopApi.onStatus(renderStatus);
+} else {
+  renderBridgeError("Preload bridge unavailable");
 }

@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "local.remote-control.desktop",
-    "productName": "Remote Control Desktop",
+    "productName": "Mac Remote",
     "electronVersion": "42.3.0",
     "directories": {
       "output": "release"
