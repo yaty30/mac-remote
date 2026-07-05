@@ -58,7 +58,7 @@ export function Header({
             <Ionicons
               name={connected ? "thumbs-up" : "qr-code-outline"}
               size={20}
-              color="#ffffff"
+              color={connected ? "#ffffff" : "#1b1008"}
             />
           </Pressable>
 
@@ -66,7 +66,7 @@ export function Header({
             style={styles.connectButton}
             onPress={withHaptic(onToggleSettings)}
           >
-            <Ionicons name="settings" size={20} color="#ffffff" />
+            <Ionicons name="settings" size={20} color="#1b1008" />
           </Pressable>
 
           <Pressable
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    color: "#f8fafc",
+    color: "#f7f5f1",
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: 0,
@@ -128,16 +128,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#74f0a7",
   },
   dotIdle: {
-    backgroundColor: "#f0c674",
+    backgroundColor: "#ff941f",
   },
   status: {
-    color: "#a5afbf",
+    color: "#a7a39d",
     fontSize: 13,
     fontWeight: "700",
   },
   sleepButton: {
     alignItems: "center",
-    backgroundColor: "#342b57",
+    backgroundColor: "#3a2617",
     borderRadius: 18,
     flexDirection: "row",
     gap: 8,
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     alignItems: "center",
-    backgroundColor: "#2f6df6",
+    backgroundColor: "#ff941f",
     borderRadius: 18,
     flexDirection: "row",
     gap: 8,

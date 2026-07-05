@@ -17,7 +17,7 @@ interface ShortcutButtonProps {
 
 export function ShortcutButton({
   icon,
-  iconColor = "#ff0033",
+  iconColor = "#ff941f",
   imageUri,
   initial,
   SvgIcon,
@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   button: {
     alignItems: "center",
     backgroundColor: "transparent",
-    borderColor: "#1a1d30",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",

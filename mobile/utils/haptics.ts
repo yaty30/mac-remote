@@ -6,6 +6,12 @@ export function triggerButtonHaptic(): void {
   });
 }
 
+export function triggerLongPressHaptic(): void {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
+    // Haptics can be unavailable on simulators or unsupported devices.
+  });
+}
+
 export function withHaptic<T extends unknown[]>(
   handler?: (...args: T) => void,
 ): ((...args: T) => void) | undefined {

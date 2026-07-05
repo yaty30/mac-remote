@@ -919,7 +919,7 @@ export function RemoteScreen() {
                 style={[styles.connectButton]}
                 onPress={withHaptic(openScanner)}
               >
-                <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
+                <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
                 <Text style={styles.connectText}>Scan</Text>
               </Pressable>
             </View>
@@ -1012,8 +1012,8 @@ export function RemoteScreen() {
                 maximumValue={3}
                 step={0.05}
                 value={sensitivity}
-                minimumTrackTintColor="#2f6df6"
-                maximumTrackTintColor="#303746"
+                minimumTrackTintColor="#ff941f"
+                maximumTrackTintColor="#33261b"
                 thumbTintColor="#ffffff"
                 onValueChange={setSensitivity}
               />
@@ -1201,6 +1201,7 @@ export function RemoteScreen() {
             />
             <ShortcutButton
               icon="logo-youtube"
+              iconColor="#ff0033"
               label="YouTube"
               onPress={() => sendShortcut("youtube")}
             />
@@ -1231,7 +1232,7 @@ export function RemoteScreen() {
             ))}
             <ShortcutButton
               icon="add"
-              iconColor="#9fb6ff"
+              iconColor="#ff941f"
               label="Add Shortcut"
               onPress={openShortcutModal}
             />
@@ -1247,7 +1248,7 @@ export function RemoteScreen() {
                 <Ionicons
                   name="chevron-back-circle-outline"
                   size={25}
-                  color="#ffffff"
+                  color="#ffb347"
                 />
               </Pressable>
               <View style={styles.shortcutDivider} />
@@ -1259,7 +1260,7 @@ export function RemoteScreen() {
                 <Ionicons
                   name="chevron-forward-circle-outline"
                   size={25}
-                  color="#ffffff"
+                  color="#ffb347"
                 />
               </Pressable>
             </View>
@@ -1270,7 +1271,7 @@ export function RemoteScreen() {
                 accessibilityLabel="Previous browser page"
                 onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
               >
-                <Ionicons name="arrow-undo-outline" size={24} color="#ffffff" />
+                <Ionicons name="arrow-undo-outline" size={24} color="#c7bdb1" />
               </Pressable>
               <View style={styles.shortcutDivider} />
               <Pressable
@@ -1280,7 +1281,7 @@ export function RemoteScreen() {
                   socket.sendTextCommand("browserForward"),
                 )}
               >
-                <Ionicons name="arrow-redo-outline" size={24} color="#ffffff" />
+                <Ionicons name="arrow-redo-outline" size={24} color="#c7bdb1" />
               </Pressable>
             </View>
 
@@ -1290,7 +1291,7 @@ export function RemoteScreen() {
                 accessibilityLabel="Left arrow key"
                 onPress={withHaptic(() => socket.sendKey("leftArrow"))}
               >
-                <Ionicons name="play-back" size={24} color="#ffffff" />
+                <Ionicons name="play-back" size={24} color="#f4d0a2" />
               </Pressable>
               <View style={styles.shortcutDivider} />
               <Pressable
@@ -1298,7 +1299,7 @@ export function RemoteScreen() {
                 accessibilityLabel="Right arrow key"
                 onPress={withHaptic(() => socket.sendKey("rightArrow"))}
               >
-                <Ionicons name="play-forward" size={24} color="#ffffff" />
+                <Ionicons name="play-forward" size={24} color="#f4d0a2" />
               </Pressable>
             </View>
           </View>
@@ -1342,9 +1343,11 @@ export function RemoteScreen() {
               <Ionicons
                 name={keyboardVisible ? "chevron-down" : "keypad-outline"}
                 size={22}
-                color="#ffffff"
+                color="#1b1008"
               />
-              <Text style={styles.mouseButtonText}>Keyboard</Text>
+              <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
+                Keyboard
+              </Text>
             </Pressable>
             <Pressable
               style={styles.mouseButton}
@@ -1400,7 +1403,7 @@ export function RemoteScreen() {
                 autoCapitalize="words"
                 autoCorrect={false}
                 placeholder="Netflix"
-                placeholderTextColor="#697180"
+                placeholderTextColor="#756f68"
                 style={styles.formInput}
               />
             </View>
@@ -1414,7 +1417,7 @@ export function RemoteScreen() {
                 autoCorrect={false}
                 keyboardType="url"
                 placeholder="netflix.com"
-                placeholderTextColor="#697180"
+                placeholderTextColor="#756f68"
                 style={styles.formInput}
               />
             </View>
@@ -1728,7 +1731,7 @@ function normalizeWebsiteUrl(value: string): string | null {
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: "#080a0e",
+    backgroundColor: "#070707",
     flex: 1,
     gap: 12,
     paddingBottom: 14,
@@ -1740,8 +1743,8 @@ const styles = StyleSheet.create({
   },
   shortcutGroup: {
     alignItems: "center",
-    backgroundColor: "#151a23",
-    borderColor: "#2a303c",
+    backgroundColor: "#14110f",
+    borderColor: "#2a2118",
     borderRadius: 10,
     borderWidth: 1,
     flex: 1,
@@ -1750,7 +1753,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   shortcutDivider: {
-    backgroundColor: "#2a303c",
+    backgroundColor: "#2a2118",
     height: 26,
     width: 1,
   },
@@ -1762,7 +1765,7 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     alignItems: "center",
-    backgroundColor: "#2f6df6",
+    backgroundColor: "#ff941f",
     borderRadius: 18,
     flexDirection: "row",
     gap: 8,
@@ -1770,7 +1773,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   connectText: {
-    color: "#ffffff",
+    color: "#1b1008",
     fontSize: 15,
     fontWeight: "800",
   },
@@ -1790,8 +1793,8 @@ const styles = StyleSheet.create({
   },
   sensitivityCard: {
     alignItems: "stretch",
-    backgroundColor: "#131923",
-    borderColor: "#273143",
+    backgroundColor: "#12110f",
+    borderColor: "#2c2117",
     borderRadius: 8,
     borderWidth: 1,
     gap: 12,
@@ -1813,8 +1816,8 @@ const styles = StyleSheet.create({
   },
   settingsCardIcon: {
     alignItems: "center",
-    backgroundColor: "#202938",
-    borderColor: "#303b4e",
+    backgroundColor: "#211811",
+    borderColor: "#3a2a1e",
     borderRadius: 8,
     borderWidth: 1,
     height: 34,
@@ -1827,10 +1830,10 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   settingsStatusOffline: {
-    color: "#9aa5b6",
+    color: "#a7a39d",
   },
   sensitivityLabel: {
-    color: "#c8d0dd",
+    color: "#cec8be",
     fontSize: 14,
     fontWeight: "800",
   },
@@ -1840,7 +1843,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   settingUnavailable: {
-    color: "#9aa5b6",
+    color: "#a7a39d",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -1856,8 +1859,8 @@ const styles = StyleSheet.create({
   },
   mediaStepButton: {
     alignItems: "center",
-    backgroundColor: "#242b36",
-    borderColor: "#303b4e",
+    backgroundColor: "#211a14",
+    borderColor: "#3a2a1e",
     borderRadius: 8,
     borderWidth: 1,
     height: 42,
@@ -1880,7 +1883,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   mediaStepText: {
-    color: "#9aa5b6",
+    color: "#a7a39d",
     fontSize: 12,
     fontWeight: "900",
   },
@@ -1890,15 +1893,15 @@ const styles = StyleSheet.create({
     height: 18,
   },
   mediaTick: {
-    backgroundColor: "#303746",
+    backgroundColor: "#33261b",
     borderRadius: 3,
     flex: 1,
   },
   brightnessTickActive: {
-    backgroundColor: "#f8df8c",
+    backgroundColor: "#ffb347",
   },
   volumeTickActive: {
-    backgroundColor: "#8ff0b2",
+    backgroundColor: "#ff941f",
   },
   hostRow: {
     alignItems: "center",
@@ -1912,8 +1915,8 @@ const styles = StyleSheet.create({
   },
   deviceSelectButton: {
     alignItems: "center",
-    backgroundColor: "#0d1016",
-    borderColor: "#2a303c",
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
@@ -1929,7 +1932,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   hostMeta: {
-    color: "#8e98a8",
+    color: "#9d968e",
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1941,8 +1944,8 @@ const styles = StyleSheet.create({
   },
   monitorIcon: {
     alignItems: "center",
-    backgroundColor: "#242b36",
-    borderColor: "#303746",
+    backgroundColor: "#211a14",
+    borderColor: "#33261b",
     borderRadius: 8,
     borderWidth: 1,
     height: 44,
@@ -1954,8 +1957,8 @@ const styles = StyleSheet.create({
     borderColor: "#50643a",
   },
   deviceDropdown: {
-    backgroundColor: "#0d1016",
-    borderColor: "#2a303c",
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     overflow: "hidden",
@@ -1965,7 +1968,7 @@ const styles = StyleSheet.create({
   },
   deviceOption: {
     alignItems: "center",
-    borderBottomColor: "#202632",
+    borderBottomColor: "#1c1712",
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: 10,
@@ -1974,7 +1977,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   deviceOptionSelected: {
-    backgroundColor: "#14231c",
+    backgroundColor: "#2c1b10",
   },
   deviceOptionName: {
     color: "#ffffff",
@@ -1982,12 +1985,12 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   deviceOptionHost: {
-    color: "#8e98a8",
+    color: "#9d968e",
     fontSize: 12,
     fontWeight: "700",
   },
   emptyDeviceText: {
-    color: "#8e98a8",
+    color: "#9d968e",
     fontSize: 13,
     fontWeight: "700",
     padding: 12,
@@ -2003,7 +2006,7 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: "#242b36",
+    backgroundColor: "#211a14",
     borderRadius: 8,
     height: 38,
     justifyContent: "center",
@@ -2020,11 +2023,11 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   disabledText: {
-    color: "#697180",
+    color: "#756f68",
   },
   keyboardPanel: {
-    backgroundColor: "rgba(17, 23, 34, 0.88)",
-    borderColor: "rgba(159, 182, 255, 0.22)",
+    backgroundColor: "rgba(18, 17, 15, 0.9)",
+    borderColor: "rgba(255, 148, 31, 0.28)",
     borderRadius: 8,
     borderWidth: 1,
     bottom: 356,
@@ -2054,7 +2057,7 @@ const styles = StyleSheet.create({
   },
   keyboardPanelIcon: {
     alignItems: "center",
-    backgroundColor: "#2f6df6",
+    backgroundColor: "#ff941f",
     borderRadius: 8,
     height: 32,
     justifyContent: "center",
@@ -2075,8 +2078,8 @@ const styles = StyleSheet.create({
   },
   keyboardPreview: {
     alignItems: "flex-start",
-    backgroundColor: "rgba(8, 12, 19, 0.74)",
-    borderColor: "rgba(159, 182, 255, 0.18)",
+    backgroundColor: "rgba(12, 12, 12, 0.78)",
+    borderColor: "rgba(255, 148, 31, 0.22)",
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
@@ -2092,10 +2095,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   keyboardPreviewTextEmpty: {
-    color: "#5f6b7d",
+    color: "#5f5a54",
   },
   keyboardPreviewCursor: {
-    backgroundColor: "#9fb6ff",
+    backgroundColor: "#ff941f",
     borderRadius: 1,
     height: 22,
     marginLeft: 2,
@@ -2107,8 +2110,8 @@ const styles = StyleSheet.create({
   },
   keyboardShortcutButton: {
     alignItems: "center",
-    backgroundColor: "#202938",
-    borderColor: "#2d384a",
+    backgroundColor: "#211811",
+    borderColor: "#34261a",
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
@@ -2137,8 +2140,8 @@ const styles = StyleSheet.create({
   },
   mouseButton: {
     alignItems: "center",
-    backgroundColor: "#191d25",
-    borderColor: "#2a303c",
+    backgroundColor: "#15120f",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
@@ -2149,16 +2152,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   keyboardMouseButton: {
-    backgroundColor: "#2f6df6",
-    borderColor: "#6f8fff",
+    backgroundColor: "#ff941f",
+    borderColor: "#ffb347",
   },
   mouseButtonText: {
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "900",
   },
+  accentButtonText: {
+    color: "#1b1008",
+  },
   keyboardBg: {
-    backgroundColor: "rgba(7, 10, 15, 0.8)",
+    backgroundColor: "rgba(7, 7, 7, 0.82)",
     position: "absolute",
     top: 0,
     bottom: 0,
@@ -2185,8 +2191,8 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   shortcutModal: {
-    backgroundColor: "#151922",
-    borderColor: "#2a303c",
+    backgroundColor: "#14110f",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     gap: 16,
@@ -2205,7 +2211,7 @@ const styles = StyleSheet.create({
   },
   modalIconButton: {
     alignItems: "center",
-    backgroundColor: "#242b36",
+    backgroundColor: "#211a14",
     borderRadius: 8,
     height: 38,
     justifyContent: "center",
@@ -2215,13 +2221,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   formLabel: {
-    color: "#c8d0dd",
+    color: "#cec8be",
     fontSize: 13,
     fontWeight: "800",
   },
   formInput: {
-    backgroundColor: "#0d1016",
-    borderColor: "#2a303c",
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     color: "#ffffff",
@@ -2236,8 +2242,8 @@ const styles = StyleSheet.create({
   },
   iconPreview: {
     alignItems: "center",
-    backgroundColor: "#0d1016",
-    borderColor: "#2a303c",
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
     borderRadius: 8,
     borderWidth: 1,
     height: 56,
@@ -2256,7 +2262,7 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     alignItems: "center",
-    backgroundColor: "#242b36",
+    backgroundColor: "#211a14",
     borderRadius: 8,
     flex: 1,
     flexDirection: "row",
@@ -2275,7 +2281,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   removeIconText: {
-    color: "#9fb6ff",
+    color: "#ff941f",
     fontSize: 13,
     fontWeight: "800",
   },
@@ -2312,7 +2318,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   cancelButton: {
-    backgroundColor: "#242b36",
+    backgroundColor: "#211a14",
   },
   cancelButtonText: {
     color: "#ffffff",
@@ -2320,10 +2326,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   saveButton: {
-    backgroundColor: "#2f6df6",
+    backgroundColor: "#ff941f",
   },
   saveButtonText: {
-    color: "#ffffff",
+    color: "#1b1008",
     fontSize: 15,
     fontWeight: "900",
   },
