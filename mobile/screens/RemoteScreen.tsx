@@ -80,6 +80,8 @@ export function RemoteScreen() {
   const statusRef = useRef<ConnectionStatus>("idle");
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scannerZoom, setScannerZoom] = useState(0.2);
   const [host, setHost] = useState("");
   const [hostName, setHostName] = useState("");
   const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
@@ -280,22 +282,6 @@ export function RemoteScreen() {
   }, []);
 
   useEffect(() => {
-    const subscription = CameraView.onModernBarcodeScanned((event) => {
-      if (!scannerOpenRef.current) {
-        return;
-      }
-
-      scannerOpenRef.current = false;
-      CameraView.dismissScanner().catch(() => {
-        // scanner may already be dismissed on Android
-      });
-      connectFromScan(event);
-    });
-
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
     if (status === "connected" && host.trim().length > 0) {
       AsyncStorage.setItem(HOST_STORAGE_KEY, host.trim()).catch(() => {
         // ignore storage errors
@@ -481,6 +467,34 @@ export function RemoteScreen() {
     connectToHost(device.host, device.name);
   }
 
+  function deleteSavedDevice(device: SavedDevice) {
+    setSavedDevices((currentDevices) => {
+      const nextDevices = currentDevices.filter((item) => item.id !== device.id);
+      persistSavedDevices(nextDevices);
+      return nextDevices;
+    });
+
+    if (device.host !== hostRef.current) {
+      return;
+    }
+
+    socket.disconnect();
+    statusRef.current = "idle";
+    hostRef.current = "";
+    setStatus("idle");
+    setHost("");
+    setHostName("");
+    setBrightness(null);
+    setVolume(null);
+    setHostDisplay(null);
+    setDeviceDropdownOpen(false);
+    AsyncStorage.multiRemove([HOST_STORAGE_KEY, HOST_NAME_STORAGE_KEY]).catch(
+      () => {
+        // ignore storage errors
+      },
+    );
+  }
+
   function sendShortcut(shortcut: ShortcutId) {
     socket.sendShortcut(shortcut);
   }
@@ -610,10 +624,25 @@ export function RemoteScreen() {
     }
 
     scannerOpenRef.current = true;
-    await CameraView.launchScanner({ barcodeTypes: ["qr"] });
+    setScannerVisible(true);
   }
 
-  function connectFromScan(event: ScanningResult) {
+  function closeScanner() {
+    scannerOpenRef.current = false;
+    setScannerVisible(false);
+  }
+
+  function handleScannerBarcode(event: { data: string }) {
+    if (!scannerOpenRef.current) {
+      return;
+    }
+
+    scannerOpenRef.current = false;
+    setScannerVisible(false);
+    connectFromScan(event);
+  }
+
+  function connectFromScan(event: Pick<ScanningResult, "data">) {
     const pairing = parsePairingPayload(event.data);
 
     if (!pairing) {
@@ -931,30 +960,45 @@ export function RemoteScreen() {
                       const selected = device.host === host;
 
                       return (
-                        <Pressable
+                        <View
                           key={device.id}
                           style={[
                             styles.deviceOption,
                             selected && styles.deviceOptionSelected,
                           ]}
-                          onPress={withHaptic(() => selectSavedDevice(device))}
                         >
-                          <View style={styles.hostTextBlock}>
-                            <Text style={styles.deviceOptionName}>
-                              {device.name}
-                            </Text>
-                            <Text style={styles.deviceOptionHost}>
-                              {device.host}
-                            </Text>
-                          </View>
-                          {selected ? (
+                          <Pressable
+                            style={styles.deviceOptionSelect}
+                            onPress={withHaptic(() => selectSavedDevice(device))}
+                          >
+                            <View style={styles.hostTextBlock}>
+                              <Text style={styles.deviceOptionName}>
+                                {device.name}
+                              </Text>
+                              <Text style={styles.deviceOptionHost}>
+                                {device.host}
+                              </Text>
+                            </View>
+                            {selected ? (
+                              <Ionicons
+                                name="checkmark"
+                                size={20}
+                                color="#74f0a7"
+                              />
+                            ) : null}
+                          </Pressable>
+                          <Pressable
+                            accessibilityLabel={`Delete ${device.name}`}
+                            style={styles.deviceDeleteButton}
+                            onPress={withHaptic(() => deleteSavedDevice(device))}
+                          >
                             <Ionicons
-                              name="checkmark"
-                              size={20}
-                              color="#74f0a7"
+                              name="trash-outline"
+                              size={19}
+                              color="#ff8a8a"
                             />
-                          ) : null}
-                        </Pressable>
+                          </Pressable>
+                        </View>
                       );
                     })}
                   </ScrollView>
@@ -1374,6 +1418,84 @@ export function RemoteScreen() {
           />
         </>
       )}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={scannerVisible}
+        onRequestClose={closeScanner}
+      >
+        <View style={styles.scannerBackdrop}>
+          <View style={styles.scannerSheet}>
+            <View style={styles.scannerHeader}>
+              <View style={styles.scannerTitleRow}>
+                <View style={styles.scannerIcon}>
+                  <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
+                </View>
+                <Text style={styles.scannerTitle}>Scan Desktop QR</Text>
+              </View>
+              <Pressable
+                style={styles.scannerCloseButton}
+                onPress={withHaptic(closeScanner)}
+              >
+                <Ionicons name="close" size={22} color="#ffffff" />
+              </Pressable>
+            </View>
+
+            <View style={styles.scannerCameraFrame}>
+              <CameraView
+                active={scannerVisible}
+                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                facing="back"
+                onBarcodeScanned={
+                  scannerVisible ? handleScannerBarcode : undefined
+                }
+                style={styles.scannerCamera}
+                zoom={scannerZoom}
+              />
+              <View pointerEvents="none" style={styles.scannerGuide}>
+                <View
+                  style={[styles.scannerCorner, styles.scannerCornerTopLeft]}
+                />
+                <View
+                  style={[styles.scannerCorner, styles.scannerCornerTopRight]}
+                />
+                <View
+                  style={[
+                    styles.scannerCorner,
+                    styles.scannerCornerBottomLeft,
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.scannerCorner,
+                    styles.scannerCornerBottomRight,
+                  ]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.scannerZoomRow}>
+              <Ionicons name="remove" size={18} color="#cec8be" />
+              <Slider
+                style={styles.scannerZoomSlider}
+                minimumValue={0}
+                maximumValue={1}
+                step={0.01}
+                value={scannerZoom}
+                minimumTrackTintColor="#ff941f"
+                maximumTrackTintColor="#33261b"
+                thumbTintColor="#ffffff"
+                onValueChange={setScannerZoom}
+              />
+              <Ionicons name="add" size={18} color="#cec8be" />
+              <Text style={styles.scannerZoomText}>
+                {Math.round(scannerZoom * 100)}%
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -1971,13 +2093,32 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1c1712",
     borderBottomWidth: 1,
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     minHeight: 56,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   deviceOptionSelected: {
     backgroundColor: "#2c1b10",
+  },
+  deviceOptionSelect: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 44,
+    minWidth: 0,
+    paddingHorizontal: 4,
+  },
+  deviceDeleteButton: {
+    alignItems: "center",
+    backgroundColor: "#32191d",
+    borderColor: "#5b2730",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   deviceOptionName: {
     color: "#ffffff",
@@ -2182,6 +2323,128 @@ const styles = StyleSheet.create({
     opacity: 0,
     position: "absolute",
     width: 1,
+  },
+  scannerBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.86)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  scannerSheet: {
+    backgroundColor: "#14110f",
+    borderColor: "#2a2118",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 14,
+    maxWidth: 520,
+    padding: 14,
+    width: "100%",
+  },
+  scannerHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  scannerTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  scannerIcon: {
+    alignItems: "center",
+    backgroundColor: "#ff941f",
+    borderRadius: 8,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  scannerTitle: {
+    color: "#ffffff",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  scannerCloseButton: {
+    alignItems: "center",
+    backgroundColor: "#211a14",
+    borderRadius: 8,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  scannerCameraFrame: {
+    aspectRatio: 1,
+    backgroundColor: "#070707",
+    borderColor: "#33261b",
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+    width: "100%",
+  },
+  scannerCamera: {
+    height: "100%",
+    width: "100%",
+  },
+  scannerGuide: {
+    alignItems: "center",
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  scannerCorner: {
+    borderColor: "#ff941f",
+    height: 42,
+    position: "absolute",
+    width: 42,
+  },
+  scannerCornerTopLeft: {
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    left: "24%",
+    top: "24%",
+  },
+  scannerCornerTopRight: {
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    right: "24%",
+    top: "24%",
+  },
+  scannerCornerBottomLeft: {
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    bottom: "24%",
+    left: "24%",
+  },
+  scannerCornerBottomRight: {
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    bottom: "24%",
+    right: "24%",
+  },
+  scannerZoomRow: {
+    alignItems: "center",
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  scannerZoomSlider: {
+    flex: 1,
+    height: 36,
+  },
+  scannerZoomText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900",
+    minWidth: 38,
+    textAlign: "right",
   },
   modalBackdrop: {
     alignItems: "center",

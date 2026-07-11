@@ -406,8 +406,8 @@ h2 {
 .smallQr {
   border-radius: 12px;
   flex: 0 0 auto;
-  height: 78px;
-  width: 78px;
+  height: 70px;
+  width: 70px;
 }
 
 .qrImage {
@@ -547,6 +547,15 @@ h2 {
   align-items: center;
   display: flex;
   gap: 10px;
+}
+
+.expoInline {
+  align-self: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--border-muted);
+  border-radius: 12px;
+  max-width: min(100%, 360px);
+  padding: 8px 10px;
 }
 
 .developerText {
