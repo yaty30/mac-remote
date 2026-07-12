@@ -9,6 +9,11 @@ type Theme = "light" | "dark";
 type WindowAction = "minimize" | "maximize" | "close";
 type HealthState = "ready" | "warning" | "error";
 
+interface StartupSettings {
+  available: boolean;
+  enabled: boolean;
+}
+
 interface HostDisplayInfo {
   id: number;
   name: string;
@@ -36,6 +41,8 @@ interface DesktopStatus {
 
 interface RemoteDesktopApi {
   getStatus: () => Promise<DesktopStatus>;
+  getStartupSettings: () => Promise<StartupSettings>;
+  setStartupEnabled: (enabled: boolean) => Promise<StartupSettings>;
   copyText: (text: string) => Promise<boolean>;
   openAccessibilitySettings: () => Promise<boolean>;
   controlWindow: (action: WindowAction) => Promise<boolean>;
@@ -65,6 +72,8 @@ const copyServerUrl = query<HTMLButtonElement>("#copyServerUrl");
 const copyExpoUrl = query<HTMLButtonElement>("#copyExpoUrl");
 const openAccessibility = query<HTMLButtonElement>("#openAccessibility");
 const accessibilityActionText = query<HTMLElement>("#accessibilityActionText");
+const startupToggle = query<HTMLButtonElement>("#startupToggle");
+const startupState = query<HTMLElement>("#startupState");
 const lightTheme = query<HTMLButtonElement>("#lightTheme");
 const darkTheme = query<HTMLButtonElement>("#darkTheme");
 const toggleDetails = query<HTMLButtonElement>("#toggleDetails");
@@ -77,6 +86,10 @@ const desktopApi = (
 ).remoteDesktop;
 
 let latestStatus: DesktopStatus | null = null;
+let startupSettings: StartupSettings = {
+  available: false,
+  enabled: false,
+};
 
 function query<T extends Element>(selector: string): T | null {
   return document.querySelector<T>(selector);
@@ -246,6 +259,7 @@ function updateButtons(status: DesktopStatus): void {
   setButtonDisabled(copyServerUrl, !status.pairingUrl && status.addresses.length === 0);
   setButtonDisabled(copyExpoUrl, !status.expoUrl);
   setButtonDisabled(openAccessibility, status.platform !== "darwin");
+  renderStartupSettings(startupSettings);
 }
 
 function setButtonDisabled(button: HTMLButtonElement | null, disabled: boolean): void {
@@ -254,6 +268,23 @@ function setButtonDisabled(button: HTMLButtonElement | null, disabled: boolean):
   }
 
   button.disabled = disabled;
+}
+
+function renderStartupSettings(settings: StartupSettings): void {
+  startupSettings = settings;
+
+  if (!startupToggle || !startupState) {
+    return;
+  }
+
+  startupToggle.disabled = !settings.available;
+  startupToggle.classList.toggle("active", settings.enabled);
+  startupToggle.setAttribute("aria-checked", settings.enabled ? "true" : "false");
+  startupState.textContent = settings.available
+    ? settings.enabled
+      ? "On"
+      : "Off"
+    : "Unavailable";
 }
 
 function getStatusLabel(status: ConnectionStatus): string {
@@ -412,6 +443,23 @@ function attachActions(): void {
   openAccessibility?.addEventListener("click", () => {
     desktopApi?.openAccessibilitySettings();
   });
+
+  startupToggle?.addEventListener("click", async () => {
+    if (!desktopApi || !startupSettings.available || startupToggle.disabled) {
+      return;
+    }
+
+    startupToggle.disabled = true;
+
+    try {
+      renderStartupSettings(
+        await desktopApi.setStartupEnabled(!startupSettings.enabled),
+      );
+    } catch (error) {
+      console.error("[desktop] failed to update startup setting", error);
+      renderStartupSettings(startupSettings);
+    }
+  });
 }
 
 function renderBridgeError(errorMessage: string): void {
@@ -431,6 +479,12 @@ if (desktopApi) {
   desktopApi.getStatus().then(renderStatus).catch((error) => {
     renderBridgeError(error instanceof Error ? error.message : String(error));
   });
+  desktopApi
+    .getStartupSettings()
+    .then(renderStartupSettings)
+    .catch((error) => {
+      console.error("[desktop] failed to read startup setting", error);
+    });
   desktopApi.onStatus(renderStatus);
 } else {
   renderBridgeError("Preload bridge unavailable");

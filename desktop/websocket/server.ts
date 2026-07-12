@@ -194,6 +194,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     return { type: "sleep" };
   }
 
+  if (data.type === "restartHost") {
+    return { type: "restartHost" };
+  }
+
   if (data.type === "shortcut") {
     if (
       data.shortcut === "netflix" ||

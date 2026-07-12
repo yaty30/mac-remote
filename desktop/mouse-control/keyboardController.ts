@@ -159,12 +159,41 @@ export class KeyboardController {
 
     console.warn("[keyboard] display sleep/wake is only implemented for macOS");
   }
+
+  async restartHost(): Promise<void> {
+    if (process.platform === "darwin") {
+      await forceRestartMac();
+      return;
+    }
+
+    console.warn("[keyboard] host restart is only implemented for macOS");
+  }
 }
 
 function switchMacSpace(direction: "left" | "right"): Promise<void> {
   const keyCode = direction === "left" ? "123" : "124";
 
   return runAppleScriptKeyCode(keyCode, "control down");
+}
+
+async function forceRestartMac(): Promise<void> {
+  try {
+    await runAppleScript(
+      [
+        "ignoring application responses",
+        'tell application "loginwindow" to \u00abevent aevtrrst\u00bb',
+        "end ignoring",
+      ].join("\n"),
+    );
+    return;
+  } catch (error) {
+    console.warn(
+      "[keyboard] loginwindow restart failed, falling back to System Events",
+      error,
+    );
+  }
+
+  await runAppleScript('tell application "System Events" to restart');
 }
 
 function runAppleScriptKeyCode(keyCode: string, modifier?: string): Promise<void> {

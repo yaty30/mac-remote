@@ -9,7 +9,8 @@ import {
 } from "electron";
 import { execFileSync } from "node:child_process";
 import { createSocket } from "node:dgram";
-import { hostname } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
 import { KeyboardController } from "../mouse-control/keyboardController";
@@ -28,6 +29,7 @@ const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
 const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
 const hostName = getDeviceName();
+const startupAgentLabel = "local.remote-control.dev";
 
 let mainWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
@@ -69,6 +71,114 @@ function getAccessibilityTrusted(): boolean | undefined {
   }
 
   return systemPreferences.isTrustedAccessibilityClient(false);
+}
+
+function getStartupSettings(): { available: boolean; enabled: boolean } {
+  if (process.platform !== "darwin") {
+    return {
+      available: false,
+      enabled: false,
+    };
+  }
+
+  return {
+    available: true,
+    enabled: existsSync(getStartupPlistPath()),
+  };
+}
+
+function setStartupEnabled(enabled: boolean): { available: boolean; enabled: boolean } {
+  if (process.platform !== "darwin") {
+    return getStartupSettings();
+  }
+
+  if (enabled) {
+    writeStartupAgent();
+  } else {
+    removeStartupAgent();
+  }
+
+  return getStartupSettings();
+}
+
+function writeStartupAgent(): void {
+  const launchAgentsDir = getLaunchAgentsDir();
+  const logsDir = path.join(homedir(), "Library", "Logs");
+  const plistPath = getStartupPlistPath();
+
+  mkdirSync(launchAgentsDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true });
+
+  writeFileSync(
+    plistPath,
+    buildStartupPlist(getStartupWorkingDirectory(), logsDir),
+    "utf8",
+  );
+}
+
+function removeStartupAgent(): void {
+  const plistPath = getStartupPlistPath();
+
+  if (existsSync(plistPath)) {
+    rmSync(plistPath);
+  }
+}
+
+function getLaunchAgentsDir(): string {
+  return path.join(homedir(), "Library", "LaunchAgents");
+}
+
+function getStartupPlistPath(): string {
+  return path.join(getLaunchAgentsDir(), `${startupAgentLabel}.plist`);
+}
+
+function getStartupWorkingDirectory(): string {
+  const appPath = app.getAppPath();
+
+  if (path.basename(appPath) === "desktop") {
+    return path.dirname(appPath);
+  }
+
+  if (path.basename(process.cwd()) === "desktop") {
+    return path.dirname(process.cwd());
+  }
+
+  return process.cwd();
+}
+
+function buildStartupPlist(workingDirectory: string, logsDir: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${escapeXml(startupAgentLabel)}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>npm run dev</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${escapeXml(workingDirectory)}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${escapeXml(path.join(logsDir, `${startupAgentLabel}.out.log`))}</string>
+  <key>StandardErrorPath</key>
+  <string>${escapeXml(path.join(logsDir, `${startupAgentLabel}.err.log`))}</string>
+</dict>
+</plist>
+`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 async function getHostState(): Promise<HostMessage> {
@@ -144,6 +254,9 @@ async function handleRemoteMessage(
     case "sleep":
       await keyboardController.sleep();
       break;
+    case "restartHost":
+      await keyboardController.restartHost();
+      break;
     case "shortcut":
       await runShortcut(message.shortcut);
       break;
@@ -169,7 +282,7 @@ async function handleRemoteMessage(
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1010,
-    height: 700,
+    height: 760,
     minWidth: 720,
     minHeight: 520,
     resizable: true,
@@ -430,6 +543,14 @@ app.whenReady().then(() => {
       "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     );
     return true;
+  });
+  ipcMain.handle("startup:get", () => getStartupSettings());
+  ipcMain.handle("startup:set", (_event, enabled: unknown) => {
+    if (typeof enabled !== "boolean") {
+      throw new Error("Invalid startup setting");
+    }
+
+    return setStartupEnabled(enabled);
   });
   ipcMain.handle("window:control", (_event, action: unknown) => {
     if (!mainWindow) {

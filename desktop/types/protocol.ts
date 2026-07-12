@@ -12,6 +12,7 @@ export type RemoteMessage =
   | AdjustBrightnessMessage
   | SetVolumeMessage
   | SleepMessage
+  | RestartHostMessage
   | ShortcutMessage
   | WebsiteShortcutMessage
   | TypeTextMessage
@@ -78,6 +79,10 @@ export interface SetVolumeMessage {
 
 export interface SleepMessage {
   type: "sleep";
+}
+
+export interface RestartHostMessage {
+  type: "restartHost";
 }
 
 export interface HostStateMessage {

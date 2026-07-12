@@ -130,6 +130,10 @@ export class RemoteSocket {
     this.send({ type: "sleep" });
   }
 
+  sendRestartHost(): void {
+    this.send({ type: "restartHost" });
+  }
+
   sendShortcut(shortcut: ShortcutId): void {
     this.send({ type: "shortcut", shortcut });
   }

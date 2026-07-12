@@ -426,6 +426,7 @@ h2 {
 
 .primaryButton,
 .secondaryButton,
+.startupToggle,
 .textButton,
 .copyInline,
 .address {
@@ -727,6 +728,83 @@ h2 {
   color: var(--muted);
   font-size: 10px;
   font-weight: 850;
+}
+
+.startupToggle {
+  align-items: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  color: var(--text);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.startupToggle:hover:not(:disabled) {
+  border-color: var(--border);
+}
+
+.startupToggle:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.startupText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.startupText span {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.startupText strong {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.switchTrack {
+  align-items: center;
+  background: rgba(167, 163, 157, 0.22);
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  display: flex;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 3px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+  width: 50px;
+}
+
+.switchThumb {
+  background: var(--muted-strong);
+  border-radius: 999px;
+  height: 20px;
+  transform: translateX(0);
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+  width: 20px;
+}
+
+.startupToggle.active .switchTrack {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.startupToggle.active .switchThumb {
+  background: var(--accent);
+  transform: translateX(20px);
 }
 
 .devicesPanel {

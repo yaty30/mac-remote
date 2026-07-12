@@ -17,7 +17,9 @@
     "desktop:pack:mac": "npm run pack:mac --workspace desktop",
     "desktop:dist:mac": "npm run dist:mac --workspace desktop",
     "mobile:install": "npm install --workspace mobile",
-    "mobile:start": "npm run start --workspace mobile"
+    "mobile:start": "npm run start --workspace mobile",
+    "autostart:install": "node scripts/install-launch-agent.mjs",
+    "autostart:uninstall": "node scripts/uninstall-launch-agent.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

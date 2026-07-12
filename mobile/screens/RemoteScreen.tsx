@@ -8,6 +8,7 @@ import {
 } from "expo-camera";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   AppState,
   type AppStateStatus,
   Animated,
@@ -603,6 +604,28 @@ export function RemoteScreen() {
 
   function sendSleep() {
     socket.sendSleep();
+  }
+
+  function confirmRestartHost() {
+    if (status !== "connected") {
+      return;
+    }
+
+    Alert.alert(
+      "Restart host Mac?",
+      `This will force restart ${hostName || "the connected Mac"} now. Unsaved documents and terminal sessions may be closed without another prompt.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Restart",
+          style: "destructive",
+          onPress: () => socket.sendRestartHost(),
+        },
+      ],
+    );
   }
 
   function adjustSensitivity(delta: number) {
@@ -1228,6 +1251,28 @@ export function RemoteScreen() {
                 <Ionicons name="add" size={22} color="#ffffff" />
               </Pressable>
             </View>
+          </View>
+
+          <View style={styles.sensitivityCard}>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={[styles.settingsCardIcon, styles.dangerIcon]}>
+                  <Ionicons name="power" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Host Power</Text>
+              </View>
+            </View>
+            <Pressable
+              disabled={status !== "connected"}
+              style={[
+                styles.restartHostButton,
+                status !== "connected" ? styles.disabledControl : null,
+              ]}
+              onPress={withHaptic(confirmRestartHost)}
+            >
+              <Ionicons name="reload-circle-outline" size={22} color="#ffffff" />
+              <Text style={styles.restartHostText}>Force Restart Host</Text>
+            </Pressable>
           </View>
         </Animated.ScrollView>
       ) : (
@@ -1946,6 +1991,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 34,
   },
+  dangerIcon: {
+    backgroundColor: "#3a1717",
+    borderColor: "#713131",
+  },
   settingsStatusText: {
     color: "#8ff0b2",
     fontSize: 12,
@@ -2165,6 +2214,23 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: "#756f68",
+  },
+  restartHostButton: {
+    alignItems: "center",
+    backgroundColor: "#8e2525",
+    borderColor: "#c74343",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: 12,
+  },
+  restartHostText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
   },
   keyboardPanel: {
     backgroundColor: "rgba(18, 17, 15, 0.9)",

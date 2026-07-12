@@ -3,6 +3,12 @@ import type { DesktopStatus } from "../types/protocol";
 
 contextBridge.exposeInMainWorld("remoteDesktop", {
   getStatus: (): Promise<DesktopStatus> => ipcRenderer.invoke("status:get"),
+  getStartupSettings: (): Promise<{ available: boolean; enabled: boolean }> =>
+    ipcRenderer.invoke("startup:get"),
+  setStartupEnabled: (
+    enabled: boolean,
+  ): Promise<{ available: boolean; enabled: boolean }> =>
+    ipcRenderer.invoke("startup:set", enabled),
   copyText: (text: string): Promise<boolean> =>
     ipcRenderer.invoke("clipboard:write", text),
   openAccessibilitySettings: (): Promise<boolean> =>
