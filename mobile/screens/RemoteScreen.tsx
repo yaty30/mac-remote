@@ -51,6 +51,7 @@ const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const MEDIA_CONTROL_STEPS = 16;
 const HOST_STATE_POLL_MS = 1500;
 const DEFAULT_SENSITIVITY = 2.3;
+const RESTART_COUNTDOWN_SECONDS = 60;
 
 interface CustomShortcut {
   id: string;
@@ -92,6 +93,7 @@ export function RemoteScreen() {
   const [brightness, setBrightness] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
   const [hostDisplay, setHostDisplay] = useState<HostDisplayInfo | null>(null);
+  const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -165,6 +167,25 @@ export function RemoteScreen() {
 
     return () => clearInterval(interval);
   }, [socket, status]);
+
+  useEffect(() => {
+    if (restartCountdown === null) {
+      return;
+    }
+
+    if (restartCountdown <= 0) {
+      setRestartCountdown(null);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setRestartCountdown((current) =>
+        current === null ? null : Math.max(0, current - 1),
+      );
+    }, 1000);
+
+    return () => clearTimeout(timeout);
+  }, [restartCountdown]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener(
@@ -606,8 +627,13 @@ export function RemoteScreen() {
     socket.sendSleep();
   }
 
+  function sendRestartHost() {
+    setRestartCountdown(RESTART_COUNTDOWN_SECONDS);
+    socket.sendRestartHost();
+  }
+
   function confirmRestartHost() {
-    if (status !== "connected") {
+    if (status !== "connected" || restartCountdown !== null) {
       return;
     }
 
@@ -622,7 +648,7 @@ export function RemoteScreen() {
         {
           text: "Restart",
           style: "destructive",
-          onPress: () => socket.sendRestartHost(),
+          onPress: sendRestartHost,
         },
       ],
     );
@@ -1263,16 +1289,27 @@ export function RemoteScreen() {
               </View>
             </View>
             <Pressable
-              disabled={status !== "connected"}
+              disabled={status !== "connected" || restartCountdown !== null}
               style={[
                 styles.restartHostButton,
-                status !== "connected" ? styles.disabledControl : null,
+                status !== "connected" || restartCountdown !== null
+                  ? styles.disabledControl
+                  : null,
               ]}
               onPress={withHaptic(confirmRestartHost)}
             >
               <Ionicons name="reload-circle-outline" size={22} color="#ffffff" />
-              <Text style={styles.restartHostText}>Force Restart Host</Text>
+              <Text style={styles.restartHostText}>
+                {restartCountdown === null
+                  ? "Force Restart Host"
+                  : `Restarting in ${restartCountdown}s`}
+              </Text>
             </Pressable>
+            {restartCountdown !== null ? (
+              <Text style={styles.restartHostMeta}>
+                Waiting for macOS restart window to finish.
+              </Text>
+            ) : null}
           </View>
         </Animated.ScrollView>
       ) : (
@@ -2231,6 +2268,12 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "900",
+  },
+  restartHostMeta: {
+    color: "#a7a39d",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
   },
   keyboardPanel: {
     backgroundColor: "rgba(18, 17, 15, 0.9)",

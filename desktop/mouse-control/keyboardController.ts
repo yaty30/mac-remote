@@ -178,6 +178,16 @@ function switchMacSpace(direction: "left" | "right"): Promise<void> {
 
 async function forceRestartMac(): Promise<void> {
   try {
+    await runExecutable("/sbin/shutdown", ["-r", "now"]);
+    return;
+  } catch (error) {
+    console.warn(
+      "[keyboard] immediate shutdown failed, falling back to loginwindow",
+      error,
+    );
+  }
+
+  try {
     await runAppleScript(
       [
         "ignoring application responses",
