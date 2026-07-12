@@ -14,6 +14,7 @@
     "start:all": "npm run dev",
     "desktop:install": "npm install --workspace desktop",
     "desktop:dev": "npm run dev --workspace desktop",
+    "desktop:pack:app": "npm run pack:app --workspace desktop",
     "desktop:pack:mac": "npm run pack:mac --workspace desktop",
     "desktop:dist:mac": "npm run dist:mac --workspace desktop",
     "mobile:install": "npm install --workspace mobile",

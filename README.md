@@ -99,7 +99,25 @@ npm run desktop:pack:mac
 The unpacked app is created under:
 
 ```text
-desktop/release/mac/Remote Control Desktop.app
+desktop/release/mac/Mac Remote.app
+```
+
+When the desktop app opens, it also starts the Expo mobile server in the
+background with `npm run start -- --clear` from the mobile workspace. The app
+prefers the repo's `mobile/` workspace when the packaged `.app` is still inside
+this checkout, and falls back to the bundled `Contents/Resources/mobile` copy.
+Node.js and npm must be installed on the Mac that runs the app.
+
+To disable the automatic mobile server:
+
+```bash
+REMOTE_MOBILE_SERVER=0 npm run desktop:dev
+```
+
+To point the packaged app at a specific mobile checkout:
+
+```bash
+REMOTE_MOBILE_DIR=/path/to/remote-control/mobile open "desktop/release/mac/Mac Remote.app"
 ```
 
 For a DMG and ZIP:

@@ -7,9 +7,16 @@ import {
   shell,
   systemPreferences,
 } from "electron";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createSocket } from "node:dgram";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
@@ -30,9 +37,11 @@ const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
 const hostName = getDeviceName();
 const startupAgentLabel = "local.remote-control.dev";
+const mobileServerDefaultCommand = "npm run start -- --clear";
 
 let mainWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
+let mobileServerProcess: ReturnType<typeof spawn> | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
   hostName,
@@ -179,6 +188,185 @@ function escapeXml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function startMobileServer(): void {
+  if (process.env.REMOTE_MOBILE_SERVER === "0") {
+    console.log("[mobile-server] disabled by REMOTE_MOBILE_SERVER=0");
+    return;
+  }
+
+  if (mobileServerProcess) {
+    return;
+  }
+
+  const mobileDirectory = resolveMobileServerDirectory();
+
+  if (!mobileDirectory) {
+    console.warn(
+      "[mobile-server] mobile workspace not found; set REMOTE_MOBILE_DIR to start Expo automatically",
+    );
+    return;
+  }
+
+  const command =
+    process.env.REMOTE_MOBILE_COMMAND?.trim() || mobileServerDefaultCommand;
+  const logsDirectory = app.getPath("logs");
+  mkdirSync(logsDirectory, { recursive: true });
+
+  const stdoutFd = openSync(path.join(logsDirectory, "mobile-server.out.log"), "a");
+  const stderrFd = openSync(path.join(logsDirectory, "mobile-server.err.log"), "a");
+
+  console.log(`[mobile-server] starting from ${mobileDirectory}`);
+
+  try {
+    mobileServerProcess = spawn(resolveShellCommand(), resolveShellArgs(command), {
+      cwd: mobileDirectory,
+      detached: process.platform !== "win32",
+      env: {
+        ...process.env,
+        BROWSER: "none",
+        EXPO_NO_TELEMETRY: "1",
+      },
+      stdio: ["ignore", stdoutFd, stderrFd],
+    });
+  } catch (error) {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    console.error("[mobile-server] failed to start", error);
+    return;
+  }
+
+  mobileServerProcess.once("error", (error) => {
+    console.error("[mobile-server] failed to start", error);
+  });
+
+  mobileServerProcess.once("close", (code, signal) => {
+    console.log(
+      `[mobile-server] exited with code ${code ?? "null"} signal ${
+        signal ?? "null"
+      }`,
+    );
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    mobileServerProcess = null;
+  });
+}
+
+function resolveShellCommand(): string {
+  return process.platform === "win32" ? "cmd.exe" : "/bin/zsh";
+}
+
+function resolveShellArgs(command: string): string[] {
+  return process.platform === "win32"
+    ? ["/d", "/s", "/c", command]
+    : ["-lc", command];
+}
+
+function resolveMobileServerDirectory(): string | null {
+  const explicitDirectory = process.env.REMOTE_MOBILE_DIR?.trim();
+
+  if (explicitDirectory && isMobileProjectDirectory(explicitDirectory)) {
+    return explicitDirectory;
+  }
+
+  return findWorkspaceMobileDirectory() || findBundledMobileDirectory();
+}
+
+function findWorkspaceMobileDirectory(): string | null {
+  const startDirectories = [
+    process.cwd(),
+    app.getAppPath(),
+    process.resourcesPath,
+    __dirname,
+  ];
+
+  for (const startDirectory of startDirectories) {
+    let currentDirectory = path.resolve(startDirectory);
+
+    for (let depth = 0; depth < 10; depth += 1) {
+      if (isWorkspaceRootDirectory(currentDirectory)) {
+        const candidate = path.join(currentDirectory, "mobile");
+        return candidate;
+      }
+
+      const parentDirectory = path.dirname(currentDirectory);
+
+      if (parentDirectory === currentDirectory) {
+        break;
+      }
+
+      currentDirectory = parentDirectory;
+    }
+  }
+
+  return null;
+}
+
+function isWorkspaceRootDirectory(directory: string): boolean {
+  return (
+    existsSync(path.join(directory, "package.json")) &&
+    existsSync(path.join(directory, "desktop", "package.json")) &&
+    isMobileProjectDirectory(path.join(directory, "mobile"))
+  );
+}
+
+function findBundledMobileDirectory(): string | null {
+  const candidate = path.join(process.resourcesPath, "mobile");
+  return isMobileProjectDirectory(candidate) ? candidate : null;
+}
+
+function isMobileProjectDirectory(directory: string): boolean {
+  return (
+    existsSync(path.join(directory, "package.json")) &&
+    existsSync(path.join(directory, "app.json"))
+  );
+}
+
+async function stopMobileServer(): Promise<void> {
+  const child = mobileServerProcess;
+
+  if (!child) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let resolved = false;
+    const finish = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    child.once("close", finish);
+
+    try {
+      if (process.platform !== "win32" && child.pid) {
+        process.kill(-child.pid, "SIGTERM");
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch (error) {
+      console.warn("[mobile-server] failed to stop gracefully", error);
+      finish();
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        if (process.platform !== "win32" && child.pid) {
+          process.kill(-child.pid, "SIGKILL");
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch {
+        // Process already exited.
+      }
+
+      finish();
+    }, 2500).unref();
+  });
 }
 
 async function getHostState(): Promise<HostMessage> {
@@ -525,6 +713,7 @@ function isTvDisplayName(name: string): boolean {
 app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
   requestAccessibilityPermission();
+  startMobileServer();
   ipcMain.handle("status:get", () => latestStatus);
   ipcMain.handle("clipboard:write", (_event, text: unknown) => {
     if (typeof text !== "string") {
@@ -613,6 +802,8 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", async () => {
+  await stopMobileServer();
+
   if (remoteServer) {
     await remoteServer.close();
   }

@@ -10,22 +10,35 @@
   "main": "dist/electron/main.js",
   "scripts": {
     "build": "tsc && node scripts/copy-static.mjs",
-    "dev": "npm run build && electron .",
+    "dev": "npm run build && env -u ELECTRON_RUN_AS_NODE electron .",
+    "pack:app": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
-    "start": "electron .",
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "typecheck": "tsc --noEmit"
   },
   "build": {
     "appId": "local.remote-control.desktop",
     "productName": "Mac Remote",
     "electronVersion": "42.3.0",
+    "icon": "../app_icon_pack/alien_app_icon.icns",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../mobile",
+        "to": "mobile",
+        "filter": [
+          "**/*",
+          "!.expo/**",
+          "!node_modules/.cache/**"
+        ]
+      }
     ],
     "asarUnpack": [
       "node_modules/@nut-tree-fork/**/*"

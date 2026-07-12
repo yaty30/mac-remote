@@ -100,18 +100,17 @@ svg {
 
 .brandIcon {
   align-items: center;
-  border: 1px solid var(--accent);
-  border-radius: 7px;
-  color: var(--accent);
   display: flex;
-  height: 24px;
+  height: 28px;
   justify-content: center;
-  width: 24px;
+  width: 28px;
 }
 
-.brandIcon svg {
-  height: 16px;
-  width: 16px;
+.brandIcon img {
+  display: block;
+  height: 26px;
+  object-fit: contain;
+  width: 26px;
 }
 
 .brand strong {
