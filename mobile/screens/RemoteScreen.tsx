@@ -29,6 +29,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   type TextInputKeyPressEventData,
@@ -70,6 +71,7 @@ const HOST_STORAGE_KEY = "remote-control:last-host";
 const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
 const DEVICES_STORAGE_KEY = "remote-control:devices";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
+const UNNATURAL_SCROLLING_STORAGE_KEY = "remote-control:unnatural-scrolling";
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const MEDIA_CONTROL_STEPS = 16;
 const BRIGHTNESS_SEND_DEBOUNCE_MS = 160;
@@ -276,6 +278,9 @@ export function RemoteScreen() {
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sensitivity, setSensitivity] = useState(DEFAULT_SENSITIVITY);
+  const [unnaturalScrolling, setUnnaturalScrolling] = useState(false);
+  const [scrollingPreferenceLoaded, setScrollingPreferenceLoaded] =
+    useState(false);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
   const [hostDisplay, setHostDisplay] = useState<HostDisplayInfo | null>(null);
@@ -418,19 +423,31 @@ export function RemoteScreen() {
   useEffect(() => {
     let cancelled = false;
 
-    AsyncStorage.getItem(SENSITIVITY_STORAGE_KEY)
-      .then((saved) => {
-        if (cancelled || !saved) {
+    Promise.all([
+      AsyncStorage.getItem(SENSITIVITY_STORAGE_KEY),
+      AsyncStorage.getItem(UNNATURAL_SCROLLING_STORAGE_KEY),
+    ])
+      .then(([savedSensitivity, savedUnnaturalScrolling]) => {
+        if (cancelled) {
           return;
         }
 
-        const parsed = Number.parseFloat(saved);
+        const parsed = Number.parseFloat(savedSensitivity ?? "");
         if (Number.isFinite(parsed)) {
           setSensitivity(Math.max(0.25, Math.min(3, parsed)));
+        }
+
+        if (savedUnnaturalScrolling !== null) {
+          setUnnaturalScrolling(savedUnnaturalScrolling === "true");
         }
       })
       .catch(() => {
         // ignore storage errors
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setScrollingPreferenceLoaded(true);
+        }
       });
 
     return () => {
@@ -523,6 +540,19 @@ export function RemoteScreen() {
       },
     );
   }, [sensitivity]);
+
+  useEffect(() => {
+    if (!scrollingPreferenceLoaded) {
+      return;
+    }
+
+    AsyncStorage.setItem(
+      UNNATURAL_SCROLLING_STORAGE_KEY,
+      String(unnaturalScrolling),
+    ).catch(() => {
+      // ignore storage errors
+    });
+  }, [scrollingPreferenceLoaded, unnaturalScrolling]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () => {
@@ -1578,6 +1608,26 @@ export function RemoteScreen() {
           </View>
 
           <View style={styles.sensitivityCard}>
+            <View style={styles.settingToggleRow}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="swap-vertical" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>
+                  Unnatural scrolling
+                </Text>
+              </View>
+              <Switch
+                ios_backgroundColor="#33261b"
+                onValueChange={setUnnaturalScrolling}
+                thumbColor={unnaturalScrolling ? "#ffffff" : "#a7a39d"}
+                trackColor={{ false: "#33261b", true: "#ff941f" }}
+                value={unnaturalScrolling}
+              />
+            </View>
+          </View>
+
+          <View style={styles.sensitivityCard}>
             <View style={styles.settingHeaderRow}>
               <View style={styles.settingsCardTitleRow}>
                 <View style={styles.settingsCardIcon}>
@@ -1927,7 +1977,10 @@ export function RemoteScreen() {
             onClick={() => socket.sendLeftClick()}
             onDoubleClick={() => socket.sendDoubleClick()}
             onRightClick={() => socket.sendRightClick()}
-            onScroll={(dx, dy) => socket.sendScroll(dx, dy)}
+            onScroll={(dx, dy) => {
+              const direction = unnaturalScrolling ? -1 : 1;
+              socket.sendScroll(dx * -direction, dy * direction);
+            }}
             onZoom={(direction) => socket.sendZoom(direction)}
             onSwipeSpaces={(direction) => socket.sendSwipeSpaces(direction)}
           />
@@ -2586,6 +2639,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  settingToggleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 40,
   },
   settingHeaderActions: {
     alignItems: "center",

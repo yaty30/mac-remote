@@ -30,8 +30,8 @@ interface TrackpadProps {
   onSwipeSpaces: (direction: "left" | "right") => void;
 }
 
-const SCROLL_DOT_RANGE = 20;
-const SCROLL_DOT_SIZE = 50;
+const SCROLL_DOT_RANGE = 22;
+const SCROLL_DOT_SIZE = 62;
 const SCROLL_DOT_MIN_FRAME_DELTA = 1.2;
 const SCROLL_DOT_MAX_FRAME_DELTA = 26;
 const SCROLL_DOT_MAX_SPEED_DISTANCE = 140;
@@ -87,9 +87,10 @@ export function Trackpad({
   const threePanRef = useRef(null);
   const pinchRef = useRef(null);
   const scrollDotPanRef = useRef(null);
+  const scrollDotX = useRef(new Animated.Value(0)).current;
   const scrollDotY = useRef(new Animated.Value(0)).current;
-  const scrollDotSpeed = useRef(0);
-  const scrollDotVisualY = useRef(0);
+  const scrollDotSpeed = useRef({ x: 0, y: 0 });
+  const scrollDotVisualOffset = useRef({ x: 0, y: 0 });
   const scrollDotFrame = useRef<number | null>(null);
   const scrollDotLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -238,17 +239,32 @@ export function Trackpad({
   }, []);
 
   const runScrollDotLoop = useCallback(() => {
-    const speed = scrollDotSpeed.current;
-    const pressure = Math.abs(speed);
+    const { x, y } = scrollDotSpeed.current;
+    const pressureX = Math.abs(x);
+    const pressureY = Math.abs(y);
+    let dx = 0;
+    let dy = 0;
 
-    if (pressure > 0) {
-      const frameDelta =
+    if (pressureX > 0) {
+      dx =
         SCROLL_DOT_MIN_FRAME_DELTA +
         (SCROLL_DOT_MAX_FRAME_DELTA - SCROLL_DOT_MIN_FRAME_DELTA) *
-          pressure *
-          pressure;
+          pressureX *
+          pressureX;
+      dx *= Math.sign(x);
+    }
 
-      onScroll(0, Math.sign(speed) * frameDelta);
+    if (pressureY > 0) {
+      dy =
+        SCROLL_DOT_MIN_FRAME_DELTA +
+        (SCROLL_DOT_MAX_FRAME_DELTA - SCROLL_DOT_MIN_FRAME_DELTA) *
+          pressureY *
+          pressureY;
+      dy *= Math.sign(y);
+    }
+
+    if (dx !== 0 || dy !== 0) {
+      onScroll(dx, dy);
     }
 
     scrollDotFrame.current = requestAnimationFrame(runScrollDotLoop);
@@ -315,44 +331,75 @@ export function Trackpad({
 
   const animateScrollDotHome = useCallback(
     (onFinished?: () => void) => {
-      const releaseY = scrollDotVisualY.current;
-      const direction = Math.sign(releaseY);
-      const rebound = direction === 0 ? 0 : -direction * 10;
+      const { x, y } = scrollDotVisualOffset.current;
+      const reboundX = x === 0 ? 0 : -Math.sign(x) * 8;
+      const reboundY = y === 0 ? 0 : -Math.sign(y) * 8;
 
+      scrollDotX.stopAnimation();
       scrollDotY.stopAnimation();
 
-      if (rebound === 0) {
-        Animated.spring(scrollDotY, {
-          toValue: 0,
-          tension: 170,
-          friction: 14,
-          useNativeDriver: true,
-        }).start(onFinished);
+      if (reboundX === 0 && reboundY === 0) {
+        Animated.parallel([
+          Animated.spring(scrollDotX, {
+            toValue: 0,
+            tension: 170,
+            friction: 14,
+            useNativeDriver: true,
+          }),
+          Animated.spring(scrollDotY, {
+            toValue: 0,
+            tension: 170,
+            friction: 14,
+            useNativeDriver: true,
+          }),
+        ]).start(onFinished);
         return;
       }
 
-      Animated.sequence([
-        Animated.timing(scrollDotY, {
-          toValue: 0,
-          duration: 95,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scrollDotY, {
-          toValue: rebound,
-          duration: 90,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.spring(scrollDotY, {
-          toValue: 0,
-          tension: 150,
-          friction: 8,
-          useNativeDriver: true,
-        }),
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(scrollDotX, {
+            toValue: 0,
+            duration: 95,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scrollDotX, {
+            toValue: reboundX,
+            duration: 90,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.spring(scrollDotX, {
+            toValue: 0,
+            tension: 150,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(scrollDotY, {
+            toValue: 0,
+            duration: 95,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scrollDotY, {
+            toValue: reboundY,
+            duration: 90,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.spring(scrollDotY, {
+            toValue: 0,
+            tension: 150,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]),
       ]).start(onFinished);
     },
-    [scrollDotY],
+    [scrollDotX, scrollDotY],
   );
 
   const handleScrollDotPan = useCallback(
@@ -374,8 +421,9 @@ export function Trackpad({
           applyScrollDotHome(nextPosition);
         }
 
-        scrollDotSpeed.current = 0;
-        scrollDotVisualY.current = 0;
+        scrollDotSpeed.current = { x: 0, y: 0 };
+        scrollDotVisualOffset.current = { x: 0, y: 0 };
+        scrollDotX.setValue(0);
         scrollDotY.setValue(0);
         return;
       }
@@ -386,16 +434,20 @@ export function Trackpad({
         startScrollDotLoop();
       }
 
+      const clampedX = clamp(translationX, -SCROLL_DOT_RANGE, SCROLL_DOT_RANGE);
       const clampedY = clamp(translationY, -SCROLL_DOT_RANGE, SCROLL_DOT_RANGE);
-      const speed = clamp(translationY / SCROLL_DOT_MAX_SPEED_DISTANCE, -1, 1);
+      const speedX = clamp(translationX / SCROLL_DOT_MAX_SPEED_DISTANCE, -1, 1);
+      const speedY = clamp(translationY / SCROLL_DOT_MAX_SPEED_DISTANCE, -1, 1);
 
-      scrollDotSpeed.current = speed;
-      scrollDotVisualY.current = clampedY;
+      scrollDotSpeed.current = { x: speedX, y: speedY };
+      scrollDotVisualOffset.current = { x: clampedX, y: clampedY };
+      scrollDotX.setValue(clampedX);
       scrollDotY.setValue(clampedY);
     },
     [
       applyScrollDotHome,
       clearScrollDotLongPressTimer,
+      scrollDotX,
       scrollDotY,
       startScrollDotLoop,
     ],
@@ -410,9 +462,11 @@ export function Trackpad({
         clearScrollDotLongPressTimer();
         scrollDotPlacementMode.current = false;
         scrollDotDragStart.current = scrollDotHomeRef.current;
-        scrollDotSpeed.current = 0;
-        scrollDotVisualY.current = 0;
+        scrollDotSpeed.current = { x: 0, y: 0 };
+        scrollDotVisualOffset.current = { x: 0, y: 0 };
+        scrollDotX.stopAnimation();
         scrollDotY.stopAnimation();
+        scrollDotX.setValue(0);
         scrollDotY.setValue(0);
         setScrollDotPlacing(false);
         setScrollDotActive(true);
@@ -437,9 +491,11 @@ export function Trackpad({
           scrollDotLongPressStart.current = null;
           scrollDotPlacementMode.current = true;
           scrollDotDragStart.current = scrollDotHomeRef.current;
-          scrollDotSpeed.current = 0;
-          scrollDotVisualY.current = 0;
+          scrollDotSpeed.current = { x: 0, y: 0 };
+          scrollDotVisualOffset.current = { x: 0, y: 0 };
+          scrollDotX.stopAnimation();
           scrollDotY.stopAnimation();
+          scrollDotX.setValue(0);
           scrollDotY.setValue(0);
           stopScrollDotLoop();
           setScrollDotPlacing(true);
@@ -460,9 +516,7 @@ export function Trackpad({
         clearScrollDotLongPressTimer();
         scrollDotPlacementMode.current = false;
         scrollDotDragStart.current = null;
-        scrollDotSpeed.current = 0;
-        scrollDotVisualY.current = 0;
-        scrollDotY.setValue(0);
+        scrollDotSpeed.current = { x: 0, y: 0 };
         setScrollDotPlacing(false);
         stopScrollDotLoop();
 
@@ -477,7 +531,7 @@ export function Trackpad({
         }
 
         animateScrollDotHome(() => {
-          scrollDotVisualY.current = 0;
+          scrollDotVisualOffset.current = { x: 0, y: 0 };
           setScrollDotActive(false);
         });
       }
@@ -487,6 +541,7 @@ export function Trackpad({
       clearScrollDotLongPressTimer,
       resetTouchMark,
       saveScrollDotHome,
+      scrollDotX,
       scrollDotY,
       stopScrollDotLoop,
     ],
@@ -526,13 +581,6 @@ export function Trackpad({
         left: scrollDotHome.left,
         marginTop: 0,
         top: scrollDotHome.top,
-      }
-    : null;
-  const scrollDotRailPositionStyle = scrollDotHome
-    ? {
-        left: scrollDotHome.left + SCROLL_DOT_SIZE / 2 - 15,
-        marginTop: 0,
-        top: scrollDotHome.top + SCROLL_DOT_SIZE / 2 - 59,
       }
     : null;
 
@@ -591,19 +639,12 @@ export function Trackpad({
                   onTouchCancel={resetTouchMark}
                   onTouchEnd={resetTouchMark}
                 >
-                  <View
-                    pointerEvents="none"
-                    style={[styles.scrollDotRail, scrollDotRailPositionStyle]}
-                  >
-                    <View style={styles.scrollDotRailLine} />
-                    <View style={styles.scrollDotRailTick} />
-                  </View>
                   <PanGestureHandler
                     ref={scrollDotPanRef}
                     minPointers={1}
                     maxPointers={1}
                     minDist={0}
-                    hitSlop={{ top: 18, right: 18, bottom: 18, left: 0 }}
+                    hitSlop={{ top: 14, right: 14, bottom: 14, left: 14 }}
                     shouldCancelWhenOutside={false}
                     onGestureEvent={handleScrollDotPan}
                     onHandlerStateChange={handleScrollDotState}
@@ -614,7 +655,12 @@ export function Trackpad({
                         scrollDotPositionStyle,
                         scrollDotActive ? styles.scrollDotActive : null,
                         scrollDotPlacing ? styles.scrollDotPlacing : null,
-                        { transform: [{ translateY: scrollDotY }] },
+                        {
+                          transform: [
+                            { translateX: scrollDotX },
+                            { translateY: scrollDotY },
+                          ],
+                        },
                       ]}
                     >
                       <View
@@ -626,27 +672,32 @@ export function Trackpad({
                             : null,
                         ]}
                       >
+                        <View style={styles.scrollDotAxisVertical} />
+                        <View style={styles.scrollDotAxisHorizontal} />
                         <Ionicons
                           name="chevron-up"
-                          size={13}
+                          size={15}
                           color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                          style={styles.scrollDotChevronUp}
                         />
-                        <View
-                          style={[
-                            styles.scrollDotGrip,
-                            scrollDotActive
-                              ? styles.scrollDotGripActive
-                              : null,
-                          ]}
-                        >
-                          <View style={styles.scrollDotGripLine} />
-                          <View style={styles.scrollDotGripLine} />
-                          <View style={styles.scrollDotGripLine} />
-                        </View>
+                        <Ionicons
+                          name="chevron-back"
+                          size={15}
+                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                          style={styles.scrollDotChevronLeft}
+                        />
+                        <View style={styles.scrollDotCenter} />
+                        <Ionicons
+                          name="chevron-forward"
+                          size={15}
+                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                          style={styles.scrollDotChevronRight}
+                        />
                         <Ionicons
                           name="chevron-down"
-                          size={13}
+                          size={15}
                           color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                          style={styles.scrollDotChevronDown}
                         />
                       </View>
                     </Animated.View>
@@ -752,58 +803,60 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: SCROLL_DOT_SIZE - 10,
     justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
     width: SCROLL_DOT_SIZE - 10,
   },
   scrollDotFaceActive: {
     backgroundColor: "#5c3820",
-    borderColor: "#ff941f",
+    borderColor: "#ff931f",
   },
   scrollDotFacePlacing: {
-    backgroundColor: "#2c1b10",
-    borderColor: "#ffb347",
+    backgroundColor: "#2c1b103e",
+    borderColor: "#ffb2479e",
   },
-  scrollDotGrip: {
-    alignItems: "center",
-    gap: 2,
-    justifyContent: "center",
-    marginVertical: -1,
+  scrollDotAxisVertical: {
+    backgroundColor: "rgba(199, 189, 177, 0.26)",
+    borderRadius: 4,
+    height: 44,
+    position: "absolute",
+    width: 8,
   },
-  scrollDotGripActive: {
-    opacity: 0.95,
+  scrollDotAxisHorizontal: {
+    backgroundColor: "rgba(199, 189, 177, 0.26)",
+    borderRadius: 4,
+    height: 8,
+    position: "absolute",
+    width: 44,
   },
-  scrollDotGripLine: {
+  scrollDotCenter: {
     backgroundColor: "#c7bdb1",
-    borderRadius: 1,
-    height: 2,
+    borderColor: "rgba(13, 13, 13, 0.72)",
+    borderRadius: 7,
+    borderWidth: 2,
+    height: 12,
+    position: "absolute",
     width: 12,
   },
-  scrollDotRail: {
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 118,
-    justifyContent: "center",
-    left: 20,
-    marginTop: -59,
+  scrollDotChevronUp: {
     position: "absolute",
-    top: "50%",
-    width: 30,
-    zIndex: 1,
+    top: 4,
+    color: "#f4eee788",
   },
-  scrollDotRailLine: {
-    backgroundColor: "#33261b",
-    borderRadius: 2,
-    height: 82,
-    width: 4,
-  },
-  scrollDotRailTick: {
-    backgroundColor: "#756f68",
-    borderRadius: 2,
-    height: 4,
+  scrollDotChevronDown: {
+    bottom: 4,
+    color: "#f4eee788",
     position: "absolute",
-    width: 14,
+  },
+  scrollDotChevronLeft: {
+    left: 4,
+    color: "#f4eee788",
+    position: "absolute",
+  },
+  scrollDotChevronRight: {
+    position: "absolute",
+    right: 4,
+    color: "#f4eee788",
   },
   scrollCursor: {
     alignItems: "center",

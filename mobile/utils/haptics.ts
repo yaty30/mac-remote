@@ -7,7 +7,7 @@ export function triggerButtonHaptic(): void {
 }
 
 export function triggerLongPressHaptic(): void {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {
     // Haptics can be unavailable on simulators or unsupported devices.
   });
 }
