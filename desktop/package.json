@@ -21,7 +21,7 @@
     "appId": "local.remote-control.desktop",
     "productName": "Mac Remote",
     "electronVersion": "42.3.0",
-    "icon": "../app_icon_pack/alien_app_icon.icns",
+    "icon": "../iconset/playstore.png",
     "directories": {
       "output": "release"
     },

@@ -12,6 +12,6 @@ mkdirSync(assetTarget, { recursive: true });
 copyFileSync(join(root, "electron", "index.html"), join(target, "index.html"));
 copyFileSync(join(root, "electron", "styles.css"), join(target, "styles.css"));
 copyFileSync(
-  join(workspaceRoot, "app_icon_pack", "alien_app_icon_transparent.png"),
+  join(workspaceRoot, "iconset", "playstore.png"),
   join(assetTarget, "alien_app_icon_transparent.png"),
 );

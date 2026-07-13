@@ -577,7 +577,7 @@ export function Trackpad({
                 ref={singlePanRef}
                 minPointers={1}
                 maxPointers={1}
-                minDist={1}
+                minDist={4}
                 waitFor={scrollDotPanRef}
                 shouldCancelWhenOutside={false}
                 onGestureEvent={handleTouchMarkSinglePan}

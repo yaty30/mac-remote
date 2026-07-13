@@ -59,6 +59,12 @@ import PrimeIcon from "../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../assets/shortcuts/spotify.svg";
 import VolumeMutedIcon from "../assets/icons/volume-muted.svg";
 import VolumeOnIcon from "../assets/icons/volume-on.svg";
+import PanelRightOpenIcon from "../assets/icons/panel-right-open.svg";
+import PanelRightCloseIcon from "../assets/icons/panel-right-close.svg";
+import ArrowBigLeftDashIcon from "../assets/icons/arrow-big-left-dash.svg";
+import ArrowBigRightDashIcon from "../assets/icons/arrow-big-right-dash.svg";
+import ChevronsLeftIcon from "../assets/icons/chevrons-left.svg";
+import ChevronsRightIcon from "../assets/icons/chevrons-right.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
@@ -1854,11 +1860,7 @@ export function RemoteScreen() {
               accessibilityLabel="Previous desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
             >
-              <Ionicons
-                name="chevron-back-circle-outline"
-                size={25}
-                color="#ffb347"
-              />
+              <PanelRightOpenIcon width={25} height={25} color="#ffb347" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1866,11 +1868,7 @@ export function RemoteScreen() {
               accessibilityLabel="Next desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
             >
-              <Ionicons
-                name="chevron-forward-circle-outline"
-                size={25}
-                color="#ffb347"
-              />
+              <PanelRightCloseIcon width={25} height={25} color="#ffb347" />
             </Pressable>
           </View>
 
@@ -1880,7 +1878,7 @@ export function RemoteScreen() {
               accessibilityLabel="Previous browser page"
               onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
             >
-              <Ionicons name="arrow-undo-outline" size={24} color="#c7bdb1" />
+              <ArrowBigLeftDashIcon width={24} height={24} color="#c7bdb1" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1890,7 +1888,7 @@ export function RemoteScreen() {
                 socket.sendTextCommand("browserForward"),
               )}
             >
-              <Ionicons name="arrow-redo-outline" size={24} color="#c7bdb1" />
+              <ArrowBigRightDashIcon width={24} height={24} color="#c7bdb1" />
             </Pressable>
           </View>
 
@@ -1900,7 +1898,7 @@ export function RemoteScreen() {
               accessibilityLabel="Left arrow key"
               onPress={withHaptic(() => socket.sendKey("leftArrow"))}
             >
-              <Ionicons name="play-back" size={24} color="#f4d0a2" />
+              <ChevronsLeftIcon width={24} height={24} color="#f4d0a2" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1908,7 +1906,7 @@ export function RemoteScreen() {
               accessibilityLabel="Right arrow key"
               onPress={withHaptic(() => socket.sendKey("rightArrow"))}
             >
-              <Ionicons name="play-forward" size={24} color="#f4d0a2" />
+              <ChevronsRightIcon width={24} height={24} color="#f4d0a2" />
             </Pressable>
           </View>
         </View>
