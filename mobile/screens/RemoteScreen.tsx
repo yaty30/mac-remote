@@ -34,6 +34,7 @@ import {
   TextInput,
   type TextInputKeyPressEventData,
   type TextInputSelectionChangeEventData,
+  useWindowDimensions,
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -66,6 +67,9 @@ import ArrowBigLeftDashIcon from "../assets/icons/arrow-big-left-dash.svg";
 import ArrowBigRightDashIcon from "../assets/icons/arrow-big-right-dash.svg";
 import ChevronsLeftIcon from "../assets/icons/chevrons-left.svg";
 import ChevronsRightIcon from "../assets/icons/chevrons-right.svg";
+import KeyboardIcon from "../assets/icons/keyboard.svg";
+import MouseRightIcon from "../assets/icons/mouse-right.svg";
+import RefreshCwIcon from "../assets/icons/refresh-cw.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
@@ -253,6 +257,7 @@ function SettingsBottomSheet({
 
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const keyboardInputRef = useRef<TextInput>(null);
   const keyboardActiveRef = useRef(false);
   const bufferRef = useRef("");
@@ -904,6 +909,7 @@ export function RemoteScreen() {
     }
 
     scannerOpenRef.current = true;
+    setShowSettings(false);
     setScannerVisible(true);
   }
 
@@ -1310,6 +1316,10 @@ export function RemoteScreen() {
       : "Display detected"
     : "Connect to host for display details";
   const showConnectionPrompt = status !== "connected";
+  const scannerCameraSize = Math.max(
+    240,
+    Math.min(windowWidth - 64, windowHeight - 236, 420),
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -1485,11 +1495,21 @@ export function RemoteScreen() {
                 />
               </Pressable>
               <Pressable
-                style={[styles.connectButton]}
+                accessibilityLabel="Scan desktop QR"
+                style={({ pressed }) => [
+                  styles.connectButton,
+                  pressed ? styles.scanButtonPressed : null,
+                ]}
                 onPress={withHaptic(openScanner)}
               >
-                <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
-                <Text style={styles.connectText}>Scan</Text>
+                <ScanButtonGradient
+                  colors={["#f4b760", "#e2943b", "#c8762f"]}
+                  end={{ x: 0.85, y: 1 }}
+                  start={{ x: 0.15, y: 0 }}
+                  style={styles.connectButtonGradient}
+                >
+                  <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
+                </ScanButtonGradient>
               </Pressable>
             </View>
             {deviceDropdownOpen ? (
@@ -1839,9 +1859,9 @@ export function RemoteScreen() {
               style={styles.connectionPromptButton}
             >
               <ScanButtonGradient
-                colors={["#ffe07a", "#ff941f", "#ff5a3d"]}
-                end={{ x: 1, y: 1 }}
-                start={{ x: 0, y: 0 }}
+                colors={["#f4b760", "#e2943b", "#c8762f"]}
+                end={{ x: 0.85, y: 1 }}
+                start={{ x: 0.15, y: 0 }}
                 style={styles.connectionPromptButtonGradient}
               >
                 <Ionicons name="scan-outline" size={22} color="#1b1008" />
@@ -1910,7 +1930,7 @@ export function RemoteScreen() {
               accessibilityLabel="Previous desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
             >
-              <PanelRightOpenIcon width={25} height={25} color="#ffb347" />
+              <PanelRightOpenIcon width={24} height={24} color="#b8afa5" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1918,19 +1938,21 @@ export function RemoteScreen() {
               accessibilityLabel="Next desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
             >
-              <PanelRightCloseIcon width={25} height={25} color="#ffb347" />
+              <PanelRightCloseIcon width={24} height={24} color="#b8afa5" />
             </Pressable>
           </View>
 
-          <View style={styles.shortcutGroup}>
+          <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
             <Pressable
               style={styles.desktopSwitchButton}
               accessibilityLabel="Previous browser page"
               onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
             >
-              <ArrowBigLeftDashIcon width={24} height={24} color="#c7bdb1" />
+              <ArrowBigLeftDashIcon width={24} height={24} color="#f0c17c" />
             </Pressable>
-            <View style={styles.shortcutDivider} />
+            <View
+              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+            />
             <Pressable
               style={styles.desktopSwitchButton}
               accessibilityLabel="Next browser page"
@@ -1938,7 +1960,7 @@ export function RemoteScreen() {
                 socket.sendTextCommand("browserForward"),
               )}
             >
-              <ArrowBigRightDashIcon width={24} height={24} color="#c7bdb1" />
+              <ArrowBigRightDashIcon width={24} height={24} color="#f0c17c" />
             </Pressable>
           </View>
 
@@ -1948,7 +1970,7 @@ export function RemoteScreen() {
               accessibilityLabel="Left arrow key"
               onPress={withHaptic(() => socket.sendKey("leftArrow"))}
             >
-              <ChevronsLeftIcon width={24} height={24} color="#f4d0a2" />
+              <ChevronsLeftIcon width={24} height={24} color="#9e9890" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1956,7 +1978,7 @@ export function RemoteScreen() {
               accessibilityLabel="Right arrow key"
               onPress={withHaptic(() => socket.sendKey("rightArrow"))}
             >
-              <ChevronsRightIcon width={24} height={24} color="#f4d0a2" />
+              <ChevronsRightIcon width={24} height={24} color="#9e9890" />
             </Pressable>
           </View>
         </View>
@@ -1988,33 +2010,62 @@ export function RemoteScreen() {
 
         <View style={styles.mouseButtonRow}>
           <Pressable
-            style={styles.mouseButton}
+            accessibilityLabel="Refresh"
+            style={({ pressed }) => [
+              styles.mouseButton,
+              styles.mouseButtonSide,
+              pressed ? styles.mouseButtonPressed : null,
+            ]}
             onPress={withHaptic(() => socket.sendTextCommand("reload"))}
           >
-            <Ionicons name="refresh" size={22} color="#ffffff" />
-            <Text style={styles.mouseButtonText}>Refresh</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.sideMouseButtonGradient}
+            >
+              <RefreshCwIcon width={23} height={23} color="#ffffff" />
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.mouseButton, styles.keyboardMouseButton]}
+            style={({ pressed }) => [
+              styles.mouseButton,
+              styles.keyboardMouseButton,
+              pressed ? styles.mouseButtonPressed : null,
+            ]}
             onPress={withHaptic(
               keyboardVisible ? dismissKeyboardInput : focusKeyboard,
             )}
           >
-            <Ionicons
-              name={keyboardVisible ? "chevron-down" : "keypad-outline"}
-              size={22}
-              color="#1b1008"
-            />
-            <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
-              Keyboard
-            </Text>
+            <ScanButtonGradient
+              colors={["#f4b760", "#e2943b", "#c8762f"]}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
+              style={styles.keyboardMouseButtonGradient}
+            >
+              <KeyboardIcon width={23} height={23} color="#1b1008" />
+              <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
+                Keyboard
+              </Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={styles.mouseButton}
+            accessibilityLabel="Right Click"
+            style={({ pressed }) => [
+              styles.mouseButton,
+              styles.mouseButtonSide,
+              pressed ? styles.mouseButtonPressed : null,
+            ]}
             onPress={withHaptic(() => socket.sendRightClick())}
           >
-            <Ionicons name="ellipsis-horizontal" size={24} color="#ffffff" />
-            <Text style={styles.mouseButtonText}>Right Click</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.sideMouseButtonGradient}
+            >
+              <MouseRightIcon width={23} height={23} color="#ffffff" />
+            </ScanButtonGradient>
           </Pressable>
         </View>
 
@@ -2045,7 +2096,15 @@ export function RemoteScreen() {
               </Pressable>
             </View>
 
-            <View style={styles.scannerCameraFrame}>
+            <View
+              style={[
+                styles.scannerCameraFrame,
+                {
+                  height: scannerCameraSize,
+                  width: scannerCameraSize,
+                },
+              ]}
+            >
               <CameraView
                 active={scannerVisible}
                 barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
@@ -2474,8 +2533,8 @@ const styles = StyleSheet.create({
   },
   shortcutGroup: {
     alignItems: "center",
-    backgroundColor: "#14110f",
-    borderColor: "#2a2118",
+    backgroundColor: "#11100e",
+    borderColor: "#231c16",
     borderRadius: 10,
     borderWidth: 1,
     flex: 1,
@@ -2483,10 +2542,17 @@ const styles = StyleSheet.create({
     minHeight: 56,
     overflow: "hidden",
   },
+  shortcutGroupPrimary: {
+    backgroundColor: "#17130f",
+    borderColor: "#3a2a1e",
+  },
   shortcutDivider: {
-    backgroundColor: "#2a2118",
+    backgroundColor: "#231c16",
     height: 26,
     width: 1,
+  },
+  shortcutDividerPrimary: {
+    backgroundColor: "#3a2a1e",
   },
   shortcutsScroller: {
     flexGrow: 0,
@@ -2496,17 +2562,29 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     alignItems: "center",
-    backgroundColor: "#ff941f",
+    backgroundColor: "#c8762f",
+    borderColor: "#ffbf66",
     borderRadius: 18,
-    flexDirection: "row",
-    gap: 8,
+    borderWidth: 1,
+    elevation: 5,
+    justifyContent: "center",
     minHeight: 52,
-    paddingHorizontal: 16,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    width: 52,
   },
-  connectText: {
-    color: "#1b1008",
-    fontSize: 15,
-    fontWeight: "800",
+  connectButtonGradient: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
+  },
+  scanButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
   connectionPrompt: {
     alignItems: "center",
@@ -2515,18 +2593,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   connectionPromptButton: {
-    borderRadius: 20,
-    elevation: 12,
+    backgroundColor: "#c8762f",
+    borderColor: "#ffbf66",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 5,
+    overflow: "hidden",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.42,
-    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
   },
   connectionPromptButtonGradient: {
     alignItems: "center",
-    borderColor: "rgba(255, 255, 255, 0.36)",
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 18,
     flexDirection: "row",
     gap: 8,
     minHeight: 58,
@@ -3003,19 +3083,51 @@ const styles = StyleSheet.create({
   mouseButton: {
     alignItems: "center",
     backgroundColor: "#15120f",
-    borderColor: "#2a2118",
+    borderColor: "#4a3124",
     borderRadius: 8,
     borderWidth: 1,
-    flex: 1,
+    elevation: 4,
     flexDirection: "row",
     gap: 10,
     justifyContent: "center",
     minHeight: 52,
+    overflow: "hidden",
     paddingHorizontal: 12,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+  },
+  mouseButtonSide: {
+    flex: 3,
+    paddingHorizontal: 0,
   },
   keyboardMouseButton: {
-    backgroundColor: "#ff941f",
-    borderColor: "#ffb347",
+    backgroundColor: "#c8762f",
+    borderColor: "#eba84e",
+    flex: 4,
+    paddingHorizontal: 0,
+    shadowOpacity: 0.24,
+  },
+  keyboardMouseButtonGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  sideMouseButtonGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  mouseButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
   },
   mouseButtonText: {
     color: "#ffffff",
@@ -3047,6 +3159,7 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   scannerSheet: {
+    alignItems: "stretch",
     backgroundColor: "#14110f",
     borderColor: "#2a2118",
     borderRadius: 8,
@@ -3088,17 +3201,15 @@ const styles = StyleSheet.create({
     width: 38,
   },
   scannerCameraFrame: {
-    aspectRatio: 1,
+    alignSelf: "center",
     backgroundColor: "#070707",
     borderColor: "#33261b",
     borderRadius: 8,
     borderWidth: 1,
     overflow: "hidden",
-    width: "100%",
   },
   scannerCamera: {
-    height: "100%",
-    width: "100%",
+    ...StyleSheet.absoluteFillObject,
   },
   scannerGuide: {
     alignItems: "center",

@@ -179,8 +179,8 @@ export function Trackpad({
       }
 
       return clampScrollDotPosition(
-        10,
-        height / 2 - SCROLL_DOT_SIZE / 2,
+        width / 2 - SCROLL_DOT_SIZE / 2,
+        height / 2 - SCROLL_DOT_SIZE / 2 - 20,
         width,
         height,
       );

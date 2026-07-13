@@ -813,8 +813,8 @@ h2 {
 }
 
 .devicesPanel .panelTitle {
-  align-self: stretch;
-  margin-bottom: auto;
+  align-self: center;
+  margin-bottom: 0;
 }
 
 .deviceIllustration {
