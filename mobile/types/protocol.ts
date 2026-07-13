@@ -22,12 +22,14 @@ export type RemoteMessage =
   | SwipeSpacesMessage
   | RequestHostStateMessage
   | AdjustBrightnessMessage
+  | SetBrightnessMessage
   | SetVolumeMessage
   | SleepMessage
   | RestartHostMessage
   | ShortcutMessage
   | WebsiteShortcutMessage
   | TypeTextMessage
+  | PasteTextMessage
   | TextCommandMessage
   | PressKeyMessage;
 
@@ -84,6 +86,11 @@ export interface AdjustBrightnessMessage {
   delta: -1 | 1;
 }
 
+export interface SetBrightnessMessage {
+  type: "setBrightness";
+  value: number;
+}
+
 export interface SetVolumeMessage {
   type: "setVolume";
   value: number;
@@ -121,10 +128,16 @@ export interface TypeTextMessage {
   text: string;
 }
 
+export interface PasteTextMessage {
+  type: "pasteText";
+  text: string;
+}
+
 export type TextCommand =
   | "selectAll"
   | "copy"
   | "paste"
+  | "newLine"
   | "clear"
   | "reload"
   | "browserBack"

@@ -7,8 +7,6 @@ import { withHaptic } from "../utils/haptics";
 interface HeaderProps {
   status: ConnectionStatus;
   title?: string;
-  onScan: () => void;
-  showSettings?: boolean;
   onToggleSettings?: () => void;
   onSleep: () => void;
 }
@@ -18,18 +16,15 @@ const statusLabels: Record<ConnectionStatus, string> = {
   connecting: "Connecting",
   connected: "Connected",
   disconnected: "Disconnected",
-  error: "Connection error",
+  error: "Connecting",
 };
 
 export function Header({
   status,
   title = "iMac Remote",
-  onScan,
-  showSettings = false,
   onToggleSettings,
   onSleep,
 }: HeaderProps) {
-  const connected = status === "connected";
   const [sleep, setSleep] = useState(false);
 
   return (
@@ -43,7 +38,7 @@ export function Header({
             <View
               style={[
                 styles.dot,
-                connected ? styles.dotConnected : styles.dotIdle,
+                status === "connected" ? styles.dotConnected : styles.dotIdle,
               ]}
             />
             <Text style={styles.status}>{statusLabels[status]}</Text>
@@ -51,17 +46,6 @@ export function Header({
         </View>
 
         <View style={styles.actionRow}>
-          <Pressable
-            style={[styles.connectButton, connected && styles.liveButton]}
-            onPress={connected ? undefined : withHaptic(onScan)}
-          >
-            <Ionicons
-              name={connected ? "thumbs-up" : "qr-code-outline"}
-              size={20}
-              color={connected ? "#ffffff" : "#1b1008"}
-            />
-          </Pressable>
-
           <Pressable
             style={styles.connectButton}
             onPress={withHaptic(onToggleSettings)}
@@ -152,13 +136,5 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 52,
     paddingHorizontal: 16,
-  },
-  liveButton: {
-    backgroundColor: "#1b7f49",
-  },
-  connectText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "800",
   },
 });

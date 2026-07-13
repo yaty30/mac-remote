@@ -179,6 +179,17 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid adjustBrightness payload");
   }
 
+  if (data.type === "setBrightness") {
+    if (typeof data.value !== "number") {
+      throw new Error("Invalid setBrightness payload");
+    }
+
+    return {
+      type: "setBrightness",
+      value: clampPercent(data.value),
+    };
+  }
+
   if (data.type === "setVolume") {
     if (typeof data.value !== "number") {
       throw new Error("Invalid setVolume payload");
@@ -245,11 +256,23 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     };
   }
 
+  if (data.type === "pasteText") {
+    if (typeof data.text !== "string") {
+      throw new Error("Invalid pasteText payload");
+    }
+
+    return {
+      type: "pasteText",
+      text: data.text.slice(0, 10000),
+    };
+  }
+
   if (data.type === "textCommand") {
     if (
       data.command === "selectAll" ||
       data.command === "copy" ||
       data.command === "paste" ||
+      data.command === "newLine" ||
       data.command === "clear" ||
       data.command === "reload" ||
       data.command === "browserBack" ||

@@ -430,6 +430,15 @@ async function handleRemoteMessage(
       await keyboardController.adjustBrightness(message.delta);
       return await getHostState();
     }
+    case "setBrightness": {
+      const display = getCurrentDisplayInfo();
+      if (!display.brightnessAdjustable) {
+        return await getHostState();
+      }
+
+      await keyboardController.setBrightness(message.value);
+      return await getHostState();
+    }
     case "setVolume": {
       const display = getCurrentDisplayInfo();
       if (!display.volumeAdjustable) {
@@ -454,6 +463,11 @@ async function handleRemoteMessage(
     case "typeText":
       await keyboardController.typeText(message.text);
       break;
+    case "pasteText": {
+      clipboard.writeText(message.text);
+      await keyboardController.textCommand("paste");
+      break;
+    }
     case "textCommand":
       await keyboardController.textCommand(message.command);
       break;

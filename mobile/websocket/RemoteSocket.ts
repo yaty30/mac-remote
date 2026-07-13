@@ -32,20 +32,18 @@ export class RemoteSocket {
       .replace(/\/$/, "");
     const url = `ws://${normalizedHost.includes(":") ? normalizedHost : `${normalizedHost}:${port}`}`;
     const socket = new WebSocket(url);
-    let hasOpened = false;
-    let hadError = false;
 
     socket.onopen = () => {
-      hasOpened = true;
       this.emit("connected");
     };
     socket.onclose = () => {
-      this.emit(hadError && !hasOpened ? "error" : "disconnected");
+      this.emit(this.shouldReconnect ? "connecting" : "disconnected");
       this.scheduleReconnect();
     };
     socket.onerror = () => {
-      hadError = true;
-      this.emit("error");
+      if (this.shouldReconnect) {
+        this.emit("connecting");
+      }
     };
     socket.onmessage = (event) => this.handleMessage(event.data);
     this.socket = socket;
@@ -122,6 +120,10 @@ export class RemoteSocket {
     this.send({ type: "adjustBrightness", delta }, true);
   }
 
+  setBrightness(value: number): void {
+    this.send({ type: "setBrightness", value });
+  }
+
   sendVolume(value: number): void {
     this.send({ type: "setVolume", value }, true);
   }
@@ -144,6 +146,10 @@ export class RemoteSocket {
 
   sendText(text: string): void {
     this.send({ type: "typeText", text });
+  }
+
+  pasteText(text: string): void {
+    this.send({ type: "pasteText", text });
   }
 
   sendTextCommand(command: TextCommand): void {

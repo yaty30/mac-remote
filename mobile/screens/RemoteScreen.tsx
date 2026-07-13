@@ -6,7 +6,14 @@ import {
   type ScanningResult,
   useCameraPermissions,
 } from "expo-camera";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import {
   Alert,
   AppState,
@@ -16,6 +23,8 @@ import {
   Image,
   Keyboard,
   Modal,
+  NativeModules,
+  PanResponder,
   type NativeSyntheticEvent,
   Pressable,
   ScrollView,
@@ -23,9 +32,15 @@ import {
   Text,
   TextInput,
   type TextInputKeyPressEventData,
+  type TextInputSelectionChangeEventData,
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as Clipboard from "expo-clipboard";
+import {
+  LinearGradient as ExpoLinearGradient,
+  type LinearGradientProps,
+} from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "../components/Header";
 import { ShortcutButton } from "../components/ShortcutButton";
@@ -42,6 +57,8 @@ import DisneyPlusIcon from "../assets/shortcuts/disneyplus.svg";
 import NetflixIcon from "../assets/shortcuts/netflix.svg";
 import PrimeIcon from "../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../assets/shortcuts/spotify.svg";
+import VolumeMutedIcon from "../assets/icons/volume-muted.svg";
+import VolumeOnIcon from "../assets/icons/volume-on.svg";
 
 const HOST_STORAGE_KEY = "remote-control:last-host";
 const HOST_NAME_STORAGE_KEY = "remote-control:last-host-name";
@@ -49,9 +66,14 @@ const DEVICES_STORAGE_KEY = "remote-control:devices";
 const SENSITIVITY_STORAGE_KEY = "remote-control:sensitivity";
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "remote-control:custom-shortcuts";
 const MEDIA_CONTROL_STEPS = 16;
+const BRIGHTNESS_SEND_DEBOUNCE_MS = 160;
 const HOST_STATE_POLL_MS = 1500;
 const DEFAULT_SENSITIVITY = 2.3;
 const RESTART_COUNTDOWN_SECONDS = 60;
+const DEFAULT_UNMUTE_VOLUME = 50;
+const SETTINGS_FALLBACK_CLOSE_OFFSET = 760;
+const SETTINGS_FALLBACK_CLOSE_THRESHOLD = 110;
+const TEXT_SEND_CHUNK_SIZE = 128;
 
 interface CustomShortcut {
   id: string;
@@ -72,14 +94,172 @@ interface SavedDevice {
   lastConnectedAt: number;
 }
 
+interface NativeBottomSheetProps {
+  children: ReactNode;
+  isOpened: boolean;
+  onIsOpenedChange: (isOpened: boolean) => void;
+  presentationDetents?: Array<"medium" | "large" | number>;
+  presentationDragIndicator?: "automatic" | "visible" | "hidden";
+}
+
+interface SettingsBottomSheetProps {
+  children: ReactNode;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+}
+
+function getNativeBottomSheet(): ComponentType<NativeBottomSheetProps> | null {
+  const viewManagersMetadata =
+    NativeModules.NativeUnimoduleProxy?.viewManagersMetadata;
+
+  if (!viewManagersMetadata?.ExpoUI) {
+    return null;
+  }
+
+  const expoUi = require("@expo/ui/swift-ui") as {
+    BottomSheet: ComponentType<NativeBottomSheetProps>;
+  };
+
+  return expoUi.BottomSheet;
+}
+
+const NativeBottomSheet = getNativeBottomSheet();
+const ScanButtonGradient =
+  ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
+
+function SettingsBottomSheet({
+  children,
+  isOpen,
+  onOpenChange,
+}: SettingsBottomSheetProps) {
+  const fallbackTranslateY = useRef(new Animated.Value(0)).current;
+  const closeFallbackSheet = useMemo(
+    () => () => {
+      Animated.timing(fallbackTranslateY, {
+        toValue: SETTINGS_FALLBACK_CLOSE_OFFSET,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        onOpenChange(false);
+      });
+    },
+    [fallbackTranslateY, onOpenChange],
+  );
+  const openFallbackSheet = useMemo(
+    () => () => {
+      fallbackTranslateY.setValue(SETTINGS_FALLBACK_CLOSE_OFFSET);
+      Animated.timing(fallbackTranslateY, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    },
+    [fallbackTranslateY],
+  );
+  const fallbackPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dy) > 4,
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderMove: (_, gestureState) => {
+          fallbackTranslateY.setValue(Math.max(0, gestureState.dy));
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (
+            gestureState.dy > SETTINGS_FALLBACK_CLOSE_THRESHOLD ||
+            gestureState.vy > 1.1
+          ) {
+            closeFallbackSheet();
+            return;
+          }
+
+          Animated.spring(fallbackTranslateY, {
+            toValue: 0,
+            damping: 18,
+            stiffness: 220,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(fallbackTranslateY, {
+            toValue: 0,
+            damping: 18,
+            stiffness: 220,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [closeFallbackSheet, fallbackTranslateY],
+  );
+
+  if (NativeBottomSheet) {
+    return (
+      <NativeBottomSheet
+        isOpened={isOpen}
+        onIsOpenedChange={onOpenChange}
+        presentationDetents={["large"]}
+        presentationDragIndicator="visible"
+      >
+        {children}
+      </NativeBottomSheet>
+    );
+  }
+
+  return (
+    <Modal
+      animationType="none"
+      onShow={openFallbackSheet}
+      onRequestClose={closeFallbackSheet}
+      transparent
+      visible={isOpen}
+    >
+      <View style={styles.settingsFallbackOverlay}>
+        <Pressable
+          accessibilityLabel="Close settings"
+          onPress={closeFallbackSheet}
+          style={styles.settingsFallbackBackdrop}
+        />
+        <Animated.View
+          style={[
+            styles.settingsFallbackSheet,
+            { transform: [{ translateY: fallbackTranslateY }] },
+          ]}
+        >
+          <View
+            accessibilityLabel="Drag down to close settings"
+            accessibilityRole="adjustable"
+            style={styles.settingsFallbackHandleZone}
+            {...fallbackPanResponder.panHandlers}
+          >
+            <View style={styles.settingsFallbackHandle} />
+          </View>
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 export function RemoteScreen() {
   const socket = useMemo(() => new RemoteSocket(), []);
   const keyboardInputRef = useRef<TextInput>(null);
   const keyboardActiveRef = useRef(false);
   const bufferRef = useRef("");
+  const keyboardSelectionRef = useRef({ start: 0, end: 0 });
+  const remoteKeyboardCursorRef = useRef(0);
+  const remoteKeyboardSelectionActiveRef = useRef(false);
   const scannerOpenRef = useRef(false);
   const hostRef = useRef("");
   const statusRef = useRef<ConnectionStatus>("idle");
+  const brightnessRef = useRef<number | null>(null);
+  const brightnessCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const brightnessSlidingRef = useRef(false);
+  const lastAudibleVolumeRef = useRef(DEFAULT_UNMUTE_VOLUME);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -100,6 +280,10 @@ export function RemoteScreen() {
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
   const [typedText, setTypedText] = useState("");
+  const [keyboardSelection, setKeyboardSelection] = useState({
+    start: 0,
+    end: 0,
+  });
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
   const [shortcutModalVisible, setShortcutModalVisible] = useState(false);
@@ -111,7 +295,6 @@ export function RemoteScreen() {
   const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
   const [shortcutFormError, setShortcutFormError] = useState("");
   const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
-  const settingsAnim = useRef(new Animated.Value(showSettings ? 1 : 0)).current;
 
   useEffect(() => {
     const unsubscribe = socket.onStatus((nextStatus) => {
@@ -120,6 +303,7 @@ export function RemoteScreen() {
     });
 
     return () => {
+      clearBrightnessCommitTimer();
       unsubscribe();
       socket.disconnect();
     };
@@ -132,12 +316,21 @@ export function RemoteScreen() {
           setHostDisplay(message.display);
         }
 
-        if (typeof message.brightness === "number") {
-          setBrightness(clampPercent(message.brightness));
+        if (
+          typeof message.brightness === "number" &&
+          !brightnessSlidingRef.current
+        ) {
+          const nextBrightness = clampPercent(message.brightness);
+          brightnessRef.current = nextBrightness;
+          setBrightness(nextBrightness);
         }
 
         if (typeof message.volume === "number") {
-          setVolume(clampPercent(message.volume));
+          const nextVolume = clampPercent(message.volume);
+          if (nextVolume > 0) {
+            lastAudibleVolumeRef.current = nextVolume;
+          }
+          setVolume(nextVolume);
         }
 
         const nextHostName = sanitizeHostName(message.hostName);
@@ -167,6 +360,12 @@ export function RemoteScreen() {
 
     return () => clearInterval(interval);
   }, [socket, status]);
+
+  useEffect(() => {
+    if (showSettings && status === "connected") {
+      socket.requestHostState();
+    }
+  }, [showSettings, socket, status]);
 
   useEffect(() => {
     if (restartCountdown === null) {
@@ -367,43 +566,31 @@ export function RemoteScreen() {
     });
   }, [keyboardOverlay, keyboardPanelAnim]);
 
-  useEffect(() => {
-    if (showSettings) {
-      Animated.timing(settingsAnim, {
-        toValue: 1,
-        duration: 240,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [settingsAnim, showSettings]);
-
   function toggleSettings() {
-    setShowSettings((visible) => {
-      const nextVisible = !visible;
-
-      if (nextVisible) {
-        settingsAnim.stopAnimation();
-        settingsAnim.setValue(0);
-      }
-
-      return nextVisible;
-    });
+    setShowSettings((visible) => !visible);
   }
 
   function clearKeyboardInput() {
     keyboardInputRef.current?.setNativeProps({ text: "" });
     bufferRef.current = "";
+    keyboardSelectionRef.current = { start: 0, end: 0 };
+    remoteKeyboardCursorRef.current = 0;
+    remoteKeyboardSelectionActiveRef.current = false;
     setKeyboardBuffer("");
     setTypedText("");
+    setKeyboardSelection({ start: 0, end: 0 });
     setKeyboardInputKey((current) => current + 1);
   }
 
   function clearKeyboardTextArea() {
     keyboardInputRef.current?.setNativeProps({ text: "" });
     bufferRef.current = "";
+    keyboardSelectionRef.current = { start: 0, end: 0 };
+    remoteKeyboardCursorRef.current = 0;
+    remoteKeyboardSelectionActiveRef.current = false;
     setKeyboardBuffer("");
     setTypedText("");
+    setKeyboardSelection({ start: 0, end: 0 });
   }
 
   function dismissKeyboardInput() {
@@ -439,8 +626,12 @@ export function RemoteScreen() {
     setDeviceDropdownOpen(false);
     hostRef.current = cleanHost;
     setHost(cleanHost);
+    clearBrightnessCommitTimer();
+    brightnessSlidingRef.current = false;
+    brightnessRef.current = null;
     setBrightness(null);
     setVolume(null);
+    lastAudibleVolumeRef.current = DEFAULT_UNMUTE_VOLUME;
     setHostDisplay(null);
     const matchingDevice = savedDevices.find(
       (device) => device.host === cleanHost,
@@ -506,8 +697,12 @@ export function RemoteScreen() {
     setStatus("idle");
     setHost("");
     setHostName("");
+    clearBrightnessCommitTimer();
+    brightnessSlidingRef.current = false;
+    brightnessRef.current = null;
     setBrightness(null);
     setVolume(null);
+    lastAudibleVolumeRef.current = DEFAULT_UNMUTE_VOLUME;
     setHostDisplay(null);
     setDeviceDropdownOpen(false);
     AsyncStorage.multiRemove([HOST_STORAGE_KEY, HOST_NAME_STORAGE_KEY]).catch(
@@ -702,18 +897,32 @@ export function RemoteScreen() {
     connectToHost(pairing.url, pairing.hostName);
   }
 
-  function adjustBrightnessStep(delta: -1 | 1) {
+  function handleBrightnessSlideStart() {
     if (hostDisplay?.brightnessAdjustable !== true) {
       return;
     }
 
-    const currentStep = percentToStep(brightness);
+    brightnessSlidingRef.current = true;
+  }
 
-    socket.sendBrightness(delta);
-
-    if (currentStep !== null) {
-      setBrightness(stepToPercent(currentStep + delta));
+  function handleBrightnessValueChange(value: number) {
+    if (hostDisplay?.brightnessAdjustable !== true) {
+      return;
     }
+
+    const next = clampPercent(value);
+    brightnessRef.current = next;
+    setBrightness(next);
+    scheduleBrightnessCommit(next);
+  }
+
+  function handleBrightnessSlideComplete(value: number) {
+    if (hostDisplay?.brightnessAdjustable !== true) {
+      return;
+    }
+
+    brightnessSlidingRef.current = false;
+    commitBrightness(value);
   }
 
   function adjustVolumeStep(delta: -1 | 1) {
@@ -729,8 +938,58 @@ export function RemoteScreen() {
     }
 
     const next = stepToPercent(currentStep + delta);
+    if (next > 0) {
+      lastAudibleVolumeRef.current = next;
+    }
     setVolume(next);
     socket.sendVolume(next);
+  }
+
+  function toggleMute() {
+    if (hostDisplay?.volumeAdjustable !== true) {
+      return;
+    }
+
+    if (volume === null) {
+      socket.requestHostState();
+      return;
+    }
+
+    if (volume > 0) {
+      lastAudibleVolumeRef.current = volume;
+      setVolume(0);
+      socket.sendVolume(0);
+      return;
+    }
+
+    const next = clampPercent(lastAudibleVolumeRef.current);
+    lastAudibleVolumeRef.current = next > 0 ? next : DEFAULT_UNMUTE_VOLUME;
+    setVolume(lastAudibleVolumeRef.current);
+    socket.sendVolume(lastAudibleVolumeRef.current);
+  }
+
+  function scheduleBrightnessCommit(value: number) {
+    clearBrightnessCommitTimer();
+    brightnessCommitTimerRef.current = setTimeout(() => {
+      commitBrightness(value);
+    }, BRIGHTNESS_SEND_DEBOUNCE_MS);
+  }
+
+  function commitBrightness(value: number) {
+    const next = clampPercent(value);
+    clearBrightnessCommitTimer();
+    brightnessRef.current = next;
+    setBrightness(next);
+    socket.setBrightness(next);
+  }
+
+  function clearBrightnessCommitTimer() {
+    if (brightnessCommitTimerRef.current === null) {
+      return;
+    }
+
+    clearTimeout(brightnessCommitTimerRef.current);
+    brightnessCommitTimerRef.current = null;
   }
 
   function focusKeyboard() {
@@ -738,23 +997,65 @@ export function RemoteScreen() {
     clearKeyboardInput();
     setKeyboardOverlay(true);
 
+    refocusKeyboardInput();
+  }
+
+  function refocusKeyboardInput() {
     requestAnimationFrame(() => {
       keyboardInputRef.current?.focus();
     });
+
+    setTimeout(() => {
+      keyboardInputRef.current?.focus();
+    }, 60);
   }
 
   function sendTextChunk(text: string) {
     const pieces = text.split("\n");
 
     pieces.forEach((piece, index) => {
-      if (piece.length > 0) {
-        socket.sendText(piece);
+      for (
+        let offset = 0;
+        offset < piece.length;
+        offset += TEXT_SEND_CHUNK_SIZE
+      ) {
+        socket.sendText(piece.slice(offset, offset + TEXT_SEND_CHUNK_SIZE));
       }
 
       if (index < pieces.length - 1) {
         socket.sendKey("enter");
       }
     });
+  }
+
+  function syncRemoteKeyboardCursor(targetIndex: number) {
+    const boundedTarget = Math.max(
+      0,
+      Math.min(bufferRef.current.length, targetIndex),
+    );
+    const delta = boundedTarget - remoteKeyboardCursorRef.current;
+    const key = delta > 0 ? "rightArrow" : "leftArrow";
+
+    for (let index = 0; index < Math.abs(delta); index += 1) {
+      socket.sendKey(key);
+    }
+
+    remoteKeyboardCursorRef.current = boundedTarget;
+    remoteKeyboardSelectionActiveRef.current = false;
+  }
+
+  function setLocalKeyboardSelection(start: number, end = start) {
+    const nextSelection = { start, end };
+    keyboardSelectionRef.current = nextSelection;
+    setKeyboardSelection(nextSelection);
+  }
+
+  function updateKeyboardBuffer(nextText: string, nextCursor: number) {
+    bufferRef.current = nextText;
+    remoteKeyboardCursorRef.current = nextCursor;
+    setLocalKeyboardSelection(nextCursor);
+    setKeyboardBuffer(nextText);
+    setTypedText(nextText);
   }
 
   function handleKeyboardTextChange(nextText: string) {
@@ -768,29 +1069,83 @@ export function RemoteScreen() {
       return;
     }
 
-    if (nextText.startsWith(prev)) {
-      sendTextChunk(nextText.slice(prev.length));
-    } else if (prev.startsWith(nextText)) {
-      const backspaceCount = prev.length - nextText.length;
-      for (let index = 0; index < backspaceCount; index += 1) {
+    const activeSelection = keyboardSelectionRef.current;
+    const selectedAllRemotely =
+      remoteKeyboardSelectionActiveRef.current &&
+      activeSelection.start === 0 &&
+      activeSelection.end === prev.length;
+
+    if (selectedAllRemotely) {
+      if (nextText.length === 0) {
         socket.sendKey("backspace");
+      } else {
+        sendTextChunk(nextText);
       }
-    } else {
-      for (let index = 0; index < prev.length; index += 1) {
-        socket.sendKey("backspace");
-      }
-      sendTextChunk(nextText);
+
+      remoteKeyboardSelectionActiveRef.current = false;
+      updateKeyboardBuffer(nextText, nextText.length);
+      return;
     }
 
-    if (nextText.includes("\n")) {
+    let prefixLength = 0;
+    while (
+      prefixLength < prev.length &&
+      prefixLength < nextText.length &&
+      prev[prefixLength] === nextText[prefixLength]
+    ) {
+      prefixLength += 1;
+    }
+
+    let suffixLength = 0;
+    while (
+      suffixLength < prev.length - prefixLength &&
+      suffixLength < nextText.length - prefixLength &&
+      prev[prev.length - 1 - suffixLength] ===
+        nextText[nextText.length - 1 - suffixLength]
+    ) {
+      suffixLength += 1;
+    }
+
+    const deletedCount = prev.length - prefixLength - suffixLength;
+    const insertedText = nextText.slice(
+      prefixLength,
+      nextText.length - suffixLength,
+    );
+
+    syncRemoteKeyboardCursor(prefixLength + deletedCount);
+
+    for (let index = 0; index < deletedCount; index += 1) {
+      socket.sendKey("backspace");
+    }
+
+    if (insertedText.length > 0) {
+      sendTextChunk(insertedText);
+    }
+
+    if (insertedText.includes("\n")) {
       clearKeyboardTextArea();
       return;
     }
 
-    const nextBuffer = nextText.length > 80 ? "" : nextText;
-    bufferRef.current = nextBuffer;
-    setKeyboardBuffer(nextBuffer);
-    setTypedText(nextText);
+    updateKeyboardBuffer(nextText, prefixLength + insertedText.length);
+  }
+
+  function handleKeyboardSelectionChange(
+    event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
+  ) {
+    const { selection } = event.nativeEvent;
+    keyboardSelectionRef.current = selection;
+    setKeyboardSelection(selection);
+
+    if (!keyboardActiveRef.current) {
+      return;
+    }
+
+    if (selection.start !== selection.end) {
+      return;
+    }
+
+    syncRemoteKeyboardCursor(selection.end);
   }
 
   function handleKeyboardKeyPress(
@@ -808,13 +1163,83 @@ export function RemoteScreen() {
   function sendKeyboardShortcut(command: TextCommand) {
     socket.sendTextCommand(command);
 
+    if (command === "selectAll") {
+      remoteKeyboardSelectionActiveRef.current = true;
+      setLocalKeyboardSelection(0, bufferRef.current.length);
+    }
+
     if (command === "clear") {
       clearKeyboardTextArea();
     }
 
-    requestAnimationFrame(() => {
-      keyboardInputRef.current?.focus();
-    });
+    refocusKeyboardInput();
+  }
+
+  function insertKeyboardText(
+    text: string,
+    sendMode: "type" | "newLine" | "paste" = "type",
+  ) {
+    if (!text) {
+      refocusKeyboardInput();
+      return;
+    }
+
+    const prev = bufferRef.current;
+    const selection = keyboardSelectionRef.current;
+    const selectionStart = Math.max(0, Math.min(selection.start, selection.end));
+    const selectionEnd = Math.min(
+      prev.length,
+      Math.max(selection.start, selection.end),
+    );
+    const nextText =
+      prev.slice(0, selectionStart) + text + prev.slice(selectionEnd);
+    const selectedAllRemotely =
+      remoteKeyboardSelectionActiveRef.current &&
+      selectionStart === 0 &&
+      selectionEnd === prev.length;
+
+    if (selectedAllRemotely) {
+      if (sendMode === "newLine") {
+        socket.sendTextCommand("newLine");
+      } else if (sendMode === "paste") {
+        socket.pasteText(text);
+      } else {
+        sendTextChunk(text);
+      }
+    } else {
+      syncRemoteKeyboardCursor(selectionEnd);
+
+      for (
+        let index = 0;
+        index < selectionEnd - selectionStart;
+        index += 1
+      ) {
+        socket.sendKey("backspace");
+      }
+
+      if (sendMode === "newLine") {
+        socket.sendTextCommand("newLine");
+      } else if (sendMode === "paste") {
+        socket.pasteText(text);
+      } else {
+        sendTextChunk(text);
+      }
+    }
+
+    remoteKeyboardSelectionActiveRef.current = false;
+    updateKeyboardBuffer(nextText, selectionStart + text.length);
+
+    refocusKeyboardInput();
+  }
+
+  function insertKeyboardNewLine() {
+    insertKeyboardText("\n", "newLine");
+  }
+
+  async function pasteFromPhoneClipboard() {
+    refocusKeyboardInput();
+    const clipboardText = await Clipboard.getStringAsync();
+    insertKeyboardText(clipboardText, "paste");
   }
 
   const keyboardPanelAnimatedStyle = {
@@ -837,27 +1262,18 @@ export function RemoteScreen() {
   const keyboardBackdropAnimatedStyle = {
     opacity: keyboardPanelAnim,
   };
-  const settingsAnimatedStyle = {
-    opacity: settingsAnim,
-    transform: [
-      {
-        translateY: settingsAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [18, 0],
-        }),
-      },
-    ],
-  };
   const brightnessAdjustable = hostDisplay?.brightnessAdjustable === true;
   const volumeAdjustable = hostDisplay?.volumeAdjustable === true;
-  const brightnessStep = percentToStep(brightness);
   const volumeStep = percentToStep(volume);
+  const volumeMuted = volume === 0;
+  const volumeButtonColor = volumeAdjustable ? "#ffffff" : "#5c554e";
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
   const monitorMeta = hostDisplay
     ? hostDisplay.isTv
       ? "TV detected"
       : "Display detected"
     : "Connect to host for display details";
+  const showConnectionPrompt = status !== "connected";
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -875,8 +1291,6 @@ export function RemoteScreen() {
       <Header
         status={status}
         title={hostName || "iMac Remote"}
-        onScan={openScanner}
-        showSettings={showSettings}
         onToggleSettings={toggleSettings}
         onSleep={sendSleep}
       />
@@ -904,26 +1318,53 @@ export function RemoteScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.keyboardPreview}>
-          <Text
-            numberOfLines={5}
-            style={[
-              styles.keyboardPreviewText,
-              typedText ? null : styles.keyboardPreviewTextEmpty,
-            ]}
-          >
-            {typedText || " "}
-          </Text>
-          <View style={styles.keyboardPreviewCursor} />
-        </View>
+        <TextInput
+          key={keyboardInputKey}
+          ref={keyboardInputRef}
+          value={keyboardBuffer}
+          onChangeText={handleKeyboardTextChange}
+          onKeyPress={handleKeyboardKeyPress}
+          onSelectionChange={handleKeyboardSelectionChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          multiline
+          blurOnSubmit={false}
+          keyboardAppearance="dark"
+          selection={keyboardSelection}
+          selectionColor="#ff941f"
+          style={[
+            styles.keyboardPreview,
+            typedText ? null : styles.keyboardPreviewEmpty,
+          ]}
+        />
 
-        <View style={styles.keyboardShortcutRow}>
+        <ScrollView
+          horizontal
+          keyboardDismissMode="none"
+          keyboardShouldPersistTaps="always"
+          onTouchStart={refocusKeyboardInput}
+          showsHorizontalScrollIndicator={false}
+          style={styles.keyboardShortcutScroller}
+          contentContainerStyle={styles.keyboardShortcutRow}
+        >
           <Pressable
             style={styles.keyboardShortcutButton}
             onPress={withHaptic(() => sendKeyboardShortcut("selectAll"))}
           >
             <Ionicons name="scan-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Select All</Text>
+          </Pressable>
+          <Pressable
+            style={styles.keyboardShortcutButton}
+            onPress={withHaptic(insertKeyboardNewLine)}
+          >
+            <Ionicons
+              name="return-down-forward-outline"
+              size={18}
+              color="#ffffff"
+            />
+            <Text style={styles.keyboardShortcutText}>New Line</Text>
           </Pressable>
           <Pressable
             style={styles.keyboardShortcutButton}
@@ -941,18 +1382,32 @@ export function RemoteScreen() {
           </Pressable>
           <Pressable
             style={styles.keyboardShortcutButton}
+            onPress={withHaptic(pasteFromPhoneClipboard)}
+          >
+            <Ionicons
+              name="phone-portrait-outline"
+              size={18}
+              color="#ffffff"
+            />
+            <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
+          </Pressable>
+          <Pressable
+            style={styles.keyboardShortcutButton}
             onPress={withHaptic(() => sendKeyboardShortcut("clear"))}
           >
             <Ionicons name="backspace-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Clear</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </Animated.View>
 
-      {showSettings ? (
-        <Animated.ScrollView
+      <SettingsBottomSheet
+        isOpen={showSettings}
+        onOpenChange={setShowSettings}
+      >
+        <ScrollView
           showsVerticalScrollIndicator={false}
-          style={[styles.settingsScroll, settingsAnimatedStyle]}
+          style={styles.settingsScroll}
           contentContainerStyle={styles.settingsContent}
         >
           <View style={styles.sensitivityCard}>
@@ -1128,70 +1583,51 @@ export function RemoteScreen() {
                 <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
               ) : null}
             </View>
-            <View style={styles.mediaControlRow}>
-              <Pressable
-                disabled={!brightnessAdjustable || brightnessStep === 0}
-                style={[
-                  styles.mediaStepButton,
-                  !brightnessAdjustable || brightnessStep === 0
-                    ? styles.disabledControl
-                    : null,
-                ]}
-                onPress={withHaptic(() => adjustBrightnessStep(-1))}
-              >
-                <Ionicons name="remove" size={22} color="#ffffff" />
-              </Pressable>
-              <View style={styles.mediaLevelWrap}>
-                <View style={styles.mediaValueRow}>
-                  <Text
-                    style={[
-                      styles.mediaValueText,
-                      !brightnessAdjustable ? styles.disabledText : null,
-                    ]}
-                  >
-                    {formatPercent(brightness)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.mediaStepText,
-                      !brightnessAdjustable ? styles.disabledText : null,
-                    ]}
-                  >
-                    {formatStep(brightnessStep)}
-                  </Text>
-                </View>
-                <View style={styles.mediaTickRow}>
-                  {Array.from({ length: MEDIA_CONTROL_STEPS }).map(
-                    (_, index) => (
-                      <View
-                        key={`brightness-${index}`}
-                        style={[
-                          styles.mediaTick,
-                          brightnessStep !== null && index < brightnessStep
-                            ? styles.brightnessTickActive
-                            : null,
-                          !brightnessAdjustable ? styles.disabledControl : null,
-                        ]}
-                      />
-                    ),
-                  )}
-                </View>
+            <View style={styles.brightnessSliderWrap}>
+              <View style={styles.mediaValueRow}>
+                <Text
+                  style={[
+                    styles.mediaValueText,
+                    !brightnessAdjustable ? styles.disabledText : null,
+                  ]}
+                >
+                  {formatPercent(brightness)}
+                </Text>
               </View>
-              <Pressable
-                disabled={
-                  !brightnessAdjustable ||
-                  brightnessStep === MEDIA_CONTROL_STEPS
-                }
-                style={[
-                  styles.mediaStepButton,
-                  !brightnessAdjustable || brightnessStep === MEDIA_CONTROL_STEPS
-                    ? styles.disabledControl
-                    : null,
-                ]}
-                onPress={withHaptic(() => adjustBrightnessStep(1))}
-              >
-                <Ionicons name="add" size={22} color="#ffffff" />
-              </Pressable>
+              <View style={styles.brightnessSliderRow}>
+                <Ionicons
+                  name="sunny-outline"
+                  size={17}
+                  color={brightnessAdjustable ? "#a7a39d" : "#5c554e"}
+                />
+                {showSettings && brightness !== null ? (
+                  <Slider
+                    disabled={!brightnessAdjustable}
+                    maximumTrackTintColor="#33261b"
+                    maximumValue={100}
+                    minimumTrackTintColor={
+                      brightnessAdjustable ? "#ffb347" : "#3a2a1e"
+                    }
+                    minimumValue={0}
+                    onSlidingComplete={handleBrightnessSlideComplete}
+                    onSlidingStart={handleBrightnessSlideStart}
+                    onValueChange={handleBrightnessValueChange}
+                    step={1}
+                    style={styles.slider}
+                    thumbTintColor={
+                      brightnessAdjustable ? "#ffffff" : "#66594c"
+                    }
+                    value={brightness}
+                  />
+                ) : (
+                  <View style={styles.slider} />
+                )}
+                <Ionicons
+                  name="sunny"
+                  size={18}
+                  color={brightnessAdjustable ? "#ffb347" : "#5c554e"}
+                />
+              </View>
             </View>
           </View>
 
@@ -1203,9 +1639,32 @@ export function RemoteScreen() {
                 </View>
                 <Text style={styles.sensitivityLabel}>Volume</Text>
               </View>
-              {hostDisplay?.volumeAdjustable === false ? (
-                <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
-              ) : null}
+              <View style={styles.settingHeaderActions}>
+                {hostDisplay?.volumeAdjustable === false ? (
+                  <Text style={styles.settingUnavailable}>
+                    Unavailable on TV
+                  </Text>
+                ) : null}
+                <Pressable
+                  accessibilityLabel={
+                    volumeMuted ? "Unmute volume" : "Mute volume"
+                  }
+                  accessibilityRole="button"
+                  disabled={!volumeAdjustable}
+                  hitSlop={8}
+                  onPress={withHaptic(toggleMute)}
+                  style={[
+                    styles.volumeMuteButton,
+                    !volumeAdjustable ? styles.disabledControl : null,
+                  ]}
+                >
+                  {volumeMuted ? (
+                    <VolumeMutedIcon color={volumeButtonColor} />
+                  ) : (
+                    <VolumeOnIcon color={volumeButtonColor} />
+                  )}
+                </Pressable>
+              </View>
             </View>
             <View style={styles.mediaControlRow}>
               <Pressable
@@ -1311,195 +1770,206 @@ export function RemoteScreen() {
               </Text>
             ) : null}
           </View>
-        </Animated.ScrollView>
-      ) : (
-        <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.shortcutsScroller}
-            contentContainerStyle={styles.shortcuts}
-          >
-            <ShortcutButton
-              SvgIcon={NetflixIcon}
-              label="Netflix"
-              onPress={() => sendShortcut("netflix")}
-            />
-            <ShortcutButton
-              icon="logo-youtube"
-              iconColor="#ff0033"
-              label="YouTube"
-              onPress={() => sendShortcut("youtube")}
-            />
-            <ShortcutButton
-              SvgIcon={DisneyPlusIcon}
-              label="Disney+"
-              onPress={() => sendShortcut("disney")}
-            />
-            <ShortcutButton
-              SvgIcon={PrimeIcon}
-              label="Amazon Prime"
-              onPress={() => sendShortcut("amazon")}
-            />
-            <ShortcutButton
-              SvgIcon={SpotifyIcon}
-              label="Spotify"
-              onPress={() => sendShortcut("spotify")}
-            />
-            {customShortcuts.map((shortcut) => (
-              <ShortcutButton
-                key={shortcut.id}
-                imageUri={shortcut.iconUri}
-                initial={shortcut.name}
-                label={shortcut.name}
-                onPress={() => sendCustomShortcut(shortcut)}
-                onLongPress={() => openEditShortcutModal(shortcut)}
-              />
-            ))}
-            <ShortcutButton
-              icon="add"
-              iconColor="#ff941f"
-              label="Add Shortcut"
-              onPress={openShortcutModal}
-            />
-          </ScrollView>
+        </ScrollView>
+      </SettingsBottomSheet>
 
-          <View style={styles.shortcuts}>
-            <View style={styles.shortcutGroup}>
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Previous desktop"
-                onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
-              >
-                <Ionicons
-                  name="chevron-back-circle-outline"
-                  size={25}
-                  color="#ffb347"
-                />
-              </Pressable>
-              <View style={styles.shortcutDivider} />
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Next desktop"
-                onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
-              >
-                <Ionicons
-                  name="chevron-forward-circle-outline"
-                  size={25}
-                  color="#ffb347"
-                />
-              </Pressable>
-            </View>
-
-            <View style={styles.shortcutGroup}>
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Previous browser page"
-                onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
-              >
-                <Ionicons name="arrow-undo-outline" size={24} color="#c7bdb1" />
-              </Pressable>
-              <View style={styles.shortcutDivider} />
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Next browser page"
-                onPress={withHaptic(() =>
-                  socket.sendTextCommand("browserForward"),
-                )}
-              >
-                <Ionicons name="arrow-redo-outline" size={24} color="#c7bdb1" />
-              </Pressable>
-            </View>
-
-            <View style={styles.shortcutGroup}>
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Left arrow key"
-                onPress={withHaptic(() => socket.sendKey("leftArrow"))}
-              >
-                <Ionicons name="play-back" size={24} color="#f4d0a2" />
-              </Pressable>
-              <View style={styles.shortcutDivider} />
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Right arrow key"
-                onPress={withHaptic(() => socket.sendKey("rightArrow"))}
-              >
-                <Ionicons name="play-forward" size={24} color="#f4d0a2" />
-              </Pressable>
-            </View>
-          </View>
-
-          <View
-            style={styles.trackpadWrap}
-            onStartShouldSetResponder={() => keyboardVisible}
-            onResponderRelease={() => {
-              if (keyboardVisible) {
-                dismissKeyboardInput();
-              }
-            }}
-          >
-            <Trackpad
-              onMove={(dx, dy) =>
-                socket.sendMove(dx * sensitivity, dy * sensitivity)
-              }
-              onClick={() => socket.sendLeftClick()}
-              onDoubleClick={() => socket.sendDoubleClick()}
-              onRightClick={() => socket.sendRightClick()}
-              onScroll={(dx, dy) => socket.sendScroll(dx, dy)}
-              onZoom={(direction) => socket.sendZoom(direction)}
-              onSwipeSpaces={(direction) => socket.sendSwipeSpaces(direction)}
-            />
-          </View>
-
-          <View style={styles.mouseButtonRow}>
+      <View style={styles.remoteControls}>
+        {showConnectionPrompt ? (
+          <View style={styles.connectionPrompt}>
             <Pressable
-              style={styles.mouseButton}
-              onPress={withHaptic(() => socket.sendTextCommand("reload"))}
+              accessibilityLabel="Scan to connect to host"
+              accessibilityRole="button"
+              onPress={withHaptic(openScanner)}
+              style={styles.connectionPromptButton}
             >
-              <Ionicons name="refresh" size={22} color="#ffffff" />
-              <Text style={styles.mouseButtonText}>Refresh</Text>
+              <ScanButtonGradient
+                colors={["#ffe07a", "#ff941f", "#ff5a3d"]}
+                end={{ x: 1, y: 1 }}
+                start={{ x: 0, y: 0 }}
+                style={styles.connectionPromptButtonGradient}
+              >
+                <Ionicons name="scan-outline" size={22} color="#1b1008" />
+                <Text style={styles.connectionPromptButtonText}>
+                  Scan to Connect
+                </Text>
+              </ScanButtonGradient>
             </Pressable>
+          </View>
+        ) : (
+          <>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.shortcutsScroller}
+          contentContainerStyle={styles.shortcuts}
+        >
+          <ShortcutButton
+            SvgIcon={NetflixIcon}
+            label="Netflix"
+            onPress={() => sendShortcut("netflix")}
+          />
+          <ShortcutButton
+            icon="logo-youtube"
+            iconColor="#ff0033"
+            label="YouTube"
+            onPress={() => sendShortcut("youtube")}
+          />
+          <ShortcutButton
+            SvgIcon={DisneyPlusIcon}
+            label="Disney+"
+            onPress={() => sendShortcut("disney")}
+          />
+          <ShortcutButton
+            SvgIcon={PrimeIcon}
+            label="Amazon Prime"
+            onPress={() => sendShortcut("amazon")}
+          />
+          <ShortcutButton
+            SvgIcon={SpotifyIcon}
+            label="Spotify"
+            onPress={() => sendShortcut("spotify")}
+          />
+          {customShortcuts.map((shortcut) => (
+            <ShortcutButton
+              key={shortcut.id}
+              imageUri={shortcut.iconUri}
+              initial={shortcut.name}
+              label={shortcut.name}
+              onPress={() => sendCustomShortcut(shortcut)}
+              onLongPress={() => openEditShortcutModal(shortcut)}
+            />
+          ))}
+          <ShortcutButton
+            icon="add"
+            iconColor="#ff941f"
+            label="Add Shortcut"
+            onPress={openShortcutModal}
+          />
+        </ScrollView>
+
+        <View style={styles.shortcuts}>
+          <View style={styles.shortcutGroup}>
             <Pressable
-              style={[styles.mouseButton, styles.keyboardMouseButton]}
-              onPress={withHaptic(
-                keyboardVisible ? dismissKeyboardInput : focusKeyboard,
-              )}
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Previous desktop"
+              onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
             >
               <Ionicons
-                name={keyboardVisible ? "chevron-down" : "keypad-outline"}
-                size={22}
-                color="#1b1008"
+                name="chevron-back-circle-outline"
+                size={25}
+                color="#ffb347"
               />
-              <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
-                Keyboard
-              </Text>
             </Pressable>
+            <View style={styles.shortcutDivider} />
             <Pressable
-              style={styles.mouseButton}
-              onPress={withHaptic(() => socket.sendRightClick())}
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Next desktop"
+              onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
             >
-              <Ionicons name="ellipsis-horizontal" size={24} color="#ffffff" />
-              <Text style={styles.mouseButtonText}>Right Click</Text>
+              <Ionicons
+                name="chevron-forward-circle-outline"
+                size={25}
+                color="#ffb347"
+              />
             </Pressable>
           </View>
 
-          <TextInput
-            key={keyboardInputKey}
-            ref={keyboardInputRef}
-            value={keyboardBuffer}
-            onChangeText={handleKeyboardTextChange}
-            onKeyPress={handleKeyboardKeyPress}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            multiline
-            blurOnSubmit={false}
-            keyboardAppearance="dark"
-            style={styles.hiddenInput}
+          <View style={styles.shortcutGroup}>
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Previous browser page"
+              onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
+            >
+              <Ionicons name="arrow-undo-outline" size={24} color="#c7bdb1" />
+            </Pressable>
+            <View style={styles.shortcutDivider} />
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Next browser page"
+              onPress={withHaptic(() =>
+                socket.sendTextCommand("browserForward"),
+              )}
+            >
+              <Ionicons name="arrow-redo-outline" size={24} color="#c7bdb1" />
+            </Pressable>
+          </View>
+
+          <View style={styles.shortcutGroup}>
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Left arrow key"
+              onPress={withHaptic(() => socket.sendKey("leftArrow"))}
+            >
+              <Ionicons name="play-back" size={24} color="#f4d0a2" />
+            </Pressable>
+            <View style={styles.shortcutDivider} />
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Right arrow key"
+              onPress={withHaptic(() => socket.sendKey("rightArrow"))}
+            >
+              <Ionicons name="play-forward" size={24} color="#f4d0a2" />
+            </Pressable>
+          </View>
+        </View>
+
+        <View
+          style={styles.trackpadWrap}
+          onStartShouldSetResponder={() => keyboardVisible}
+          onResponderRelease={() => {
+            if (keyboardVisible) {
+              dismissKeyboardInput();
+            }
+          }}
+        >
+          <Trackpad
+            onMove={(dx, dy) =>
+              socket.sendMove(dx * sensitivity, dy * sensitivity)
+            }
+            onClick={() => socket.sendLeftClick()}
+            onDoubleClick={() => socket.sendDoubleClick()}
+            onRightClick={() => socket.sendRightClick()}
+            onScroll={(dx, dy) => socket.sendScroll(dx, dy)}
+            onZoom={(direction) => socket.sendZoom(direction)}
+            onSwipeSpaces={(direction) => socket.sendSwipeSpaces(direction)}
           />
-        </>
-      )}
+        </View>
+
+        <View style={styles.mouseButtonRow}>
+          <Pressable
+            style={styles.mouseButton}
+            onPress={withHaptic(() => socket.sendTextCommand("reload"))}
+          >
+            <Ionicons name="refresh" size={22} color="#ffffff" />
+            <Text style={styles.mouseButtonText}>Refresh</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.mouseButton, styles.keyboardMouseButton]}
+            onPress={withHaptic(
+              keyboardVisible ? dismissKeyboardInput : focusKeyboard,
+            )}
+          >
+            <Ionicons
+              name={keyboardVisible ? "chevron-down" : "keypad-outline"}
+              size={22}
+              color="#1b1008"
+            />
+            <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
+              Keyboard
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.mouseButton}
+            onPress={withHaptic(() => socket.sendRightClick())}
+          >
+            <Ionicons name="ellipsis-horizontal" size={24} color="#ffffff" />
+            <Text style={styles.mouseButtonText}>Right Click</Text>
+          </Pressable>
+        </View>
+
+          </>
+        )}
+      </View>
 
       <Modal
         animationType="fade"
@@ -1940,6 +2410,12 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 14,
   },
+  remoteControls: {
+    flex: 1,
+    gap: 12,
+    minHeight: 0,
+    position: "relative",
+  },
   shortcuts: {
     flexDirection: "row",
     gap: 10,
@@ -1981,6 +2457,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
+  connectionPrompt: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  connectionPromptButton: {
+    borderRadius: 20,
+    elevation: 12,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.42,
+    shadowRadius: 22,
+  },
+  connectionPromptButtonGradient: {
+    alignItems: "center",
+    borderColor: "rgba(255, 255, 255, 0.36)",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 58,
+    overflow: "hidden",
+    paddingHorizontal: 22,
+  },
+  connectionPromptButtonText: {
+    color: "#1b1008",
+    fontSize: 15,
+    fontWeight: "900",
+  },
   desktopSwitchButton: {
     alignItems: "center",
     backgroundColor: "transparent",
@@ -1988,12 +2494,45 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 54,
   },
+  settingsFallbackOverlay: {
+    backgroundColor: "rgba(0, 0, 0, 0.52)",
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  settingsFallbackBackdrop: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  settingsFallbackSheet: {
+    backgroundColor: "#0b0a09",
+    borderColor: "#2c2117",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    height: "94%",
+    overflow: "hidden",
+    paddingTop: 4,
+  },
+  settingsFallbackHandleZone: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+  },
+  settingsFallbackHandle: {
+    backgroundColor: "#5d5146",
+    borderRadius: 2,
+    height: 4,
+    width: 42,
+  },
   settingsScroll: {
     flex: 1,
   },
   settingsContent: {
     gap: 12,
-    paddingBottom: 18,
+    paddingBottom: 28,
   },
   sensitivityCard: {
     alignItems: "stretch",
@@ -2050,6 +2589,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
+  settingHeaderActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
   settingUnavailable: {
     color: "#a7a39d",
     fontSize: 12,
@@ -2059,6 +2603,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
+  },
+  brightnessSliderWrap: {
+    gap: 8,
+  },
+  brightnessSliderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
   },
   mediaControlRow: {
     alignItems: "center",
@@ -2074,6 +2626,16 @@ const styles = StyleSheet.create({
     height: 42,
     justifyContent: "center",
     width: 42,
+  },
+  volumeMuteButton: {
+    alignItems: "center",
+    backgroundColor: "#211a14",
+    borderColor: "#3a2a1e",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
   },
   mediaLevelWrap: {
     flex: 1,
@@ -2104,9 +2666,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#33261b",
     borderRadius: 3,
     flex: 1,
-  },
-  brightnessTickActive: {
-    backgroundColor: "#ffb347",
   },
   volumeTickActive: {
     backgroundColor: "#ff941f",
@@ -2290,6 +2849,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.35,
     shadowRadius: 20,
+    top: 106,
     zIndex: 1000,
   },
   keyboardPanelHidden: {
@@ -2332,27 +2892,22 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 148, 31, 0.22)",
     borderRadius: 8,
     borderWidth: 1,
-    flexDirection: "row",
-    minHeight: 118,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  keyboardPreviewText: {
     color: "#ffffff",
     flex: 1,
     fontSize: 16,
     fontWeight: "800",
     lineHeight: 22,
+    minHeight: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    textAlignVertical: "top",
   },
-  keyboardPreviewTextEmpty: {
+  keyboardPreviewEmpty: {
     color: "#5f5a54",
   },
-  keyboardPreviewCursor: {
-    backgroundColor: "#ff941f",
-    borderRadius: 1,
-    height: 22,
-    marginLeft: 2,
-    width: 2,
+  keyboardShortcutScroller: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   keyboardShortcutRow: {
     flexDirection: "row",
@@ -2364,15 +2919,15 @@ const styles = StyleSheet.create({
     borderColor: "#34261a",
     borderRadius: 8,
     borderWidth: 1,
-    flex: 1,
     gap: 5,
     justifyContent: "center",
     minHeight: 48,
-    paddingHorizontal: 4,
+    minWidth: 76,
+    paddingHorizontal: 6,
   },
   keyboardShortcutText: {
     color: "#ffffff",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
     textAlign: "center",
   },
@@ -2426,12 +2981,6 @@ const styles = StyleSheet.create({
   },
   keyboardBgPressable: {
     flex: 1,
-  },
-  hiddenInput: {
-    height: 1,
-    opacity: 0,
-    position: "absolute",
-    width: 1,
   },
   scannerBackdrop: {
     alignItems: "center",

@@ -1,11 +1,20 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Key, keyboard } from "@nut-tree-fork/nut-js";
 import type { TextCommand } from "../types/protocol";
 
 const MAX_TEXT_CHUNK = 128;
+const BRIGHTNESS_CONTROL_STEPS = 16;
+const BRIGHTNESS_TARGET_TOLERANCE = Math.ceil(
+  100 / BRIGHTNESS_CONTROL_STEPS / 2,
+);
+const BRIGHTNESS_CHANGE_TIMEOUT_MS = 700;
+const BRIGHTNESS_POLL_INTERVAL_MS = 80;
 
 export class KeyboardController {
   private displaySleeping = false;
+  private brightnessQueue: Promise<void> = Promise.resolve();
 
   constructor() {
     keyboard.config.autoDelayMs = 0;
@@ -49,6 +58,12 @@ export class KeyboardController {
 
       await keyboard.pressKey(browserModifier, arrow);
       await keyboard.releaseKey(browserModifier, arrow);
+      return;
+    }
+
+    if (command === "newLine") {
+      await keyboard.pressKey(Key.LeftShift, Key.Return);
+      await keyboard.releaseKey(Key.LeftShift, Key.Return);
       return;
     }
 
@@ -96,8 +111,42 @@ export class KeyboardController {
       return;
     }
 
-    await runAppleScriptKeyCode(delta > 0 ? "144" : "145");
-    await delay(80);
+    await this.enqueueBrightnessChange(async () => {
+      const currentBrightness = await this.readDisplayBrightnessForChange();
+      const targetBrightness = getSteppedBrightnessTarget(
+        currentBrightness,
+        delta,
+      );
+
+      if (targetBrightness === undefined) {
+        await applyBrightnessKey(delta, () => this.getDisplayBrightness());
+        return;
+      }
+
+      await applyBrightnessTarget(
+        targetBrightness,
+        currentBrightness,
+        () => this.getDisplayBrightness(),
+      );
+    });
+  }
+
+  async setBrightness(value: number): Promise<void> {
+    if (process.platform !== "darwin") {
+      return;
+    }
+
+    const targetBrightness = clampPercent(value);
+
+    await this.enqueueBrightnessChange(async () => {
+      const currentBrightness = await this.readDisplayBrightnessForChange();
+
+      await applyBrightnessTarget(
+        targetBrightness,
+        currentBrightness,
+        () => this.getDisplayBrightness(),
+      );
+    });
   }
 
   async setVolume(value: number): Promise<void> {
@@ -168,6 +217,24 @@ export class KeyboardController {
 
     console.warn("[keyboard] host restart is only implemented for macOS");
   }
+
+  private async enqueueBrightnessChange(
+    change: () => Promise<void>,
+  ): Promise<void> {
+    const next = this.brightnessQueue.catch(() => undefined).then(change);
+    this.brightnessQueue = next;
+
+    return next;
+  }
+
+  private async readDisplayBrightnessForChange(): Promise<number | undefined> {
+    try {
+      return await this.getDisplayBrightness();
+    } catch (error) {
+      console.warn("[keyboard] failed to read display brightness", error);
+      return undefined;
+    }
+  }
 }
 
 function switchMacSpace(direction: "left" | "right"): Promise<void> {
@@ -213,6 +280,60 @@ function runAppleScriptKeyCode(keyCode: string, modifier?: string): Promise<void
   );
 }
 
+async function setMacDisplayBrightness(percent: number): Promise<void> {
+  const value = (Math.max(0, Math.min(100, percent)) / 100).toFixed(4);
+  const errors: unknown[] = [];
+  const bundledHelper = getBundledBrightnessHelper();
+
+  if (bundledHelper) {
+    try {
+      await runExecutable(bundledHelper, [value]);
+      return;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  for (const file of [
+    "brightness",
+    "/opt/homebrew/bin/brightness",
+    "/usr/local/bin/brightness",
+  ]) {
+    try {
+      await runExecutable(file, [value]);
+      return;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  try {
+    await runJxa(`
+      ObjC.import("CoreGraphics");
+      ObjC.import("IOKit");
+
+      const service = $.CGDisplayIOServicePort($.CGMainDisplayID());
+      const result = $.IODisplaySetFloatParameter(
+        service,
+        0,
+        "brightness",
+        ${value},
+      );
+
+      if (result !== 0) {
+        throw new Error("IODisplaySetFloatParameter failed: " + result);
+      }
+    `);
+    return;
+  } catch (error) {
+    errors.push(error);
+  }
+
+  throw new Error(
+    `No direct macOS brightness setter succeeded (${errors.length} attempts)`,
+  );
+}
+
 function runAppleScript(script: string): Promise<void> {
   return runAppleScriptOutput(script).then(() => undefined);
 }
@@ -221,13 +342,36 @@ function runAppleScriptOutput(script: string): Promise<string> {
   return runExecutable("osascript", ["-e", script]);
 }
 
+function runJxa(script: string): Promise<string> {
+  return runExecutable("osascript", ["-l", "JavaScript", "-e", script]);
+}
+
+function runBundledBrightnessKey(delta: -1 | 1): Promise<string> {
+  const bundledHelper = getBundledBrightnessHelper();
+
+  if (!bundledHelper) {
+    throw new Error("bundled brightness helper is not available");
+  }
+
+  return runExecutable(bundledHelper, [
+    "--key",
+    delta > 0 ? "up" : "down",
+  ]);
+}
+
 function runExecutable(file: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       args,
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         if (error) {
+          const detail = stderr.trim();
+
+          if (detail) {
+            error.message = `${error.message}: ${detail}`;
+          }
+
           reject(error);
           return;
         }
@@ -236,6 +380,12 @@ function runExecutable(file: string, args: string[]): Promise<string> {
       },
     );
   });
+}
+
+function getBundledBrightnessHelper(): string | undefined {
+  const helper = join(__dirname, "..", "native", "display-brightness");
+
+  return existsSync(helper) ? helper : undefined;
 }
 
 function parseBrightnessOutput(output: string): number | undefined {
@@ -285,8 +435,161 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function getSteppedBrightnessTarget(
+  currentBrightness: number | undefined,
+  delta: -1 | 1,
+): number | undefined {
+  if (currentBrightness === undefined) {
+    return undefined;
+  }
+
+  const currentStep = Math.max(
+    0,
+    Math.min(
+      BRIGHTNESS_CONTROL_STEPS,
+      Math.round((currentBrightness / 100) * BRIGHTNESS_CONTROL_STEPS),
+    ),
+  );
+  const nextStep = Math.max(
+    0,
+    Math.min(BRIGHTNESS_CONTROL_STEPS, currentStep + delta),
+  );
+
+  return Math.round((nextStep / BRIGHTNESS_CONTROL_STEPS) * 100);
+}
+
+async function applyBrightnessTarget(
+  targetBrightness: number,
+  currentBrightness: number | undefined,
+  readBrightness: () => Promise<number | undefined>,
+): Promise<void> {
+  if (
+    currentBrightness !== undefined &&
+    isBrightnessAtTarget(currentBrightness, targetBrightness)
+  ) {
+    return;
+  }
+
+  const errors: unknown[] = [];
+
+  try {
+    await setMacDisplayBrightness(targetBrightness);
+    if (await waitForBrightnessTarget(readBrightness, targetBrightness)) {
+      return;
+    }
+
+    errors.push(new Error("direct brightness setter did not reach target"));
+  } catch (error) {
+    errors.push(error);
+  }
+
+  if (currentBrightness !== undefined) {
+    const delta = targetBrightness > currentBrightness ? 1 : -1;
+
+    try {
+      await applyBrightnessKey(delta, readBrightness, currentBrightness);
+      return;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  console.warn(
+    "[keyboard] brightness change did not take effect",
+    summarizeErrors(errors),
+  );
+}
+
+async function applyBrightnessKey(
+  delta: -1 | 1,
+  readBrightness: () => Promise<number | undefined>,
+  previousBrightness?: number,
+): Promise<void> {
+  const errors: unknown[] = [];
+
+  try {
+    await runBundledBrightnessKey(delta);
+    if (await waitForBrightnessChange(readBrightness, previousBrightness)) {
+      return;
+    }
+
+    errors.push(new Error("native brightness key did not change value"));
+  } catch (error) {
+    errors.push(error);
+  }
+
+  try {
+    await runAppleScriptKeyCode(delta > 0 ? "144" : "145");
+    if (await waitForBrightnessChange(readBrightness, previousBrightness)) {
+      return;
+    }
+
+    errors.push(new Error("AppleScript brightness key did not change value"));
+  } catch (error) {
+    errors.push(error);
+  }
+
+  throw new Error(summarizeErrors(errors));
+}
+
+async function waitForBrightnessTarget(
+  readBrightness: () => Promise<number | undefined>,
+  targetBrightness: number,
+): Promise<boolean> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < BRIGHTNESS_CHANGE_TIMEOUT_MS) {
+    await delay(BRIGHTNESS_POLL_INTERVAL_MS);
+
+    const nextBrightness = await readBrightness();
+
+    if (
+      nextBrightness !== undefined &&
+      isBrightnessAtTarget(nextBrightness, targetBrightness)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function waitForBrightnessChange(
+  readBrightness: () => Promise<number | undefined>,
+  previousBrightness?: number,
+): Promise<boolean> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < BRIGHTNESS_CHANGE_TIMEOUT_MS) {
+    await delay(BRIGHTNESS_POLL_INTERVAL_MS);
+
+    const nextBrightness = await readBrightness();
+
+    if (
+      previousBrightness === undefined ||
+      nextBrightness === undefined ||
+      nextBrightness !== previousBrightness
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isBrightnessAtTarget(value: number, target: number): boolean {
+  return Math.abs(value - target) <= BRIGHTNESS_TARGET_TOLERANCE;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function summarizeErrors(errors: unknown[]): string {
+  return errors
+    .map((error) => error instanceof Error ? error.message : String(error))
+    .filter((message) => message.length > 0)
+    .join("; ");
 }
