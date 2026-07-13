@@ -154,6 +154,8 @@ export interface DesktopStatus {
   protocolVersion?: string;
   platform?: string;
   accessibilityTrusted?: boolean;
+  accessibilityTargetName?: string;
+  accessibilityTargetPath?: string;
   display?: HostDisplayInfo;
   port: number;
   addresses: string[];

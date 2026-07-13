@@ -28,6 +28,8 @@ interface DesktopStatus {
   protocolVersion?: string;
   platform?: string;
   accessibilityTrusted?: boolean;
+  accessibilityTargetName?: string;
+  accessibilityTargetPath?: string;
   display?: HostDisplayInfo;
   port: number;
   addresses: string[];
@@ -142,8 +144,13 @@ function renderStatus(status: DesktopStatus): void {
   pairingUrlText.textContent = displayUrl;
   serverUrl.textContent = displayUrl;
   expoQrUrl.textContent = status.errorMessage ?? status.expoUrl ?? "Expo URL unavailable";
-  accessibilityActionText.textContent =
-    status.platform === "darwin" ? "macOS permission" : "Not required";
+  accessibilityActionText.textContent = getAccessibilityActionText(status);
+
+  if (openAccessibility) {
+    openAccessibility.title = status.accessibilityTargetPath
+      ? `macOS checks Accessibility permission for ${status.accessibilityTargetPath}`
+      : "";
+  }
 
   renderQr(qrImage, qrFallback, status.pairingQrDataUrl, "Pairing QR unavailable");
   renderQr(expoQrImage, expoFallback, status.expoQrDataUrl, "Expo QR unavailable");
@@ -214,6 +221,11 @@ function renderHealth(status: DesktopStatus): void {
       state: status.addresses.length > 0 ? "ready" : "warning",
     },
     {
+      label: "Accessibility",
+      detail: getAccessibilityDetail(status),
+      state: getAccessibilityState(status),
+    },
+    {
       label: "Volume control",
       detail: status.display?.volumeAdjustable === false ? "Unavailable" : "Available",
       state: status.display?.volumeAdjustable === false ? "warning" : "ready",
@@ -258,7 +270,10 @@ function updateButtons(status: DesktopStatus): void {
   setButtonDisabled(copyPairingUrl, !status.pairingUrl);
   setButtonDisabled(copyServerUrl, !status.pairingUrl && status.addresses.length === 0);
   setButtonDisabled(copyExpoUrl, !status.expoUrl);
-  setButtonDisabled(openAccessibility, status.platform !== "darwin");
+  setButtonDisabled(
+    openAccessibility,
+    status.platform !== "darwin" || status.accessibilityTrusted === true,
+  );
   renderStartupSettings(startupSettings);
 }
 
@@ -332,6 +347,20 @@ function getDeviceHint(status: DesktopStatus): string {
 }
 
 function getAccessibilityDetail(status: DesktopStatus): string {
+  if (status.platform !== "darwin") {
+    return "Not required";
+  }
+
+  const target = status.accessibilityTargetName
+    ? ` for ${status.accessibilityTargetName}`
+    : "";
+
+  return status.accessibilityTrusted
+    ? `Allowed${target}`
+    : `Needs permission${target}`;
+}
+
+function getAccessibilityActionText(status: DesktopStatus): string {
   if (status.platform !== "darwin") {
     return "Not required";
   }
@@ -440,8 +469,17 @@ function attachActions(): void {
     copyText(latestStatus?.expoUrl, copyExpoUrl);
   });
 
-  openAccessibility?.addEventListener("click", () => {
-    desktopApi?.openAccessibilitySettings();
+  openAccessibility?.addEventListener("click", async () => {
+    await desktopApi?.openAccessibilitySettings();
+
+    try {
+      const status = await desktopApi?.getStatus();
+      if (status) {
+        renderStatus(status);
+      }
+    } catch (error) {
+      console.error("[desktop] failed to refresh accessibility status", error);
+    }
   });
 
   startupToggle?.addEventListener("click", async () => {

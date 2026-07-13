@@ -57,18 +57,45 @@ const mouseController = new MouseController(
 );
 const keyboardController = new KeyboardController();
 
-function requestAccessibilityPermission(): void {
+function getAccessibilityTarget(): { name: string; path: string } | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  const executablePath = process.execPath;
+  const appBundlePath = getAppBundlePath(executablePath);
+
+  return {
+    name: appBundlePath ? path.basename(appBundlePath) : path.basename(executablePath),
+    path: appBundlePath ?? executablePath,
+  };
+}
+
+function getAppBundlePath(executablePath: string): string | undefined {
+  const bundleMarker = ".app/Contents/MacOS/";
+  const markerIndex = executablePath.indexOf(bundleMarker);
+
+  if (markerIndex === -1) {
+    return undefined;
+  }
+
+  return executablePath.slice(0, markerIndex + ".app".length);
+}
+
+function checkAccessibilityPermission(): void {
   if (process.platform !== "darwin") {
     return;
   }
 
-  const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+  const trusted = systemPreferences.isTrustedAccessibilityClient(false);
 
   if (!trusted) {
+    const target = getAccessibilityTarget();
     console.warn(
       [
         "Accessibility permission is required for mouse and keyboard control.",
-        "Grant permission to Electron, then restart the desktop app.",
+        `Grant permission to ${target?.name ?? "this app"}, then restart the desktop app.`,
+        target ? `Target: ${target.path}` : "",
       ].join(" "),
     );
   }
@@ -513,12 +540,16 @@ async function publishStatus(status: DesktopStatus): Promise<void> {
 }
 
 function withDesktopContext(status: DesktopStatus): DesktopStatus {
+  const accessibilityTarget = getAccessibilityTarget();
+
   return {
     ...status,
     hostName,
     protocolVersion,
     platform: process.platform,
     accessibilityTrusted: getAccessibilityTrusted(),
+    accessibilityTargetName: accessibilityTarget?.name,
+    accessibilityTargetPath: accessibilityTarget?.path,
     display: getCurrentDisplayInfo(),
   };
 }
@@ -726,9 +757,9 @@ function isTvDisplayName(name: string): boolean {
 
 app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
-  requestAccessibilityPermission();
+  checkAccessibilityPermission();
   startMobileServer();
-  ipcMain.handle("status:get", () => latestStatus);
+  ipcMain.handle("status:get", () => withDesktopContext(latestStatus));
   ipcMain.handle("clipboard:write", (_event, text: unknown) => {
     if (typeof text !== "string") {
       return false;
@@ -740,6 +771,10 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:accessibility", () => {
     if (process.platform !== "darwin") {
       return false;
+    }
+
+    if (getAccessibilityTrusted()) {
+      return true;
     }
 
     shell.openExternal(
