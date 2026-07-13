@@ -17,8 +17,8 @@ import {
   State,
   TapGestureHandler,
 } from "react-native-gesture-handler";
-import { useTrackpadGestures } from "../gestures/useTrackpadGestures";
-import { triggerLongPressHaptic } from "../utils/haptics";
+import { triggerLongPressHaptic } from "../../utils/haptics";
+import { useTrackpadGestures } from "./useTrackpadGestures";
 
 interface TrackpadProps {
   onMove: (dx: number, dy: number) => void;

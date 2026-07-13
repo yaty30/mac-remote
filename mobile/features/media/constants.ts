@@ -1,0 +1,2 @@
+export const BRIGHTNESS_SEND_DEBOUNCE_MS = 160;
+export const DEFAULT_UNMUTE_VOLUME = 50;
