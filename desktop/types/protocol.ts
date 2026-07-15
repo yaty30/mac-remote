@@ -8,6 +8,7 @@ export type RemoteMessage =
   | ScrollMessage
   | ZoomMessage
   | SwipeSpacesMessage
+  | MissionControlMessage
   | RequestHostStateMessage
   | AdjustBrightnessMessage
   | SetBrightnessMessage
@@ -63,6 +64,10 @@ export interface ZoomMessage {
 export interface SwipeSpacesMessage {
   type: "swipeSpaces";
   direction: "left" | "right";
+}
+
+export interface MissionControlMessage {
+  type: "missionControl";
 }
 
 export interface RequestHostStateMessage {
@@ -129,7 +134,10 @@ export type TextCommand =
   | "clear"
   | "reload"
   | "browserBack"
-  | "browserForward";
+  | "browserForward"
+  | "closeTab"
+  | "mediaPause"
+  | "mediaPlay";
 
 export interface TextCommandMessage {
   type: "textCommand";
@@ -138,7 +146,7 @@ export interface TextCommandMessage {
 
 export interface PressKeyMessage {
   type: "pressKey";
-  key: "backspace" | "enter" | "leftArrow" | "rightArrow";
+  key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow";
 }
 
 export type ConnectionStatus =

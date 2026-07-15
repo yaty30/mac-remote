@@ -167,6 +167,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid swipeSpaces payload");
   }
 
+  if (data.type === "missionControl") {
+    return { type: "missionControl" };
+  }
+
   if (data.type === "requestHostState") {
     return { type: "requestHostState" };
   }
@@ -276,7 +280,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
       data.command === "clear" ||
       data.command === "reload" ||
       data.command === "browserBack" ||
-      data.command === "browserForward"
+      data.command === "browserForward" ||
+      data.command === "closeTab" ||
+      data.command === "mediaPause" ||
+      data.command === "mediaPlay"
     ) {
       return {
         type: "textCommand",
@@ -291,6 +298,7 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     if (
       data.key === "backspace" ||
       data.key === "enter" ||
+      data.key === "escape" ||
       data.key === "leftArrow" ||
       data.key === "rightArrow"
     ) {

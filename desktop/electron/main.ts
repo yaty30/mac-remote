@@ -446,6 +446,9 @@ async function handleRemoteMessage(
     case "swipeSpaces":
       await keyboardController.switchSpace(message.direction);
       break;
+    case "missionControl":
+      await keyboardController.openMissionControl();
+      break;
     case "requestHostState":
       return await getHostState();
     case "adjustBrightness": {

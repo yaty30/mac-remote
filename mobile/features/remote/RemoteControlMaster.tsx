@@ -58,8 +58,13 @@ import ArrowBigRightDashIcon from "../../assets/icons/arrow-big-right-dash.svg";
 import ChevronsLeftIcon from "../../assets/icons/chevrons-left.svg";
 import ChevronsRightIcon from "../../assets/icons/chevrons-right.svg";
 import KeyboardIcon from "../../assets/icons/keyboard.svg";
+import LayoutPanelTopIcon from "../../assets/icons/layout-panel-top.svg";
+import Minimize2Icon from "../../assets/icons/minimize-2.svg";
 import MouseRightIcon from "../../assets/icons/mouse-right.svg";
+import PauseIcon from "../../assets/icons/pause.svg";
+import PlayIcon from "../../assets/icons/play.svg";
 import RefreshCwIcon from "../../assets/icons/refresh-cw.svg";
+import SquareXIcon from "../../assets/icons/square-x.svg";
 import { sanitizeHostName } from "../connection/deviceUtils";
 import { parsePairingPayload } from "../connection/pairing";
 import { useRemoteConnection } from "../connection/useRemoteConnection";
@@ -140,6 +145,7 @@ export function RemoteControlMaster() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
+  const [playbackPaused, setPlaybackPaused] = useState(false);
   const [typedText, setTypedText] = useState("");
   const [keyboardSelection, setKeyboardSelection] = useState({
     start: 0,
@@ -620,6 +626,11 @@ export function RemoteControlMaster() {
     insertKeyboardText(clipboardText, "paste");
   }
 
+  function toggleRemotePlayback() {
+    socket.sendTextCommand(playbackPaused ? "mediaPlay" : "mediaPause");
+    setPlaybackPaused((current) => !current);
+  }
+
   const keyboardPanelAnimatedStyle = {
     opacity: keyboardPanelAnim,
     transform: [
@@ -651,6 +662,7 @@ export function RemoteControlMaster() {
     240,
     Math.min(windowWidth - 64, windowHeight - 236, 420),
   );
+  const PlaybackIcon = playbackPaused ? PlayIcon : PauseIcon;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -1339,6 +1351,50 @@ export function RemoteControlMaster() {
           />
         </View>
 
+        <View style={styles.remoteActionRow}>
+          <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Escape key"
+              onPress={withHaptic(() => socket.sendKey("escape"))}
+            >
+              <Minimize2Icon width={24} height={24} color="#f0c17c" />
+            </Pressable>
+            <View
+              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+            />
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Mission Control"
+              onPress={withHaptic(() => socket.sendMissionControl())}
+            >
+              <LayoutPanelTopIcon width={24} height={24} color="#f0c17c" />
+            </Pressable>
+            <View
+              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+            />
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel={
+                playbackPaused ? "Play media" : "Pause media"
+              }
+              onPress={withHaptic(toggleRemotePlayback)}
+            >
+              <PlaybackIcon width={24} height={24} color="#f0c17c" />
+            </Pressable>
+            <View
+              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+            />
+            <Pressable
+              style={styles.desktopSwitchButton}
+              accessibilityLabel="Close current browser tab"
+              onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
+            >
+              <SquareXIcon width={24} height={24} color="#f0c17c" />
+            </Pressable>
+          </View>
+        </View>
+
         <View style={styles.mouseButtonRow}>
           <Pressable
             accessibilityLabel="Refresh"
@@ -1523,8 +1579,15 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   shortcuts: {
+    flexShrink: 0,
     flexDirection: "row",
     gap: 10,
+    paddingHorizontal: 18,
+  },
+  remoteActionRow: {
+    flexDirection: "row",
+    flexShrink: 0,
+    height: 56,
     paddingHorizontal: 18,
   },
   shortcutGroup: {
@@ -2032,15 +2095,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   trackpadWrap: {
-    flex: 1,
+    flexBasis: 0,
+    flexGrow: 1,
     flexShrink: 1,
     minHeight: 0,
     paddingHorizontal: 18,
   },
   mouseButtonRow: {
+    flexShrink: 0,
     flexDirection: "row",
     gap: 12,
-    minHeight: 52,
+    height: 52,
     paddingHorizontal: 18,
   },
   mouseButton: {

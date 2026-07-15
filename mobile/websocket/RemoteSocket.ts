@@ -112,6 +112,10 @@ export class RemoteSocket {
     this.send({ type: "swipeSpaces", direction });
   }
 
+  sendMissionControl(): void {
+    this.send({ type: "missionControl" });
+  }
+
   requestHostState(): void {
     this.send({ type: "requestHostState" }, true);
   }
@@ -156,7 +160,9 @@ export class RemoteSocket {
     this.send({ type: "textCommand", command });
   }
 
-  sendKey(key: "backspace" | "enter" | "leftArrow" | "rightArrow"): void {
+  sendKey(
+    key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow",
+  ): void {
     this.send({ type: "pressKey", key });
   }
 

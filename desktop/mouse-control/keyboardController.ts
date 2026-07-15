@@ -29,11 +29,12 @@ export class KeyboardController {
   }
 
   async pressKey(
-    key: "backspace" | "enter" | "leftArrow" | "rightArrow",
+    key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow",
   ): Promise<void> {
     const keyMap = {
       backspace: Key.Backspace,
       enter: Key.Return,
+      escape: Key.Escape,
       leftArrow: Key.Left,
       rightArrow: Key.Right,
     } as const;
@@ -58,6 +59,21 @@ export class KeyboardController {
 
       await keyboard.pressKey(browserModifier, arrow);
       await keyboard.releaseKey(browserModifier, arrow);
+      return;
+    }
+
+    if (command === "closeTab") {
+      const commandKey = process.platform === "darwin"
+        ? Key.LeftCmd
+        : Key.LeftControl;
+
+      await keyboard.pressKey(commandKey, Key.W);
+      await keyboard.releaseKey(commandKey, Key.W);
+      return;
+    }
+
+    if (command === "mediaPause" || command === "mediaPlay") {
+      await this.setPlayback(command === "mediaPlay" ? "play" : "pause");
       return;
     }
 
@@ -86,6 +102,33 @@ export class KeyboardController {
     const target = direction === "in" ? Key.Equal : Key.Minus;
     await keyboard.pressKey(Key.LeftCmd, target);
     await keyboard.releaseKey(Key.LeftCmd, target);
+  }
+
+  async openMissionControl(): Promise<void> {
+    if (process.platform === "darwin") {
+      await runAppleScriptKeyCode("126", "control down");
+      return;
+    }
+
+    console.warn("[keyboard] Mission Control is only implemented for macOS");
+  }
+
+  async setPlayback(action: "pause" | "play"): Promise<void> {
+    const target = action === "play" ? Key.AudioPlay : Key.AudioPause;
+
+    try {
+      await keyboard.pressKey(target);
+      await keyboard.releaseKey(target);
+      return;
+    } catch (error) {
+      console.warn(
+        `[keyboard] media ${action} key failed, falling back to media play key`,
+        error,
+      );
+    }
+
+    await keyboard.pressKey(Key.AudioPlay);
+    await keyboard.releaseKey(Key.AudioPlay);
   }
 
   async switchSpace(direction: "left" | "right"): Promise<void> {
