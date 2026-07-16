@@ -20,9 +20,11 @@ export type RemoteMessage =
   | TypeTextMessage
   | PasteTextMessage
   | TextCommandMessage
-  | PressKeyMessage;
+  | PressKeyMessage
+  | PingMessage
+  | PongMessage;
 
-export type HostMessage = HostStateMessage;
+export type HostMessage = HostStateMessage | PingMessage | PongMessage;
 
 export interface HostDisplayInfo {
   id: number;
@@ -149,6 +151,16 @@ export interface PressKeyMessage {
   key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow";
 }
 
+export interface PingMessage {
+  type: "ping";
+  id: string;
+}
+
+export interface PongMessage {
+  type: "pong";
+  id: string;
+}
+
 export type ConnectionStatus =
   | "starting"
   | "waiting"
@@ -168,6 +180,7 @@ export interface DesktopStatus {
   port: number;
   addresses: string[];
   connectedClients: number;
+  latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
   expoUrl?: string;

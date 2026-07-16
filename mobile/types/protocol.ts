@@ -32,9 +32,11 @@ export type RemoteMessage =
   | TypeTextMessage
   | PasteTextMessage
   | TextCommandMessage
-  | PressKeyMessage;
+  | PressKeyMessage
+  | PingMessage
+  | PongMessage;
 
-export type HostMessage = HostStateMessage;
+export type HostMessage = HostStateMessage | PingMessage | PongMessage;
 
 export interface HostDisplayInfo {
   id: number;
@@ -159,4 +161,14 @@ export interface TextCommandMessage {
 export interface PressKeyMessage {
   type: "pressKey";
   key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow";
+}
+
+export interface PingMessage {
+  type: "ping";
+  id: string;
+}
+
+export interface PongMessage {
+  type: "pong";
+  id: string;
 }

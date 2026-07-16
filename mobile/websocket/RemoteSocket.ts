@@ -8,6 +8,7 @@ import type {
 
 type StatusListener = (status: ConnectionStatus) => void;
 type MessageListener = (message: HostMessage) => void;
+type LatencyListener = (latencyMs: number | null) => void;
 
 const MAX_BUFFERED_BYTES = 16 * 1024;
 
@@ -15,8 +16,12 @@ export class RemoteSocket {
   private socket: WebSocket | null = null;
   private listeners = new Set<StatusListener>();
   private messageListeners = new Set<MessageListener>();
+  private latencyListeners = new Set<LatencyListener>();
   private currentHost: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private latencyTimer: ReturnType<typeof setInterval> | null = null;
+  private pendingPings = new Map<string, number>();
+  private pingSequence = 0;
   private shouldReconnect = false;
 
   connect(host: string, port = 8787): void {
@@ -35,8 +40,10 @@ export class RemoteSocket {
 
     socket.onopen = () => {
       this.emit("connected");
+      this.startLatencyChecks();
     };
     socket.onclose = () => {
+      this.stopLatencyChecks();
       this.emit(this.shouldReconnect ? "connecting" : "disconnected");
       this.scheduleReconnect();
     };
@@ -64,6 +71,8 @@ export class RemoteSocket {
   }
 
   private closeSocket(): void {
+    this.stopLatencyChecks();
+
     if (this.socket) {
       this.socket.onopen = null;
       this.socket.onclose = null;
@@ -82,6 +91,11 @@ export class RemoteSocket {
   onMessage(listener: MessageListener): () => void {
     this.messageListeners.add(listener);
     return () => this.messageListeners.delete(listener);
+  }
+
+  onLatency(listener: LatencyListener): () => void {
+    this.latencyListeners.add(listener);
+    return () => this.latencyListeners.delete(listener);
   }
 
   sendMove(dx: number, dy: number): void {
@@ -184,6 +198,44 @@ export class RemoteSocket {
     }
   }
 
+  private emitLatency(latencyMs: number | null): void {
+    for (const listener of this.latencyListeners) {
+      listener(latencyMs);
+    }
+  }
+
+  private startLatencyChecks(): void {
+    this.stopLatencyChecks(false);
+    this.sendLatencyPing();
+    this.latencyTimer = setInterval(() => {
+      this.sendLatencyPing();
+    }, 2000);
+  }
+
+  private stopLatencyChecks(emitReset = true): void {
+    if (this.latencyTimer) {
+      clearInterval(this.latencyTimer);
+      this.latencyTimer = null;
+    }
+
+    this.pendingPings.clear();
+
+    if (emitReset) {
+      this.emitLatency(null);
+    }
+  }
+
+  private sendLatencyPing(): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.pingSequence += 1;
+    const id = `${Date.now()}-${this.pingSequence}`;
+    this.pendingPings.set(id, Date.now());
+    this.send({ type: "ping", id }, true);
+  }
+
   private scheduleReconnect(): void {
     if (!this.shouldReconnect || !this.currentHost || this.reconnectTimer) {
       return;
@@ -211,6 +263,30 @@ export class RemoteSocket {
 
     try {
       const message = JSON.parse(raw) as HostMessage;
+
+      if (message.type === "ping") {
+        if (typeof message.id !== "string") {
+          return;
+        }
+
+        this.send({ type: "pong", id: message.id }, true);
+        return;
+      }
+
+      if (message.type === "pong") {
+        if (typeof message.id !== "string") {
+          return;
+        }
+
+        const startedAt = this.pendingPings.get(message.id);
+
+        if (startedAt !== undefined) {
+          this.pendingPings.delete(message.id);
+          this.emitLatency(Math.max(0, Date.now() - startedAt));
+        }
+
+        return;
+      }
 
       if (message.type !== "hostState") {
         return;

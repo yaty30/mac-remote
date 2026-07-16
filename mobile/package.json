@@ -27,6 +27,7 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-status-bar": "~3.0.8",
     "hoist-non-react-statics": "^3.3.2",
+    "lucide-react-native": "^1.24.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",

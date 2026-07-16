@@ -451,6 +451,10 @@ async function handleRemoteMessage(
       break;
     case "requestHostState":
       return await getHostState();
+    case "ping":
+      return { type: "pong", id: message.id };
+    case "pong":
+      break;
     case "adjustBrightness": {
       const display = getCurrentDisplayInfo();
       if (!display.brightnessAdjustable) {
@@ -566,6 +570,23 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
 
   const pairingUrl = `ws://${address}:${status.port}`;
   const expoUrl = await resolveExpoUrl(status.addresses);
+
+  if (
+    latestStatus.pairingUrl === pairingUrl &&
+    latestStatus.expoUrl === expoUrl &&
+    latestStatus.pairingQrDataUrl &&
+    latestStatus.expoQrDataUrl
+  ) {
+    return {
+      ...status,
+      hostName,
+      pairingUrl,
+      expoUrl,
+      pairingQrDataUrl: latestStatus.pairingQrDataUrl,
+      expoQrDataUrl: latestStatus.expoQrDataUrl,
+    };
+  }
+
   const payload = JSON.stringify({
     type: "remote-control",
     name: hostName,

@@ -1,5 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
+  Signal,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
+} from "lucide-react-native";
+import {
   LinearGradient as ExpoLinearGradient,
   type LinearGradientProps,
 } from "expo-linear-gradient";
@@ -11,6 +17,7 @@ import MonitorIcon from "../assets/icons/monitor.svg";
 import MonitorOffIcon from "../assets/icons/monitor-off.svg";
 
 interface HeaderProps {
+  latencyMs?: number | null;
   status: ConnectionStatus;
   title?: string;
   onToggleSettings?: () => void;
@@ -29,6 +36,7 @@ const HeaderButtonGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
 
 export function Header({
+  latencyMs,
   status,
   title = "iMac Remote",
   onToggleSettings,
@@ -36,6 +44,13 @@ export function Header({
 }: HeaderProps) {
   const [sleep, setSleep] = useState(false);
   const monitorIsOn = !sleep;
+  const latencyBand =
+    status === "connected" && typeof latencyMs === "number"
+      ? getLatencyBand(latencyMs)
+      : null;
+  const roundedLatencyMs =
+    typeof latencyMs === "number" ? Math.round(latencyMs) : null;
+  const LatencyIcon = latencyBand?.Icon;
 
   return (
     <View style={styles.container}>
@@ -52,6 +67,18 @@ export function Header({
               ]}
             />
             <Text style={styles.status}>{statusLabels[status]}</Text>
+            {latencyBand && LatencyIcon && roundedLatencyMs !== null ? (
+              <View style={styles.latencyBadge}>
+                <LatencyIcon
+                  color={latencyBand.color}
+                  size={12}
+                  strokeWidth={2.5}
+                />
+                <Text style={[styles.latencyText, { color: latencyBand.color }]}>
+                  {roundedLatencyMs}ms
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -108,6 +135,34 @@ export function Header({
   );
 }
 
+function getLatencyBand(latencyMs: number) {
+  if (latencyMs <= 50) {
+    return {
+      Icon: Signal,
+      color: "#74f0a7",
+    };
+  }
+
+  if (latencyMs <= 100) {
+    return {
+      Icon: SignalHigh,
+      color: "#ffd166",
+    };
+  }
+
+  if (latencyMs <= 150) {
+    return {
+      Icon: SignalMedium,
+      color: "#ff941f",
+    };
+  }
+
+  return {
+    Icon: SignalLow,
+    color: "#ff603c",
+  };
+}
+
 const styles = StyleSheet.create({
   container: {
     gap: 14,
@@ -136,6 +191,7 @@ const styles = StyleSheet.create({
   statusRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     marginTop: 8,
   },
@@ -153,6 +209,16 @@ const styles = StyleSheet.create({
   status: {
     color: "#a7a39d",
     fontSize: 13,
+    fontWeight: "700",
+  },
+  latencyBadge: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    minHeight: 24,
+  },
+  latencyText: {
+    fontSize: 12,
     fontWeight: "700",
   },
   headerActionButton: {

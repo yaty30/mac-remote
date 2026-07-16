@@ -129,6 +129,7 @@ export function RemoteControlMaster() {
     deviceDropdownOpen,
     host,
     hostName,
+    latencyMs,
     persistHostName,
     savedDevices,
     selectSavedDevice,
@@ -678,6 +679,7 @@ export function RemoteControlMaster() {
       ) : null}
 
       <Header
+        latencyMs={latencyMs}
         status={status}
         title={hostName || "iMac Remote"}
         onToggleSettings={toggleSettings}
@@ -970,7 +972,7 @@ export function RemoteControlMaster() {
             </View>
           </View>
 
-          <View style={styles.sensitivityCard}>
+          <View style={[styles.sensitivityCard, styles.settingToggleCard]}>
             <View style={styles.settingToggleRow}>
               <View style={styles.settingsCardTitleRow}>
                 <View style={styles.settingsCardIcon}>
@@ -980,13 +982,15 @@ export function RemoteControlMaster() {
                   Unnatural scrolling
                 </Text>
               </View>
-              <Switch
-                ios_backgroundColor="#33261b"
-                onValueChange={setUnnaturalScrolling}
-                thumbColor={unnaturalScrolling ? "#ffffff" : "#a7a39d"}
-                trackColor={{ false: "#33261b", true: "#ff941f" }}
-                value={unnaturalScrolling}
-              />
+              <View style={styles.settingSwitchWrap}>
+                <Switch
+                  ios_backgroundColor="#33261b"
+                  onValueChange={setUnnaturalScrolling}
+                  thumbColor={unnaturalScrolling ? "#ffffff" : "#a7a39d"}
+                  trackColor={{ false: "#33261b", true: "#ff941f" }}
+                  value={unnaturalScrolling}
+                />
+              </View>
             </View>
           </View>
 
@@ -1750,7 +1754,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 40,
+    minHeight: 34,
+  },
+  settingToggleCard: {
+    justifyContent: "center",
+  },
+  settingSwitchWrap: {
+    alignItems: "center",
+    height: 34,
+    justifyContent: "center",
   },
   settingHeaderActions: {
     alignItems: "center",

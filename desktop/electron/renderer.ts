@@ -34,6 +34,7 @@ interface DesktopStatus {
   port: number;
   addresses: string[];
   connectedClients: number;
+  latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
   expoUrl?: string;

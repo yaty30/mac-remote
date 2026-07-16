@@ -1,11 +1,15 @@
 import { Button, Point, mouse, screen } from "@nut-tree-fork/nut-js";
 
 const EDGE_PRESSURE_ZONE = 6;
-const EDGE_NUDGE_DISTANCE = 18;
+const EDGE_RELEASE_DISTANCE = 24;
+
+type VerticalEdgeLock = "top" | "bottom" | null;
 
 export class MouseController {
   private scrollAccumX = 0;
   private scrollAccumY = 0;
+  private verticalEdgeLock: VerticalEdgeLock = null;
+  private verticalEdgeReleaseDistance = 0;
 
   constructor(private readonly sensitivity: number) {
     mouse.config.autoDelayMs = 0;
@@ -16,11 +20,16 @@ export class MouseController {
     const current = await mouse.getPosition();
     const width = await screen.width();
     const height = await screen.height();
-    const nextX = clamp(Math.round(current.x + dx * this.sensitivity), 0, width - 1);
-    const nextY = clamp(Math.round(current.y + dy * this.sensitivity), 0, height - 1);
+    const scaledDx = dx * this.sensitivity;
+    const scaledDy = dy * this.sensitivity;
+    const nextX = clamp(Math.round(current.x + scaledDx), 0, width - 1);
+    const nextY = this.resolveVerticalEdgeY(
+      clamp(Math.round(current.y + scaledDy), 0, height - 1),
+      scaledDy,
+      height,
+    );
 
     await mouse.move(buildMovementPath(current, new Point(nextX, nextY)));
-    await this.applyMacEdgePressure(nextX, nextY, height);
   }
 
   async leftClick(): Promise<void> {
@@ -66,22 +75,60 @@ export class MouseController {
     }
   }
 
-  private async applyMacEdgePressure(x: number, y: number, screenHeight: number): Promise<void> {
+  private resolveVerticalEdgeY(
+    nextY: number,
+    dy: number,
+    screenHeight: number,
+  ): number {
     if (process.platform !== "darwin") {
-      return;
+      return nextY;
     }
 
-    if (y <= EDGE_PRESSURE_ZONE) {
-      await mouse.move([new Point(x, EDGE_NUDGE_DISTANCE), new Point(x, 0)]);
-      return;
+    if (this.verticalEdgeLock === "top") {
+      if (dy > 0) {
+        this.verticalEdgeReleaseDistance += dy;
+
+        if (this.verticalEdgeReleaseDistance >= EDGE_RELEASE_DISTANCE) {
+          this.verticalEdgeLock = null;
+          this.verticalEdgeReleaseDistance = 0;
+          return nextY;
+        }
+      } else {
+        this.verticalEdgeReleaseDistance = 0;
+      }
+
+      return 0;
     }
 
-    if (y >= screenHeight - 1 - EDGE_PRESSURE_ZONE) {
-      await mouse.move([
-        new Point(x, screenHeight - 1 - EDGE_NUDGE_DISTANCE),
-        new Point(x, screenHeight - 1),
-      ]);
+    if (this.verticalEdgeLock === "bottom") {
+      if (dy < 0) {
+        this.verticalEdgeReleaseDistance += Math.abs(dy);
+
+        if (this.verticalEdgeReleaseDistance >= EDGE_RELEASE_DISTANCE) {
+          this.verticalEdgeLock = null;
+          this.verticalEdgeReleaseDistance = 0;
+          return nextY;
+        }
+      } else {
+        this.verticalEdgeReleaseDistance = 0;
+      }
+
+      return screenHeight - 1;
     }
+
+    if (nextY <= EDGE_PRESSURE_ZONE) {
+      this.verticalEdgeLock = "top";
+      this.verticalEdgeReleaseDistance = 0;
+      return 0;
+    }
+
+    if (nextY >= screenHeight - 1 - EDGE_PRESSURE_ZONE) {
+      this.verticalEdgeLock = "bottom";
+      this.verticalEdgeReleaseDistance = 0;
+      return screenHeight - 1;
+    }
+
+    return nextY;
   }
 }
 

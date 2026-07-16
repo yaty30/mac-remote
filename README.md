@@ -142,6 +142,8 @@ The mobile app sends JSON over WebSocket:
 { type: "pressKey", key: "backspace" | "enter" }
 { type: "adjustBrightness", delta: -1 | 1 }
 { type: "setVolume", value: number }
+{ type: "ping", id: string }
+{ type: "pong", id: string }
 ```
 
 ## Configuration

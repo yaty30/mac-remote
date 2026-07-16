@@ -36,6 +36,7 @@ export function useRemoteConnection(
   const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   useEffect(() => {
     onResetHostStateRef.current = onResetHostState;
@@ -46,10 +47,16 @@ export function useRemoteConnection(
     const unsubscribe = socket.onStatus((nextStatus) => {
       statusRef.current = nextStatus;
       setStatus(nextStatus);
+
+      if (nextStatus !== "connected") {
+        setLatencyMs(null);
+      }
     });
+    const unsubscribeLatency = socket.onLatency(setLatencyMs);
 
     return () => {
       onUnmountRef.current();
+      unsubscribeLatency();
       unsubscribe();
       socket.disconnect();
     };
@@ -270,5 +277,6 @@ export function useRemoteConnection(
     setConnectionError,
     setDeviceDropdownOpen,
     status,
+    latencyMs,
   };
 }

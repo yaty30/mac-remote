@@ -1,10 +1,17 @@
 import { EventEmitter } from "node:events";
 import { networkInterfaces } from "node:os";
+import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
 import type { DesktopStatus, HostMessage, RemoteMessage } from "../types/protocol";
 
 type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
 type HostStateProvider = () => Promise<HostMessage>;
+type ClientLatencyState = {
+  latencyMs?: number;
+  pendingId?: string;
+  pendingStartedAt?: number;
+  timer: ReturnType<typeof setInterval>;
+};
 
 interface RemoteServerEvents {
   status: [DesktopStatus];
@@ -15,6 +22,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   private readonly server: WebSocketServer;
   private connectedClients = 0;
   private currentStatus: DesktopStatus;
+  private readonly clientLatency = new Map<WebSocket, ClientLatencyState>();
 
   constructor(
     private readonly port: number,
@@ -33,6 +41,11 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   }
 
   close(): Promise<void> {
+    for (const state of this.clientLatency.values()) {
+      clearInterval(state.timer);
+    }
+    this.clientLatency.clear();
+
     return new Promise((resolve, reject) => {
       this.server.close((error) => {
         if (error) {
@@ -50,6 +63,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
     this.server.on("connection", (socket) => {
       this.connectedClients += 1;
+      this.startLatencyMonitoring(socket);
       this.publishStatus();
       this.sendHostState(socket).catch((error) => {
         this.emit(
@@ -61,6 +75,17 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       socket.on("message", async (raw) => {
         try {
           const message = parseRemoteMessage(raw.toString());
+
+          if (message.type === "ping") {
+            sendJson(socket, { type: "pong", id: message.id });
+            return;
+          }
+
+          if (message.type === "pong") {
+            this.recordLatency(socket, message.id);
+            return;
+          }
+
           const response = await this.onMessage(message);
 
           if (response) {
@@ -76,6 +101,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
       socket.on("close", () => {
         this.connectedClients = Math.max(0, this.connectedClients - 1);
+        this.stopLatencyMonitoring(socket);
         this.publishStatus();
       });
     });
@@ -104,7 +130,70 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       port: this.port,
       addresses: getLocalIPv4Addresses(),
       connectedClients: this.connectedClients,
+      latencyMs: this.getAverageLatency(),
     };
+  }
+
+  private startLatencyMonitoring(socket: WebSocket): void {
+    const state: ClientLatencyState = {
+      timer: setInterval(() => this.sendLatencyPing(socket), 2000),
+    };
+
+    this.clientLatency.set(socket, state);
+    this.sendLatencyPing(socket);
+  }
+
+  private stopLatencyMonitoring(socket: WebSocket): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state) {
+      return;
+    }
+
+    clearInterval(state.timer);
+    this.clientLatency.delete(socket);
+  }
+
+  private sendLatencyPing(socket: WebSocket): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    state.pendingId = id;
+    state.pendingStartedAt = performance.now();
+    sendJson(socket, { type: "ping", id });
+  }
+
+  private recordLatency(socket: WebSocket, id: string): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state || state.pendingId !== id || state.pendingStartedAt === undefined) {
+      return;
+    }
+
+    state.latencyMs = Math.max(
+      0,
+      Math.round(performance.now() - state.pendingStartedAt),
+    );
+    state.pendingId = undefined;
+    state.pendingStartedAt = undefined;
+    this.publishStatus();
+  }
+
+  private getAverageLatency(): number | undefined {
+    const latencies = [...this.clientLatency.values()]
+      .map((state) => state.latencyMs)
+      .filter((latency): latency is number => latency !== undefined);
+
+    if (latencies.length === 0) {
+      return undefined;
+    }
+
+    const total = latencies.reduce((sum, latency) => sum + latency, 0);
+    return Math.round(total / latencies.length);
   }
 }
 
@@ -173,6 +262,22 @@ function parseRemoteMessage(raw: string): RemoteMessage {
 
   if (data.type === "requestHostState") {
     return { type: "requestHostState" };
+  }
+
+  if (data.type === "ping") {
+    if (typeof data.id !== "string" || data.id.length === 0) {
+      throw new Error("Invalid ping payload");
+    }
+
+    return { type: "ping", id: data.id.slice(0, 80) };
+  }
+
+  if (data.type === "pong") {
+    if (typeof data.id !== "string" || data.id.length === 0) {
+      throw new Error("Invalid pong payload");
+    }
+
+    return { type: "pong", id: data.id.slice(0, 80) };
   }
 
   if (data.type === "adjustBrightness") {
