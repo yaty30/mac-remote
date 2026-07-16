@@ -8,6 +8,8 @@ type ConnectionStatus =
 type Theme = "light" | "dark";
 type WindowAction = "minimize" | "maximize" | "close";
 type HealthState = "ready" | "warning" | "error";
+type LucideNodeName = "circle" | "path" | "rect";
+type LucideNode = readonly [LucideNodeName, Readonly<Record<string, string>>];
 
 interface StartupSettings {
   available: boolean;
@@ -94,12 +96,87 @@ let startupSettings: StartupSettings = {
   enabled: false,
 };
 
+const LUCIDE_ICON_NODES: Record<string, readonly LucideNode[]> = {
+  check: [["path", { d: "M20 6 9 17l-5-5" }]],
+  minus: [["path", { d: "M5 12h14" }]],
+  moon: [["path", { d: "M12 3a6 6 0 0 0 9 7 9 9 0 1 1-9-7" }]],
+  "monitor-smartphone": [
+    ["path", { d: "M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8" }],
+    ["path", { d: "M10 19v-3.96 3.15" }],
+    ["path", { d: "M7 19h5" }],
+    ["rect", { width: "6", height: "10", x: "16", y: "12", rx: "2" }],
+  ],
+  smartphone: [
+    ["rect", { width: "14", height: "20", x: "5", y: "2", rx: "2", ry: "2" }],
+    ["path", { d: "M12 18h.01" }],
+  ],
+  square: [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }]],
+  sun: [
+    ["circle", { cx: "12", cy: "12", r: "4" }],
+    ["path", { d: "M12 2v2" }],
+    ["path", { d: "M12 20v2" }],
+    ["path", { d: "m4.93 4.93 1.41 1.41" }],
+    ["path", { d: "m17.66 17.66 1.41 1.41" }],
+    ["path", { d: "M2 12h2" }],
+    ["path", { d: "M20 12h2" }],
+    ["path", { d: "m6.34 17.66-1.41 1.41" }],
+    ["path", { d: "m19.07 4.93-1.41 1.41" }],
+  ],
+  wifi: [
+    ["path", { d: "M12 20h.01" }],
+    ["path", { d: "M2 8.82a15 15 0 0 1 20 0" }],
+    ["path", { d: "M5 12.86a10 10 0 0 1 14 0" }],
+    ["path", { d: "M8.5 16.43a5 5 0 0 1 7 0" }],
+  ],
+  x: [
+    ["path", { d: "M18 6 6 18" }],
+    ["path", { d: "m6 6 12 12" }],
+  ],
+};
+
 function query<T extends Element>(selector: string): T | null {
   return document.querySelector<T>(selector);
 }
 
+function hydrateLucideIcons(): void {
+  document.querySelectorAll<HTMLElement>("[data-lucide]").forEach((target) => {
+    const iconName = target.dataset.lucide;
+    const icon = iconName ? createLucideIcon(iconName) : null;
+
+    if (!icon) {
+      return;
+    }
+
+    target.replaceChildren(icon);
+  });
+}
+
+function createLucideIcon(name: string): SVGSVGElement | null {
+  const nodes = LUCIDE_ICON_NODES[name];
+
+  if (!nodes) {
+    console.warn(`[desktop] unknown lucide icon: ${name}`);
+    return null;
+  }
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+
+  nodes.forEach(([nodeName, attrs]) => {
+    const child = document.createElementNS("http://www.w3.org/2000/svg", nodeName);
+    Object.entries(attrs).forEach(([key, value]) => {
+      child.setAttribute(key, value);
+    });
+    svg.append(child);
+  });
+
+  return svg;
+}
+
 function renderStatus(status: DesktopStatus): void {
   latestStatus = status;
+  applyPlatform(status.platform ?? getRendererPlatform());
 
   if (
     !statusBadge ||
@@ -158,6 +235,29 @@ function renderStatus(status: DesktopStatus): void {
   renderAddresses(status);
   renderHealth(status);
   updateButtons(status);
+}
+
+function applyPlatform(platform: string | undefined): void {
+  if (platform) {
+    document.documentElement.dataset.platform = platform;
+    return;
+  }
+
+  delete document.documentElement.dataset.platform;
+}
+
+function getRendererPlatform(): string | undefined {
+  const platform = navigator.platform.toLowerCase();
+
+  if (platform.includes("mac")) {
+    return "darwin";
+  }
+
+  if (platform.includes("win")) {
+    return "win32";
+  }
+
+  return undefined;
 }
 
 function renderQr(
@@ -241,22 +341,16 @@ function renderHealth(status: DesktopStatus): void {
     ...checks.map((check) => {
       const item = document.createElement("div");
       const marker = document.createElement("span");
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      const checkPath = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "path",
-      );
+      const icon = createLucideIcon("check");
       const text = document.createElement("div");
       const label = document.createElement("strong");
       const detail = document.createElement("span");
 
       item.className = `healthItem ${check.state}`;
       marker.className = "healthMarker";
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("aria-hidden", "true");
-      checkPath.setAttribute("d", "M20 6 9 17l-5-5");
-      icon.append(checkPath);
-      marker.append(icon);
+      if (icon) {
+        marker.append(icon);
+      }
       label.textContent = check.label;
       detail.textContent = check.detail;
       text.append(label, detail);
@@ -511,6 +605,8 @@ function renderBridgeError(errorMessage: string): void {
   });
 }
 
+hydrateLucideIcons();
+applyPlatform(getRendererPlatform());
 setTheme(resolveInitialTheme());
 attachActions();
 

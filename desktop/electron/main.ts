@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  type BrowserWindowConstructorOptions,
   clipboard,
   ipcMain,
   screen as electronScreen,
@@ -516,19 +517,28 @@ async function handleRemoteMessage(
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const isMac = process.platform === "darwin";
+  const windowOptions: BrowserWindowConstructorOptions = {
     width: 1010,
-    height: 760,
+    height: 800,
     minWidth: 720,
     minHeight: 520,
     resizable: true,
-    frame: false,
+    frame: !isMac,
     title: "Mac Remote",
     backgroundColor: "#080808",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
-  });
+  };
+
+  if (isMac) {
+    windowOptions.titleBarStyle = "hidden";
+    // mac tracffic light buttons padding
+    windowOptions.trafficLightPosition = { x: 10, y: 10 };
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
 

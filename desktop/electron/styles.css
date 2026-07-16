@@ -67,6 +67,12 @@ svg {
   stroke-width: 2;
 }
 
+.lucideIcon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+}
+
 .window {
   background:
     linear-gradient(135deg, rgba(255, 148, 31, 0.06), transparent 34%),
@@ -156,6 +162,34 @@ svg {
   width: 16px;
 }
 
+:root[data-platform="darwin"] .titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  height: 32px;
+  justify-content: initial;
+  padding: 0 10px;
+}
+
+:root[data-platform="darwin"] .brand {
+  gap: 0;
+  grid-column: 2;
+  justify-self: center;
+}
+
+:root[data-platform="darwin"] .brandIcon {
+  display: none;
+}
+
+:root[data-platform="darwin"] .brand strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:root[data-platform="darwin"] .windowControls {
+  display: none;
+  grid-column: 1;
+}
+
 .appShell {
   display: flex;
   flex: 1;
@@ -163,7 +197,7 @@ svg {
   gap: 12px;
   min-height: 0;
   overflow: hidden;
-  padding: 16px 20px 18px;
+  padding: 16px 10px 18px;
 }
 
 .hero {

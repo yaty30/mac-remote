@@ -35,6 +35,24 @@ import {
   LinearGradient as ExpoLinearGradient,
   type LinearGradientProps,
 } from "expo-linear-gradient";
+import {
+  ClockArrowLeft as ClockArrowLeftIcon,
+  ClockArrowRight as ClockArrowRightIcon,
+  Keyboard as KeyboardIcon,
+  LayoutPanelTop as LayoutPanelTopIcon,
+  Minimize2 as Minimize2Icon,
+  MouseRight as MouseRightIcon,
+  PanelRightClose as PanelRightCloseIcon,
+  PanelRightOpen as PanelRightOpenIcon,
+  Pause as PauseIcon,
+  Play as PlayIcon,
+  RefreshCw as RefreshCwIcon,
+  SquareX as SquareXIcon,
+  Volume2 as VolumeOnIcon,
+  VolumeX as VolumeMutedIcon,
+  Undo2,
+  Redo2,
+} from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "../../components/Header";
 import { ShortcutButton } from "../../components/ShortcutButton";
@@ -49,22 +67,6 @@ import DisneyPlusIcon from "../../assets/shortcuts/disneyplus.svg";
 import NetflixIcon from "../../assets/shortcuts/netflix.svg";
 import PrimeIcon from "../../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../../assets/shortcuts/spotify.svg";
-import VolumeMutedIcon from "../../assets/icons/volume-muted.svg";
-import VolumeOnIcon from "../../assets/icons/volume-on.svg";
-import PanelRightOpenIcon from "../../assets/icons/panel-right-open.svg";
-import PanelRightCloseIcon from "../../assets/icons/panel-right-close.svg";
-import ArrowBigLeftDashIcon from "../../assets/icons/arrow-big-left-dash.svg";
-import ArrowBigRightDashIcon from "../../assets/icons/arrow-big-right-dash.svg";
-import ChevronsLeftIcon from "../../assets/icons/chevrons-left.svg";
-import ChevronsRightIcon from "../../assets/icons/chevrons-right.svg";
-import KeyboardIcon from "../../assets/icons/keyboard.svg";
-import LayoutPanelTopIcon from "../../assets/icons/layout-panel-top.svg";
-import Minimize2Icon from "../../assets/icons/minimize-2.svg";
-import MouseRightIcon from "../../assets/icons/mouse-right.svg";
-import PauseIcon from "../../assets/icons/pause.svg";
-import PlayIcon from "../../assets/icons/play.svg";
-import RefreshCwIcon from "../../assets/icons/refresh-cw.svg";
-import SquareXIcon from "../../assets/icons/square-x.svg";
 import { sanitizeHostName } from "../connection/deviceUtils";
 import { parsePairingPayload } from "../connection/pairing";
 import { useRemoteConnection } from "../connection/useRemoteConnection";
@@ -664,6 +666,16 @@ export function RemoteControlMaster() {
     Math.min(windowWidth - 64, windowHeight - 236, 420),
   );
   const PlaybackIcon = playbackPaused ? PlayIcon : PauseIcon;
+  const keyboardShortcutColumns = windowWidth >= 390 ? 5 : 4;
+  const keyboardShortcutGap = 8;
+  const keyboardShortcutContentWidth = Math.max(0, windowWidth - 64);
+  const keyboardShortcutButtonWidth =
+    (keyboardShortcutContentWidth -
+      keyboardShortcutGap * (keyboardShortcutColumns - 1)) /
+    keyboardShortcutColumns;
+  const keyboardShortcutButtonStyle = {
+    width: Math.max(58, Math.floor(keyboardShortcutButtonWidth)),
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -730,24 +742,16 @@ export function RemoteControlMaster() {
           ]}
         />
 
-        <ScrollView
-          horizontal
-          keyboardDismissMode="none"
-          keyboardShouldPersistTaps="always"
-          onTouchStart={refocusKeyboardInput}
-          showsHorizontalScrollIndicator={false}
-          style={styles.keyboardShortcutScroller}
-          contentContainerStyle={styles.keyboardShortcutRow}
-        >
+        <View style={styles.keyboardShortcutGrid}>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(() => sendKeyboardShortcut("selectAll"))}
           >
             <Ionicons name="scan-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Select All</Text>
           </Pressable>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(insertKeyboardNewLine)}
           >
             <Ionicons
@@ -758,21 +762,21 @@ export function RemoteControlMaster() {
             <Text style={styles.keyboardShortcutText}>New Line</Text>
           </Pressable>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(() => sendKeyboardShortcut("copy"))}
           >
             <Ionicons name="copy-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Copy</Text>
           </Pressable>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(() => sendKeyboardShortcut("paste"))}
           >
             <Ionicons name="clipboard-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Paste</Text>
           </Pressable>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(pasteFromPhoneClipboard)}
           >
             <Ionicons
@@ -783,13 +787,13 @@ export function RemoteControlMaster() {
             <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
           </Pressable>
           <Pressable
-            style={styles.keyboardShortcutButton}
+            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(() => sendKeyboardShortcut("clear"))}
           >
             <Ionicons name="backspace-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Clear</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </Animated.View>
 
       <SettingsBottomSheet
@@ -1277,7 +1281,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Previous desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
             >
-              <PanelRightOpenIcon width={24} height={24} color="#b8afa5" />
+              <PanelRightOpenIcon size={24} color="#b8afa5" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1285,7 +1289,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Next desktop"
               onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
             >
-              <PanelRightCloseIcon width={24} height={24} color="#b8afa5" />
+              <PanelRightCloseIcon size={24} color="#b8afa5" />
             </Pressable>
           </View>
 
@@ -1295,7 +1299,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Previous browser page"
               onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
             >
-              <ArrowBigLeftDashIcon width={24} height={24} color="#f0c17c" />
+              <Undo2 size={24} color="#f0c17c" />
             </Pressable>
             <View
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1307,7 +1311,7 @@ export function RemoteControlMaster() {
                 socket.sendTextCommand("browserForward"),
               )}
             >
-              <ArrowBigRightDashIcon width={24} height={24} color="#f0c17c" />
+              <Redo2 size={24} color="#f0c17c" />
             </Pressable>
           </View>
 
@@ -1317,7 +1321,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Left arrow key"
               onPress={withHaptic(() => socket.sendKey("leftArrow"))}
             >
-              <ChevronsLeftIcon width={24} height={24} color="#9e9890" />
+              <ClockArrowLeftIcon size={24} color="#9e9890" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1325,7 +1329,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Right arrow key"
               onPress={withHaptic(() => socket.sendKey("rightArrow"))}
             >
-              <ChevronsRightIcon width={24} height={24} color="#9e9890" />
+              <ClockArrowRightIcon size={24} color="#9e9890" />
             </Pressable>
           </View>
         </View>
@@ -1362,7 +1366,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Escape key"
               onPress={withHaptic(() => socket.sendKey("escape"))}
             >
-              <Minimize2Icon width={24} height={24} color="#f0c17c" />
+              <Minimize2Icon size={24} color="#f0c17c" />
             </Pressable>
             <View
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1372,7 +1376,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Mission Control"
               onPress={withHaptic(() => socket.sendMissionControl())}
             >
-              <LayoutPanelTopIcon width={24} height={24} color="#f0c17c" />
+              <LayoutPanelTopIcon size={24} color="#f0c17c" />
             </Pressable>
             <View
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1384,7 +1388,7 @@ export function RemoteControlMaster() {
               }
               onPress={withHaptic(toggleRemotePlayback)}
             >
-              <PlaybackIcon width={24} height={24} color="#f0c17c" />
+              <PlaybackIcon size={24} color="#f0c17c" />
             </Pressable>
             <View
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1394,7 +1398,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Close current browser tab"
               onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
             >
-              <SquareXIcon width={24} height={24} color="#f0c17c" />
+              <SquareXIcon size={24} color="#f0c17c" />
             </Pressable>
           </View>
         </View>
@@ -1415,7 +1419,7 @@ export function RemoteControlMaster() {
               end={{ x: 0.82, y: 1 }}
               style={styles.sideMouseButtonGradient}
             >
-              <RefreshCwIcon width={23} height={23} color="#ffffff" />
+              <RefreshCwIcon size={23} color="#ffffff" />
             </ScanButtonGradient>
           </Pressable>
           <Pressable
@@ -1434,7 +1438,7 @@ export function RemoteControlMaster() {
               end={{ x: 0.9, y: 1 }}
               style={styles.keyboardMouseButtonGradient}
             >
-              <KeyboardIcon width={23} height={23} color="#1b1008" />
+              <KeyboardIcon size={23} color="#1b1008" />
               <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
                 Keyboard
               </Text>
@@ -1455,7 +1459,7 @@ export function RemoteControlMaster() {
               end={{ x: 0.82, y: 1 }}
               style={styles.sideMouseButtonGradient}
             >
-              <MouseRightIcon width={23} height={23} color="#ffffff" />
+              <MouseRightIcon size={23} color="#ffffff" />
             </ScanButtonGradient>
           </Pressable>
         </View>
@@ -2080,12 +2084,10 @@ const styles = StyleSheet.create({
   keyboardPreviewEmpty: {
     color: "#5f5a54",
   },
-  keyboardShortcutScroller: {
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  keyboardShortcutRow: {
+  keyboardShortcutGrid: {
     flexDirection: "row",
+    flexShrink: 0,
+    flexWrap: "wrap",
     gap: 8,
   },
   keyboardShortcutButton: {
@@ -2096,13 +2098,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 5,
     justifyContent: "center",
-    minHeight: 48,
-    minWidth: 76,
-    paddingHorizontal: 6,
+    minHeight: 46,
+    paddingHorizontal: 4,
   },
   keyboardShortcutText: {
     color: "#ffffff",
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "800",
     textAlign: "center",
   },

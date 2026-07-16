@@ -23,9 +23,7 @@
             type="button"
             aria-label="Minimize"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 12h12"></path>
-            </svg>
+            <span class="lucideIcon" data-lucide="minus" aria-hidden="true"></span>
           </button>
           <button
             id="maximizeWindow"
@@ -33,9 +31,7 @@
             type="button"
             aria-label="Maximize"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
-            </svg>
+            <span class="lucideIcon" data-lucide="square" aria-hidden="true"></span>
           </button>
           <button
             id="closeWindow"
@@ -43,10 +39,7 @@
             type="button"
             aria-label="Close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M7 7l10 10"></path>
-              <path d="M17 7L7 17"></path>
-            </svg>
+            <span class="lucideIcon" data-lucide="x" aria-hidden="true"></span>
           </button>
         </div>
       </header>
@@ -66,23 +59,11 @@
           <div class="heroActions">
             <div class="themeSwitch" role="group" aria-label="Theme">
               <button id="lightTheme" class="themeOption" type="button">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="12" r="4"></circle>
-                  <path d="M12 2v2"></path>
-                  <path d="M12 20v2"></path>
-                  <path d="M4.93 4.93l1.41 1.41"></path>
-                  <path d="M17.66 17.66l1.41 1.41"></path>
-                  <path d="M2 12h2"></path>
-                  <path d="M20 12h2"></path>
-                  <path d="M6.34 17.66l-1.41 1.41"></path>
-                  <path d="M19.07 4.93l-1.41 1.41"></path>
-                </svg>
+                <span class="lucideIcon" data-lucide="sun" aria-hidden="true"></span>
                 Light
               </button>
               <button id="darkTheme" class="themeOption" type="button">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3a6 6 0 0 0 9 7 9 9 0 1 1-9-7"></path>
-                </svg>
+                <span class="lucideIcon" data-lucide="moon" aria-hidden="true"></span>
                 Dark
               </button>
             </div>
@@ -98,10 +79,7 @@
           <section class="panel pairPanel">
             <div class="pairHeader">
               <div class="phoneIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="7" y="2" width="10" height="20" rx="2"></rect>
-                  <path d="M11 18h2"></path>
-                </svg>
+                <span class="lucideIcon" data-lucide="smartphone"></span>
               </div>
               <div>
                 <h2>Connect your iPhone</h2>
@@ -136,19 +114,6 @@
                 </button>
               </div>
             </div>
-
-            <!-- 
-            <button id="copyPairingUrl" class="primaryButton" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93"
-                ></path>
-                <path
-                  d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"
-                ></path>
-              </svg>
-              Copy pairing link
-            </button> -->
 
             <div id="detailsPanel" class="detailsPanel hidden">
               <div class="detailRow">
@@ -188,11 +153,7 @@
           <aside class="sideColumn">
             <section class="panel connectionPanel">
               <div class="panelTitle">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-                  <path d="M12 20h.01"></path>
-                </svg>
+                <span class="lucideIcon" data-lucide="wifi" aria-hidden="true"></span>
                 <h2>Connection</h2>
               </div>
               <div id="healthList" class="healthList"></div>
@@ -223,18 +184,11 @@
 
             <section class="panel devicesPanel">
               <div class="panelTitle">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="7" y="2" width="10" height="20" rx="2"></rect>
-                  <path d="M11 18h2"></path>
-                </svg>
+                <span class="lucideIcon" data-lucide="smartphone" aria-hidden="true"></span>
                 <h2>Devices</h2>
               </div>
               <div class="deviceIllustration" aria-hidden="true">
-                <svg viewBox="0 0 96 96">
-                  <rect x="32" y="16" width="30" height="58" rx="7"></rect>
-                  <path d="M42 66h10"></path>
-                  <circle cx="64" cy="70" r="6"></circle>
-                </svg>
+                <span class="lucideIcon" data-lucide="monitor-smartphone"></span>
               </div>
               <strong id="clientCount" class="deviceCount"
                 >0 phones connected</strong

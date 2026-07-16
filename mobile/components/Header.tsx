@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
+  Monitor as MonitorIcon,
+  MonitorX as MonitorOffIcon,
   Signal,
   SignalHigh,
   SignalLow,
@@ -13,8 +15,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
 import { useState, type ComponentType } from "react";
 import { withHaptic } from "../utils/haptics";
-import MonitorIcon from "../assets/icons/monitor.svg";
-import MonitorOffIcon from "../assets/icons/monitor-off.svg";
 
 interface HeaderProps {
   latencyMs?: number | null;
@@ -123,9 +123,9 @@ export function Header({
               style={styles.headerActionGradient}
             >
               {monitorIsOn ? (
-                <MonitorOffIcon width={21} height={21} color="#ff8a72" />
+                <MonitorOffIcon size={21} color="#ff8a72" />
               ) : (
-                <MonitorIcon width={21} height={21} color="#efe8dd" />
+                <MonitorIcon size={21} color="#efe8dd" />
               )}
             </HeaderButtonGradient>
           </Pressable>
