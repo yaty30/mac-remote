@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Keyboard, type AppStateStatus } from "react-native";
-import type { ConnectionStatus } from "../../types/protocol";
+import type { ConnectionStatus, HostPlatform } from "../../types/protocol";
 import type { RemoteSocket } from "../../websocket/RemoteSocket";
 import {
   getDeviceId,
@@ -124,6 +124,7 @@ export function useRemoteConnection(
                 id: getDeviceId(legacyHost),
                 name: legacyName ?? getDeviceNameFromHost(legacyHost),
                 host: legacyHost,
+                platform: undefined,
                 lastConnectedAt: Date.now(),
               })
             : devices;
@@ -174,6 +175,23 @@ export function useRemoteConnection(
     }
   }
 
+  function persistHostPlatform(platform: HostPlatform, deviceHost = host) {
+    const cleanHost = deviceHost.trim();
+
+    if (!cleanHost) {
+      return;
+    }
+
+    setSavedDevices((currentDevices) => {
+      const nextDevices = currentDevices.map((device) =>
+        device.host === cleanHost ? { ...device, platform } : device,
+      );
+
+      persistSavedDevices(nextDevices);
+      return nextDevices;
+    });
+  }
+
   function connectToHost(nextHost: string, nextHostName?: string) {
     const cleanHost = nextHost.trim();
 
@@ -220,6 +238,8 @@ export function useRemoteConnection(
       id: getDeviceId(cleanHost),
       name: input.name?.trim() || getDeviceNameFromHost(cleanHost),
       host: cleanHost,
+      platform: savedDevices.find((device) => device.host === cleanHost)
+        ?.platform,
       lastConnectedAt: Date.now(),
     };
 
@@ -260,6 +280,26 @@ export function useRemoteConnection(
     );
   }
 
+  function renameSavedDevice(device: SavedDevice, nextName: string) {
+    const cleanName = nextName.trim().slice(0, 20);
+
+    setSavedDevices((currentDevices) => {
+      const nextDevices = currentDevices.map((item) =>
+        item.id === device.id ? { ...item, name: cleanName } : item,
+      );
+
+      persistSavedDevices(nextDevices);
+      return nextDevices;
+    });
+
+    if (device.host === hostRef.current) {
+      setHostName(cleanName);
+      AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, cleanName).catch(() => {
+        // Ignore storage errors.
+      });
+    }
+  }
+
   function setConnectionError() {
     statusRef.current = "error";
     setStatus("error");
@@ -272,6 +312,8 @@ export function useRemoteConnection(
     host,
     hostName,
     persistHostName,
+    persistHostPlatform,
+    renameSavedDevice,
     savedDevices,
     selectSavedDevice,
     setConnectionError,

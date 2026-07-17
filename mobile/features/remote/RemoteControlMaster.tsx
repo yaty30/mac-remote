@@ -50,6 +50,7 @@ import {
   SquareX as SquareXIcon,
   Volume2 as VolumeOnIcon,
   VolumeX as VolumeMutedIcon,
+  Pencil,
   Undo2,
   Redo2,
 } from "lucide-react-native";
@@ -58,6 +59,7 @@ import { Header } from "../../components/Header";
 import { ShortcutButton } from "../../components/ShortcutButton";
 import { Trackpad } from "../trackpad/Trackpad";
 import type {
+  HostPlatform,
   ShortcutId,
   TextCommand,
 } from "../../types/protocol";
@@ -67,9 +69,12 @@ import DisneyPlusIcon from "../../assets/shortcuts/disneyplus.svg";
 import NetflixIcon from "../../assets/shortcuts/netflix.svg";
 import PrimeIcon from "../../assets/shortcuts/prime.svg";
 import SpotifyIcon from "../../assets/shortcuts/spotify.svg";
+import AppleIcon from "../../assets/icons/apple.svg";
+import WindowsIcon from "../../assets/icons/windows.svg";
 import { sanitizeHostName } from "../connection/deviceUtils";
 import { parsePairingPayload } from "../connection/pairing";
 import { useRemoteConnection } from "../connection/useRemoteConnection";
+import type { SavedDevice } from "../connection/types";
 import { RESTART_COUNTDOWN_SECONDS } from "../settings/constants";
 import { SettingsBottomSheet } from "../settings/SettingsBottomSheet";
 import { useRemoteSettings } from "../settings/useRemoteSettings";
@@ -89,6 +94,9 @@ import { useRemoteControlsAvailability } from "./useRemoteControlsAvailability";
 
 const ScanButtonGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
+const DEVICE_NAME_MIN_LENGTH = 3;
+const DEVICE_NAME_MAX_LENGTH = 20;
+const DEVICE_DROPDOWN_MAX_HEIGHT = 286;
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -100,6 +108,7 @@ export function RemoteControlMaster() {
   const remoteKeyboardCursorRef = useRef(0);
   const remoteKeyboardSelectionActiveRef = useRef(false);
   const scannerOpenRef = useRef(false);
+  const deviceDropdownAnim = useRef(new Animated.Value(0)).current;
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -148,6 +157,8 @@ export function RemoteControlMaster() {
     hostName,
     latencyMs,
     persistHostName,
+    persistHostPlatform,
+    renameSavedDevice,
     savedDevices,
     selectSavedDevice,
     setConnectionError,
@@ -173,6 +184,10 @@ export function RemoteControlMaster() {
     end: 0,
   });
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
+  const [deviceDropdownMounted, setDeviceDropdownMounted] = useState(false);
+  const [renamingDevice, setRenamingDevice] = useState<SavedDevice | null>(null);
+  const [renameDeviceName, setRenameDeviceName] = useState("");
+  const [renameDeviceError, setRenameDeviceError] = useState("");
   const {
     closeShortcutModal,
     customShortcuts,
@@ -198,6 +213,7 @@ export function RemoteControlMaster() {
       if (message.type === "hostState") {
         applyHostProfile(message);
         applyHostState(message);
+        persistHostPlatform(message.platform);
 
         const nextHostName = sanitizeHostName(message.hostName);
 
@@ -208,7 +224,37 @@ export function RemoteControlMaster() {
     });
 
     return unsubscribe;
-  }, [applyHostProfile, applyHostState, persistHostName, socket]);
+  }, [
+    applyHostProfile,
+    applyHostState,
+    persistHostName,
+    persistHostPlatform,
+    socket,
+  ]);
+
+  useEffect(() => {
+    if (deviceDropdownOpen) {
+      setDeviceDropdownMounted(true);
+      Animated.timing(deviceDropdownAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+      return;
+    }
+
+    Animated.timing(deviceDropdownAnim, {
+      toValue: 0,
+      duration: 140,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished) {
+        setDeviceDropdownMounted(false);
+      }
+    });
+  }, [deviceDropdownAnim, deviceDropdownOpen]);
 
   useEffect(() => {
     if (showSettings && status === "connected") {
@@ -284,6 +330,7 @@ export function RemoteControlMaster() {
   }, [keyboardOverlay, keyboardPanelAnim]);
 
   function toggleSettings() {
+    setDeviceDropdownOpen(false);
     setShowSettings((visible) => !visible);
   }
 
@@ -369,12 +416,70 @@ export function RemoteControlMaster() {
 
     scannerOpenRef.current = true;
     setShowSettings(false);
+    setDeviceDropdownOpen(false);
     setScannerVisible(true);
   }
 
   function closeScanner() {
     scannerOpenRef.current = false;
     setScannerVisible(false);
+  }
+
+  function openRenameDevice(device: SavedDevice) {
+    setRenamingDevice(device);
+    setRenameDeviceName(device.name);
+    setRenameDeviceError("");
+  }
+
+  function closeRenameDevice() {
+    setRenamingDevice(null);
+    setRenameDeviceName("");
+    setRenameDeviceError("");
+  }
+
+  function saveRenamedDevice() {
+    if (!renamingDevice) {
+      return;
+    }
+
+    const cleanName = renameDeviceName.trim();
+    const duplicate = savedDevices.some(
+      (device) =>
+        device.id !== renamingDevice.id &&
+        device.name.trim().toLowerCase() === cleanName.toLowerCase(),
+    );
+
+    if (cleanName.length < DEVICE_NAME_MIN_LENGTH) {
+      setRenameDeviceError("Use at least 3 letters.");
+      return;
+    }
+
+    if (cleanName.length > DEVICE_NAME_MAX_LENGTH) {
+      setRenameDeviceError("Use 20 letters or fewer.");
+      return;
+    }
+
+    if (duplicate) {
+      setRenameDeviceError("That device name is already used.");
+      return;
+    }
+
+    renameSavedDevice(renamingDevice, cleanName);
+    closeRenameDevice();
+  }
+
+  function getDevicePlatform(device: SavedDevice): HostPlatform | undefined {
+    if (device.host === host && hostPlatform) {
+      return hostPlatform;
+    }
+
+    return device.platform;
+  }
+
+  function getSelectedDevicePlatform(): HostPlatform | undefined {
+    const selectedDevice = savedDevices.find((device) => device.host === host);
+
+    return hostPlatform ?? selectedDevice?.platform;
   }
 
   function handleScannerBarcode(event: { data: string }) {
@@ -724,6 +829,23 @@ export function RemoteControlMaster() {
   const keyboardShortcutButtonStyle = {
     width: Math.max(58, Math.floor(keyboardShortcutButtonWidth)),
   };
+  const selectedDevicePlatform = getSelectedDevicePlatform();
+  const deviceDropdownAnimatedStyle = {
+    maxHeight: deviceDropdownAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, DEVICE_DROPDOWN_MAX_HEIGHT],
+    }),
+    opacity: deviceDropdownAnim,
+    transform: [
+      {
+        translateY: deviceDropdownAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-8, 0],
+        }),
+      },
+    ],
+  };
+  const devicePickerTitle = hostName || "No device saved";
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -741,7 +863,117 @@ export function RemoteControlMaster() {
       <Header
         latencyMs={latencyMs}
         status={status}
-        title={hostName || "Remote Control"}
+        titleContent={
+          <View style={styles.homeDevicePicker}>
+            <Pressable
+              accessibilityLabel="Select host"
+              style={({ pressed }) => [
+                styles.homeDeviceButton,
+                pressed ? styles.homeDeviceButtonPressed : null,
+              ]}
+              onPress={withHaptic(() =>
+                setDeviceDropdownOpen((open) => !open),
+              )}
+            >
+              <View style={styles.homeDeviceIcon}>
+                <DevicePlatformIcon
+                  platform={selectedDevicePlatform}
+                  size={16}
+                />
+              </View>
+              <Text
+                style={styles.homeDeviceName}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {devicePickerTitle}
+              </Text>
+              <Ionicons
+                name={deviceDropdownOpen ? "chevron-up" : "chevron-down"}
+                size={19}
+                color="#73869a"
+              />
+            </Pressable>
+            {deviceDropdownMounted ? (
+              <Animated.View
+                style={[styles.homeDeviceDropdown, deviceDropdownAnimatedStyle]}
+              >
+                {savedDevices.length > 0 ? (
+                  <ScrollView
+                    style={styles.homeDeviceDropdownList}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {savedDevices.map((device) => {
+                      const selected = device.host === host;
+
+                      return (
+                        <View
+                          key={device.id}
+                          style={[
+                            styles.homeDeviceOption,
+                            selected ? styles.homeDeviceOptionSelected : null,
+                          ]}
+                        >
+                          <Pressable
+                            style={styles.homeDeviceOptionSelect}
+                            onPress={withHaptic(() => selectSavedDevice(device))}
+                          >
+                            <View style={styles.homeDeviceOptionIcon}>
+                              <DevicePlatformIcon
+                                platform={getDevicePlatform(device)}
+                                size={18}
+                              />
+                            </View>
+                            <Text
+                              style={styles.homeDeviceOptionName}
+                              numberOfLines={1}
+                            >
+                              {device.name}
+                            </Text>
+                          </Pressable>
+                          <View style={styles.homeDeviceOptionActions}>
+                            {selected ? (
+                              <View style={styles.homeDeviceSelectedMark}>
+                                <Ionicons
+                                  name="checkmark"
+                                  size={16}
+                                  color="#74f0a7"
+                                />
+                              </View>
+                            ) : null}
+                            <Pressable
+                              accessibilityLabel={`Rename ${device.name}`}
+                              style={styles.deviceEditButton}
+                              onPress={withHaptic(() => openRenameDevice(device))}
+                            >
+                              <Pencil size={17} color="#ffffff" />
+                            </Pressable>
+                            <Pressable
+                              accessibilityLabel={`Delete ${device.name}`}
+                              style={styles.deviceDeleteButton}
+                              onPress={withHaptic(() => deleteSavedDevice(device))}
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={18}
+                                color="#ff8a8a"
+                              />
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.emptyDeviceText}>
+                    Scan a desktop QR code to save it here.
+                  </Text>
+                )}
+              </Animated.View>
+            ) : null}
+          </View>
+        }
+        onScan={openScanner}
         onToggleSettings={toggleSettings}
         onSleep={sleepAvailable ? sendSleep : undefined}
       />
@@ -853,121 +1085,6 @@ export function RemoteControlMaster() {
           style={styles.settingsScroll}
           contentContainerStyle={styles.settingsContent}
         >
-          <View style={styles.sensitivityCard}>
-            <View style={styles.settingsCardHeader}>
-              <View style={styles.settingsCardTitleRow}>
-                <View style={styles.settingsCardIcon}>
-                  <Ionicons name="desktop-outline" size={18} color="#ffffff" />
-                </View>
-                <Text style={styles.sensitivityLabel}>Connected Device</Text>
-              </View>
-              <Text
-                style={[
-                  styles.settingsStatusText,
-                  status !== "connected" ? styles.settingsStatusOffline : null,
-                ]}
-              >
-                {status === "connected" ? "Online" : "Offline"}
-              </Text>
-            </View>
-            <View style={styles.hostRow}>
-              <Pressable
-                style={styles.deviceSelectButton}
-                onPress={withHaptic(() =>
-                  setDeviceDropdownOpen((open) => !open),
-                )}
-              >
-                <View style={styles.hostTextBlock}>
-                  <Text style={styles.hostValue}>
-                    {hostName || host || "No device saved"}
-                  </Text>
-                  {hostName && host ? (
-                    <Text style={styles.hostMeta}>{host}</Text>
-                  ) : null}
-                </View>
-                <Ionicons
-                  name={deviceDropdownOpen ? "chevron-up" : "chevron-down"}
-                  size={20}
-                  color="#ffffff"
-                />
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Scan desktop QR"
-                style={({ pressed }) => [
-                  styles.connectButton,
-                  pressed ? styles.scanButtonPressed : null,
-                ]}
-                onPress={withHaptic(openScanner)}
-              >
-                <ScanButtonGradient
-                  colors={["#f4b760", "#e2943b", "#c8762f"]}
-                  end={{ x: 0.85, y: 1 }}
-                  start={{ x: 0.15, y: 0 }}
-                  style={styles.connectButtonGradient}
-                >
-                  <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
-                </ScanButtonGradient>
-              </Pressable>
-            </View>
-            {deviceDropdownOpen ? (
-              <View style={styles.deviceDropdown}>
-                {savedDevices.length > 0 ? (
-                  <ScrollView style={styles.deviceDropdownList}>
-                    {savedDevices.map((device) => {
-                      const selected = device.host === host;
-
-                      return (
-                        <View
-                          key={device.id}
-                          style={[
-                            styles.deviceOption,
-                            selected && styles.deviceOptionSelected,
-                          ]}
-                        >
-                          <Pressable
-                            style={styles.deviceOptionSelect}
-                            onPress={withHaptic(() => selectSavedDevice(device))}
-                          >
-                            <View style={styles.hostTextBlock}>
-                              <Text style={styles.deviceOptionName}>
-                                {device.name}
-                              </Text>
-                              <Text style={styles.deviceOptionHost}>
-                                {device.host}
-                              </Text>
-                            </View>
-                            {selected ? (
-                              <Ionicons
-                                name="checkmark"
-                                size={20}
-                                color="#74f0a7"
-                              />
-                            ) : null}
-                          </Pressable>
-                          <Pressable
-                            accessibilityLabel={`Delete ${device.name}`}
-                            style={styles.deviceDeleteButton}
-                            onPress={withHaptic(() => deleteSavedDevice(device))}
-                          >
-                            <Ionicons
-                              name="trash-outline"
-                              size={19}
-                              color="#ff8a8a"
-                            />
-                          </Pressable>
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                ) : (
-                  <Text style={styles.emptyDeviceText}>
-                    Scan a desktop QR code to save it here.
-                  </Text>
-                )}
-              </View>
-            ) : null}
-          </View>
-
           <View style={styles.sensitivityCard}>
             <View style={styles.settingsCardHeader}>
               <View style={styles.settingsCardTitleRow}>
@@ -1656,6 +1773,55 @@ export function RemoteControlMaster() {
         </View>
       </Modal>
 
+      <Modal
+        animationType="fade"
+        onRequestClose={closeRenameDevice}
+        transparent
+        visible={renamingDevice !== null}
+      >
+        <View style={styles.renameBackdrop}>
+          <View style={styles.renameSheet}>
+            <View style={styles.renameHeader}>
+              <View style={styles.renameIcon}>
+                <Pencil size={18} color="#1b1008" />
+              </View>
+              <Text style={styles.renameTitle}>Rename Device</Text>
+            </View>
+            <TextInput
+              autoCapitalize="words"
+              autoCorrect={false}
+              maxLength={DEVICE_NAME_MAX_LENGTH}
+              onChangeText={(value) => {
+                setRenameDeviceName(value);
+                setRenameDeviceError("");
+              }}
+              placeholder="Device name"
+              placeholderTextColor="#756f68"
+              selectTextOnFocus
+              style={styles.renameInput}
+              value={renameDeviceName}
+            />
+            {renameDeviceError ? (
+              <Text style={styles.renameError}>{renameDeviceError}</Text>
+            ) : null}
+            <View style={styles.renameActions}>
+              <Pressable
+                style={[styles.renameButton, styles.renameCancelButton]}
+                onPress={withHaptic(closeRenameDevice)}
+              >
+                <Text style={styles.renameCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.renameButton, styles.renameSaveButton]}
+                onPress={withHaptic(saveRenamedDevice)}
+              >
+                <Text style={styles.renameSaveText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ShortcutEditorModal
         editingShortcutId={editingShortcutId}
         formError={shortcutFormError}
@@ -1673,6 +1839,24 @@ export function RemoteControlMaster() {
       />
     </SafeAreaView>
   );
+}
+
+function DevicePlatformIcon({
+  platform,
+  size,
+}: {
+  platform?: HostPlatform;
+  size: number;
+}) {
+  if (platform === "win32") {
+    return <WindowsIcon height={size} width={size} />;
+  }
+
+  if (platform === "darwin") {
+    return <AppleIcon height={size} width={size} />;
+  }
+
+  return <Ionicons name="desktop-outline" size={size} color="#ffffff" />;
 }
 
 const styles = StyleSheet.create({
@@ -1729,28 +1913,6 @@ const styles = StyleSheet.create({
     height: 70,
     width: "100%",
   },
-  connectButton: {
-    alignItems: "center",
-    backgroundColor: "#c8762f",
-    borderColor: "#ffbf66",
-    borderRadius: 18,
-    borderWidth: 1,
-    elevation: 5,
-    justifyContent: "center",
-    minHeight: 52,
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    width: 52,
-  },
-  connectButtonGradient: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-    width: "100%",
-  },
   scanButtonPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.98 }],
@@ -1793,6 +1955,103 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     minHeight: 54,
+  },
+  homeDevicePicker: {
+    alignSelf: "stretch",
+    gap: 6,
+    zIndex: 20,
+  },
+  homeDeviceButton: {
+    alignItems: "center",
+    backgroundColor: "#f6f8fa",
+    borderColor: "#8ca0b4",
+    borderRadius: 8,
+    borderWidth: 2,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 50,
+    paddingHorizontal: 12,
+    shadowColor: "#486177",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+  },
+  homeDeviceButtonPressed: {
+    opacity: 0.82,
+  },
+  homeDeviceIcon: {
+    alignItems: "center",
+    backgroundColor: "#2d3c48",
+    borderRadius: 6,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  homeDeviceName: {
+    color: "#273440",
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
+  homeDeviceDropdown: {
+    backgroundColor: "#ffffff",
+    borderColor: "#d0d7de",
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+  },
+  homeDeviceDropdownList: {
+    maxHeight: 220,
+  },
+  homeDeviceOption: {
+    alignItems: "center",
+    borderBottomColor: "#eef1f4",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  homeDeviceOptionSelected: {
+    backgroundColor: "#f1f3f5",
+  },
+  homeDeviceOptionSelect: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 44,
+    minWidth: 0,
+  },
+  homeDeviceOptionIcon: {
+    alignItems: "center",
+    backgroundColor: "#2d3c48",
+    borderRadius: 6,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  homeDeviceOptionName: {
+    color: "#273440",
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  homeDeviceOptionActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  homeDeviceSelectedMark: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    width: 22,
   },
   settingsScroll: {
     flex: 1,
@@ -1951,28 +2210,9 @@ const styles = StyleSheet.create({
   volumeTickActive: {
     backgroundColor: "#ff941f",
   },
-  hostRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
   hostTextBlock: {
     flex: 1,
     gap: 4,
-  },
-  deviceSelectButton: {
-    alignItems: "center",
-    backgroundColor: "#0d0d0d",
-    borderColor: "#2a2118",
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 52,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
   hostValue: {
     color: "#ffffff",
@@ -2004,38 +2244,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#27301f",
     borderColor: "#50643a",
   },
-  deviceDropdown: {
-    backgroundColor: "#0d0d0d",
-    borderColor: "#2a2118",
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  deviceDropdownList: {
-    maxHeight: 220,
-  },
-  deviceOption: {
-    alignItems: "center",
-    borderBottomColor: "#1c1712",
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 56,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  deviceOptionSelected: {
-    backgroundColor: "#2c1b10",
-  },
-  deviceOptionSelect: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 44,
-    minWidth: 0,
-    paddingHorizontal: 4,
-  },
   deviceDeleteButton: {
     alignItems: "center",
     backgroundColor: "#32191d",
@@ -2046,15 +2254,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 40,
   },
-  deviceOptionName: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  deviceOptionHost: {
-    color: "#9d968e",
-    fontSize: 12,
-    fontWeight: "700",
+  deviceEditButton: {
+    alignItems: "center",
+    backgroundColor: "#202219",
+    borderColor: "#48502e",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   emptyDeviceText: {
     color: "#9d968e",
@@ -2114,6 +2322,85 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
+  },
+  renameBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.62)",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  renameSheet: {
+    backgroundColor: "#12110f",
+    borderColor: "#3a2a1e",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 14,
+    padding: 16,
+    width: "100%",
+  },
+  renameHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  renameIcon: {
+    alignItems: "center",
+    backgroundColor: "#ff941f",
+    borderRadius: 8,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  renameTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  renameInput: {
+    backgroundColor: "#0d0d0d",
+    borderColor: "#2a2118",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "800",
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  renameError: {
+    color: "#ff8a8a",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  renameActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  renameButton: {
+    alignItems: "center",
+    borderRadius: 8,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  renameCancelButton: {
+    backgroundColor: "#211a14",
+    borderColor: "#3a2a1e",
+    borderWidth: 1,
+  },
+  renameSaveButton: {
+    backgroundColor: "#ff941f",
+  },
+  renameCancelText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  renameSaveText: {
+    color: "#1b1008",
+    fontSize: 14,
+    fontWeight: "900",
   },
   keyboardPanel: {
     backgroundColor: "rgba(18, 17, 15, 0.9)",

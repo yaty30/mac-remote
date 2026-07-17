@@ -9,6 +9,8 @@ const workspaceNodeModules = path.resolve(workspaceRoot, "node_modules");
 const config = getDefaultConfig(projectRoot);
 const { assetExts, sourceExts } = config.resolver;
 
+config.watchFolders = [workspaceRoot];
+
 config.transformer = {
   ...config.transformer,
   babelTransformerPath: require.resolve("react-native-svg-transformer/expo")

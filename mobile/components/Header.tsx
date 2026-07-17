@@ -13,13 +13,15 @@ import {
 } from "expo-linear-gradient";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { withHaptic } from "../utils/haptics";
 
 interface HeaderProps {
   latencyMs?: number | null;
   status: ConnectionStatus;
   title?: string;
+  titleContent?: ReactNode;
+  onScan?: () => void;
   onToggleSettings?: () => void;
   onSleep?: () => void;
 }
@@ -39,6 +41,8 @@ export function Header({
   latencyMs,
   status,
   title = "Remote Control",
+  titleContent,
+  onScan,
   onToggleSettings,
   onSleep,
 }: HeaderProps) {
@@ -56,9 +60,11 @@ export function Header({
     <View style={styles.container}>
       <View style={styles.topRow}>
         <View style={styles.titleBlock}>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
-            {title}
-          </Text>
+          {titleContent ?? (
+            <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+              {title}
+            </Text>
+          )}
           <View style={styles.statusRow}>
             <View
               style={[
@@ -83,6 +89,24 @@ export function Header({
         </View>
 
         <View style={styles.actionRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.headerActionButton,
+              styles.scanButton,
+              pressed ? styles.headerActionButtonPressed : null,
+            ]}
+            onPress={withHaptic(onScan)}
+          >
+            <HeaderButtonGradient
+              colors={["#f4b760", "#e2943b", "#c8762f"]}
+              start={{ x: 0.15, y: 0 }}
+              end={{ x: 0.85, y: 1 }}
+              style={styles.headerActionGradient}
+            >
+              <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
+            </HeaderButtonGradient>
+          </Pressable>
+
           <Pressable
             style={({ pressed }) => [
               styles.headerActionButton,
@@ -250,6 +274,9 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   settingsButton: {
+    borderColor: "#ffbf66",
+  },
+  scanButton: {
     borderColor: "#ffbf66",
   },
   monitorOffButton: {

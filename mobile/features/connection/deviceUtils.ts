@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { HostPlatform } from "../../types/protocol";
 import type { SavedDevice } from "./types";
 import { DEVICES_STORAGE_KEY } from "./storageKeys";
 
@@ -50,12 +51,17 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
         Number.isFinite(item.lastConnectedAt)
           ? item.lastConnectedAt
           : 0;
+      const platform =
+        "platform" in item && isHostPlatform(item.platform)
+          ? item.platform
+          : undefined;
 
       return [
         {
           id: getDeviceId(host),
           name: name || getDeviceNameFromHost(host),
           host,
+          platform,
           lastConnectedAt,
         },
       ];
@@ -65,15 +71,24 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
   }
 }
 
+function isHostPlatform(value: unknown): value is HostPlatform {
+  return value === "darwin" || value === "win32";
+}
+
 export function upsertDevice(
   devices: SavedDevice[],
   nextDevice: SavedDevice,
 ): SavedDevice[] {
+  const existing = devices.find((device) => device.host === nextDevice.host);
+  const deviceWithPlatform = {
+    ...nextDevice,
+    platform: nextDevice.platform ?? existing?.platform,
+  };
   const withoutCurrent = devices.filter(
     (device) => device.host !== nextDevice.host,
   );
 
-  return [nextDevice, ...withoutCurrent]
+  return [deviceWithPlatform, ...withoutCurrent]
     .sort((left, right) => right.lastConnectedAt - left.lastConnectedAt)
     .slice(0, 20);
 }
