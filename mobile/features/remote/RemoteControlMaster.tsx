@@ -83,6 +83,9 @@ import { TEXT_SEND_CHUNK_SIZE } from "../keyboard/constants";
 import { useCustomShortcuts } from "../shortcuts/useCustomShortcuts";
 import type { CustomShortcut } from "../shortcuts/types";
 import { ShortcutEditorModal } from "../shortcuts/ShortcutEditorModal";
+import { useHostProfile } from "./useHostProfile";
+import { useRemoteActions } from "./useRemoteActions";
+import { useRemoteControlsAvailability } from "./useRemoteControlsAvailability";
 
 const ScanButtonGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
@@ -108,6 +111,19 @@ export function RemoteControlMaster() {
     unnaturalScrolling,
   } = useRemoteSettings();
   const {
+    applyHostProfile,
+    hostCapabilities,
+    hostDisplay,
+    hostPlatform,
+    resetHostProfile,
+  } = useHostProfile();
+  const controlsAvailability = useRemoteControlsAvailability({
+    capabilities: hostCapabilities,
+    display: hostDisplay,
+    platform: hostPlatform,
+  });
+  const remoteActions = useRemoteActions(socket);
+  const {
     adjustVolumeStep,
     applyHostState,
     brightness,
@@ -116,7 +132,6 @@ export function RemoteControlMaster() {
     handleBrightnessSlideComplete,
     handleBrightnessSlideStart,
     handleBrightnessValueChange,
-    hostDisplay,
     resetHostMedia,
     toggleMute,
     volume,
@@ -124,7 +139,7 @@ export function RemoteControlMaster() {
     volumeButtonColor,
     volumeMuted,
     volumeStep,
-  } = useHostMedia(socket);
+  } = useHostMedia(socket, controlsAvailability);
   const {
     connectToHost,
     deleteSavedDevice,
@@ -139,7 +154,10 @@ export function RemoteControlMaster() {
     setDeviceDropdownOpen,
     status,
   } = useRemoteConnection(socket, {
-    onResetHostState: resetHostMedia,
+    onResetHostState: () => {
+      resetHostProfile();
+      resetHostMedia();
+    },
     onUnmount: clearBrightnessCommitTimer,
   });
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
@@ -178,6 +196,7 @@ export function RemoteControlMaster() {
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
       if (message.type === "hostState") {
+        applyHostProfile(message);
         applyHostState(message);
 
         const nextHostName = sanitizeHostName(message.hostName);
@@ -189,7 +208,7 @@ export function RemoteControlMaster() {
     });
 
     return unsubscribe;
-  }, [applyHostState, persistHostName, socket]);
+  }, [applyHostProfile, applyHostState, persistHostName, socket]);
 
   useEffect(() => {
     if (showSettings && status === "connected") {
@@ -299,11 +318,11 @@ export function RemoteControlMaster() {
   }
 
   function sendShortcut(shortcut: ShortcutId) {
-    socket.sendShortcut(shortcut);
+    remoteActions.openShortcut(shortcut);
   }
 
   function sendCustomShortcut(shortcut: CustomShortcut) {
-    socket.sendWebsiteShortcut(shortcut.name, shortcut.url);
+    remoteActions.openCustomShortcut(shortcut);
   }
 
   function sendSleep() {
@@ -321,8 +340,8 @@ export function RemoteControlMaster() {
     }
 
     Alert.alert(
-      "Restart host Mac?",
-      `This will force restart ${hostName || "the connected Mac"} now. Unsaved documents and terminal sessions may be closed without another prompt.`,
+      "Restart host?",
+      `This will force restart ${hostName || "the connected computer"} now. Unsaved documents and terminal sessions may be closed without another prompt.`,
       [
         {
           text: "Cancel",
@@ -660,6 +679,13 @@ export function RemoteControlMaster() {
       ? "TV detected"
       : "Display detected"
     : "Connect to host for display details";
+  const {
+    overviewAvailable,
+    overviewLabel,
+    sleepAvailable,
+    switchWindowAvailable,
+    switchWorkspaceAvailable,
+  } = controlsAvailability;
   const showConnectionPrompt = status !== "connected";
   const scannerCameraSize = Math.max(
     240,
@@ -693,9 +719,9 @@ export function RemoteControlMaster() {
       <Header
         latencyMs={latencyMs}
         status={status}
-        title={hostName || "iMac Remote"}
+        title={hostName || "Remote Control"}
         onToggleSettings={toggleSettings}
-        onSleep={sendSleep}
+        onSleep={sleepAvailable ? sendSleep : undefined}
       />
 
       <Animated.View
@@ -1277,17 +1303,25 @@ export function RemoteControlMaster() {
         <View style={styles.shortcuts}>
           <View style={styles.shortcutGroup}>
             <Pressable
-              style={styles.desktopSwitchButton}
+              disabled={!switchWorkspaceAvailable}
+              style={[
+                styles.desktopSwitchButton,
+                !switchWorkspaceAvailable ? styles.disabledControl : null,
+              ]}
               accessibilityLabel="Previous desktop"
-              onPress={withHaptic(() => socket.sendSwipeSpaces("left"))}
+              onPress={withHaptic(() => remoteActions.switchWorkspace("left"))}
             >
               <PanelRightOpenIcon size={24} color="#b8afa5" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
-              style={styles.desktopSwitchButton}
+              disabled={!switchWorkspaceAvailable}
+              style={[
+                styles.desktopSwitchButton,
+                !switchWorkspaceAvailable ? styles.disabledControl : null,
+              ]}
               accessibilityLabel="Next desktop"
-              onPress={withHaptic(() => socket.sendSwipeSpaces("right"))}
+              onPress={withHaptic(() => remoteActions.switchWorkspace("right"))}
             >
               <PanelRightCloseIcon size={24} color="#b8afa5" />
             </Pressable>
@@ -1355,7 +1389,11 @@ export function RemoteControlMaster() {
               socket.sendScroll(dx * -direction, dy * direction);
             }}
             onZoom={(direction) => socket.sendZoom(direction)}
-            onSwipeSpaces={(direction) => socket.sendSwipeSpaces(direction)}
+            onSwipeSpaces={(direction) => {
+              if (switchWorkspaceAvailable) {
+                remoteActions.switchWorkspace(direction);
+              }
+            }}
           />
         </View>
 
@@ -1372,9 +1410,27 @@ export function RemoteControlMaster() {
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
             />
             <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Mission Control"
-              onPress={withHaptic(() => socket.sendMissionControl())}
+              disabled={!switchWindowAvailable}
+              style={[
+                styles.desktopSwitchButton,
+                !switchWindowAvailable ? styles.disabledControl : null,
+              ]}
+              accessibilityLabel="Switch window"
+              onPress={withHaptic(() => remoteActions.switchWindow("next"))}
+            >
+              <Ionicons name="albums-outline" size={24} color="#f0c17c" />
+            </Pressable>
+            <View
+              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+            />
+            <Pressable
+              disabled={!overviewAvailable}
+              style={[
+                styles.desktopSwitchButton,
+                !overviewAvailable ? styles.disabledControl : null,
+              ]}
+              accessibilityLabel={overviewLabel}
+              onPress={withHaptic(remoteActions.showOverview)}
             >
               <LayoutPanelTopIcon size={24} color="#f0c17c" />
             </Pressable>

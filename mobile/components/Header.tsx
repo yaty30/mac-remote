@@ -21,7 +21,7 @@ interface HeaderProps {
   status: ConnectionStatus;
   title?: string;
   onToggleSettings?: () => void;
-  onSleep: () => void;
+  onSleep?: () => void;
 }
 
 const statusLabels: Record<ConnectionStatus, string> = {
@@ -38,7 +38,7 @@ const HeaderButtonGradient =
 export function Header({
   latencyMs,
   status,
-  title = "iMac Remote",
+  title = "Remote Control",
   onToggleSettings,
   onSleep,
 }: HeaderProps) {
@@ -102,12 +102,18 @@ export function Header({
           </Pressable>
 
           <Pressable
+            disabled={!onSleep}
             style={({ pressed }) => [
               styles.headerActionButton,
               monitorIsOn ? styles.monitorOffButton : styles.monitorOnButton,
-              pressed ? styles.headerActionButtonPressed : null,
+              pressed && onSleep ? styles.headerActionButtonPressed : null,
+              !onSleep ? styles.headerActionButtonDisabled : null,
             ]}
             onPress={withHaptic(() => {
+              if (!onSleep) {
+                return;
+              }
+
               setSleep((s) => !s);
               onSleep();
             })}
@@ -239,6 +245,9 @@ const styles = StyleSheet.create({
   headerActionButtonPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.98 }],
+  },
+  headerActionButtonDisabled: {
+    opacity: 0.45,
   },
   settingsButton: {
     borderColor: "#ffbf66",

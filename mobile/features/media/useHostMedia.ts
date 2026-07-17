@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { HostDisplayInfo, HostStateMessage } from "../../types/protocol";
+import type { HostStateMessage } from "../../types/protocol";
 import type { RemoteSocket } from "../../websocket/RemoteSocket";
 import {
   BRIGHTNESS_SEND_DEBOUNCE_MS,
@@ -7,7 +7,13 @@ import {
 } from "./constants";
 import { clampPercent, percentToStep, stepToPercent } from "./mediaUtils";
 
-export function useHostMedia(socket: RemoteSocket) {
+export function useHostMedia(
+  socket: RemoteSocket,
+  availability: {
+    brightnessAvailable: boolean;
+    volumeAvailable: boolean;
+  },
+) {
   const brightnessRef = useRef<number | null>(null);
   const brightnessCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -16,19 +22,14 @@ export function useHostMedia(socket: RemoteSocket) {
   const lastAudibleVolumeRef = useRef(DEFAULT_UNMUTE_VOLUME);
   const [brightness, setBrightness] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
-  const [hostDisplay, setHostDisplay] = useState<HostDisplayInfo | null>(null);
 
-  const brightnessAdjustable = hostDisplay?.brightnessAdjustable === true;
-  const volumeAdjustable = hostDisplay?.volumeAdjustable === true;
+  const brightnessAdjustable = availability.brightnessAvailable;
+  const volumeAdjustable = availability.volumeAvailable;
   const volumeStep = percentToStep(volume);
   const volumeMuted = volume === 0;
   const volumeButtonColor = volumeAdjustable ? "#ffffff" : "#5c554e";
 
   function applyHostState(message: HostStateMessage) {
-    if (message.display) {
-      setHostDisplay(message.display);
-    }
-
     if (
       typeof message.brightness === "number" &&
       !brightnessSlidingRef.current
@@ -54,11 +55,10 @@ export function useHostMedia(socket: RemoteSocket) {
     setBrightness(null);
     setVolume(null);
     lastAudibleVolumeRef.current = DEFAULT_UNMUTE_VOLUME;
-    setHostDisplay(null);
   }
 
   function handleBrightnessSlideStart() {
-    if (hostDisplay?.brightnessAdjustable !== true) {
+    if (!brightnessAdjustable) {
       return;
     }
 
@@ -66,7 +66,7 @@ export function useHostMedia(socket: RemoteSocket) {
   }
 
   function handleBrightnessValueChange(value: number) {
-    if (hostDisplay?.brightnessAdjustable !== true) {
+    if (!brightnessAdjustable) {
       return;
     }
 
@@ -77,7 +77,7 @@ export function useHostMedia(socket: RemoteSocket) {
   }
 
   function handleBrightnessSlideComplete(value: number) {
-    if (hostDisplay?.brightnessAdjustable !== true) {
+    if (!brightnessAdjustable) {
       return;
     }
 
@@ -86,7 +86,7 @@ export function useHostMedia(socket: RemoteSocket) {
   }
 
   function adjustVolumeStep(delta: -1 | 1) {
-    if (hostDisplay?.volumeAdjustable !== true) {
+    if (!volumeAdjustable) {
       return;
     }
 
@@ -106,7 +106,7 @@ export function useHostMedia(socket: RemoteSocket) {
   }
 
   function toggleMute() {
-    if (hostDisplay?.volumeAdjustable !== true) {
+    if (!volumeAdjustable) {
       return;
     }
 
@@ -161,7 +161,6 @@ export function useHostMedia(socket: RemoteSocket) {
     handleBrightnessSlideComplete,
     handleBrightnessSlideStart,
     handleBrightnessValueChange,
-    hostDisplay,
     resetHostMedia,
     toggleMute,
     volume,
