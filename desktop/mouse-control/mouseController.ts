@@ -3,12 +3,25 @@ import type { HostPlatform } from "../types/protocol";
 
 const EDGE_PRESSURE_ZONE = 6;
 const EDGE_RELEASE_DISTANCE = 24;
+const WINDOWS_POINTER_FRAME_MS = 8;
+const WINDOWS_POINTER_IDLE_RESET_MS = 250;
+const SCREEN_SIZE_CACHE_MS = 1000;
+const SCROLL_AXIS_DEADZONE_RATIO = 0.35;
 
 type VerticalEdgeLock = "top" | "bottom" | null;
 
 export class MouseController {
   private scrollAccumX = 0;
   private scrollAccumY = 0;
+  private windowsPendingDx = 0;
+  private windowsPendingDy = 0;
+  private windowsPointerTimer: ReturnType<typeof setTimeout> | null = null;
+  private windowsPointerFlush: Promise<void> = Promise.resolve();
+  private windowsVirtualPosition: Point | null = null;
+  private windowsLastPointerFlushAt = 0;
+  private screenSizeCache:
+    | { width: number; height: number; readAt: number }
+    | null = null;
   private verticalEdgeLock: VerticalEdgeLock = null;
   private verticalEdgeReleaseDistance = 0;
 
@@ -21,6 +34,11 @@ export class MouseController {
   }
 
   async moveRelative(dx: number, dy: number): Promise<void> {
+    if (this.platform === "win32") {
+      this.queueWindowsPointerMove(dx * this.sensitivity, dy * this.sensitivity);
+      return;
+    }
+
     const current = await mouse.getPosition();
     const width = await screen.width();
     const height = await screen.height();
@@ -39,23 +57,43 @@ export class MouseController {
   }
 
   async leftClick(): Promise<void> {
+    await this.flushWindowsPointerMove();
     await mouse.click(Button.LEFT);
   }
 
   async doubleClick(): Promise<void> {
+    await this.flushWindowsPointerMove();
     await mouse.click(Button.LEFT);
     await mouse.click(Button.LEFT);
   }
 
   async rightClick(): Promise<void> {
+    await this.flushWindowsPointerMove();
     await mouse.click(Button.RIGHT);
   }
 
   async scroll(dx: number, dy: number): Promise<void> {
     const PIXELS_PER_TICK = 2;
+    const mapped = this.mapScrollDelta(dx, dy);
 
-    this.scrollAccumX += dx;
-    this.scrollAccumY += dy;
+    if (
+      mapped.dx !== 0 &&
+      this.scrollAccumX !== 0 &&
+      Math.sign(mapped.dx) !== Math.sign(this.scrollAccumX)
+    ) {
+      this.scrollAccumX = 0;
+    }
+
+    if (
+      mapped.dy !== 0 &&
+      this.scrollAccumY !== 0 &&
+      Math.sign(mapped.dy) !== Math.sign(this.scrollAccumY)
+    ) {
+      this.scrollAccumY = 0;
+    }
+
+    this.scrollAccumX += mapped.dx;
+    this.scrollAccumY += mapped.dy;
 
     const ticksY = Math.trunc(this.scrollAccumY / PIXELS_PER_TICK);
     const ticksX = Math.trunc(this.scrollAccumX / PIXELS_PER_TICK);
@@ -79,6 +117,110 @@ export class MouseController {
         await mouse.scrollLeft(amount);
       }
     }
+  }
+
+  private queueWindowsPointerMove(dx: number, dy: number): void {
+    this.windowsPendingDx += dx;
+    this.windowsPendingDy += dy;
+
+    if (this.windowsPointerTimer !== null) {
+      return;
+    }
+
+    this.windowsPointerTimer = setTimeout(() => {
+      this.windowsPointerTimer = null;
+      void this.flushWindowsPointerMove();
+    }, WINDOWS_POINTER_FRAME_MS);
+  }
+
+  private async flushWindowsPointerMove(): Promise<void> {
+    if (this.platform !== "win32") {
+      return;
+    }
+
+    if (this.windowsPointerTimer !== null) {
+      clearTimeout(this.windowsPointerTimer);
+      this.windowsPointerTimer = null;
+    }
+
+    const nextFlush = this.windowsPointerFlush.catch(() => undefined).then(async () => {
+      const dx = this.windowsPendingDx;
+      const dy = this.windowsPendingDy;
+
+      this.windowsPendingDx = 0;
+      this.windowsPendingDy = 0;
+
+      if (dx === 0 && dy === 0) {
+        return;
+      }
+
+      const now = Date.now();
+      const current =
+        this.windowsVirtualPosition &&
+        now - this.windowsLastPointerFlushAt < WINDOWS_POINTER_IDLE_RESET_MS
+          ? this.windowsVirtualPosition
+          : await mouse.getPosition();
+      const { width, height } = await this.getScreenSize();
+      const next = new Point(
+        clamp(Math.round(current.x + dx), 0, width - 1),
+        clamp(Math.round(current.y + dy), 0, height - 1),
+      );
+
+      this.windowsVirtualPosition = next;
+      this.windowsLastPointerFlushAt = now;
+      await mouse.setPosition(next);
+
+      if (this.windowsPendingDx !== 0 || this.windowsPendingDy !== 0) {
+        this.queueWindowsPointerMove(0, 0);
+      }
+    });
+
+    this.windowsPointerFlush = nextFlush.catch(() => undefined);
+
+    await nextFlush;
+  }
+
+  private async getScreenSize(): Promise<{ width: number; height: number }> {
+    const now = Date.now();
+
+    if (
+      this.screenSizeCache &&
+      now - this.screenSizeCache.readAt < SCREEN_SIZE_CACHE_MS
+    ) {
+      return this.screenSizeCache;
+    }
+
+    const next = {
+      width: await screen.width(),
+      height: await screen.height(),
+      readAt: now,
+    };
+
+    this.screenSizeCache = next;
+    return next;
+  }
+
+  private mapScrollDelta(dx: number, dy: number): { dx: number; dy: number } {
+    const mappedDx = this.platform === "darwin" ? -dx : dx;
+    let nextDx = mappedDx;
+    let nextDy = dy;
+    const absX = Math.abs(nextDx);
+    const absY = Math.abs(nextDy);
+
+    if (absX > 0 && absY > 0) {
+      if (absX < absY * SCROLL_AXIS_DEADZONE_RATIO) {
+        nextDx = 0;
+      }
+
+      if (absY < absX * SCROLL_AXIS_DEADZONE_RATIO) {
+        nextDy = 0;
+      }
+    }
+
+    return {
+      dx: nextDx,
+      dy: nextDy,
+    };
   }
 
   private resolveVerticalEdgeY(

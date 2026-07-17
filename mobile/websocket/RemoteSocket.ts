@@ -186,6 +186,10 @@ export class RemoteSocket {
     this.send({ type: "textCommand", command });
   }
 
+  moveCaret(direction: "left" | "right", count: number): void {
+    this.send({ type: "moveCaret", direction, count }, true);
+  }
+
   sendKey(
     key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow",
   ): void {

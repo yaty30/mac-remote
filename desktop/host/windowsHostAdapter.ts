@@ -129,15 +129,14 @@ export class WindowsHostAdapter implements HostAdapter {
 
   async switchWindow(direction: "next" | "previous"): Promise<void> {
     if (direction === "previous") {
-      await this.keyboardController.pressAndRelease(
-        Key.LeftAlt,
-        Key.LeftShift,
+      await this.keyboardController.holdAndPress(
+        [Key.LeftAlt, Key.LeftShift],
         Key.Tab,
       );
       return;
     }
 
-    await this.keyboardController.pressAndRelease(Key.LeftAlt, Key.Tab);
+    await this.keyboardController.holdAndPress([Key.LeftAlt], Key.Tab);
   }
 
   async showOverview(): Promise<void> {

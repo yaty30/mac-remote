@@ -34,6 +34,7 @@ export type RemoteMessage =
   | TypeTextMessage
   | PasteTextMessage
   | TextCommandMessage
+  | MoveCaretMessage
   | PressKeyMessage
   | PingMessage
   | PongMessage;
@@ -174,6 +175,12 @@ export type TextCommand =
 export interface TextCommandMessage {
   type: "textCommand";
   command: TextCommand;
+}
+
+export interface MoveCaretMessage {
+  type: "moveCaret";
+  direction: "left" | "right";
+  count: number;
 }
 
 export interface PressKeyMessage {

@@ -440,14 +440,22 @@ export function RemoteControlMaster() {
       Math.min(bufferRef.current.length, targetIndex),
     );
     const delta = boundedTarget - remoteKeyboardCursorRef.current;
-    const key = delta > 0 ? "rightArrow" : "leftArrow";
 
-    for (let index = 0; index < Math.abs(delta); index += 1) {
-      socket.sendKey(key);
+    if (delta !== 0) {
+      socket.moveCaret(delta > 0 ? "right" : "left", Math.abs(delta));
     }
 
     remoteKeyboardCursorRef.current = boundedTarget;
     remoteKeyboardSelectionActiveRef.current = false;
+  }
+
+  function switchPrimaryHorizontal(direction: "left" | "right") {
+    if (hostPlatform === "win32") {
+      remoteActions.switchWindow(direction === "left" ? "previous" : "next");
+      return;
+    }
+
+    remoteActions.switchWorkspace(direction);
   }
 
   function setLocalKeyboardSelection(start: number, end = start) {
@@ -686,6 +694,8 @@ export function RemoteControlMaster() {
     switchWindowAvailable,
     switchWorkspaceAvailable,
   } = controlsAvailability;
+  const primarySwitchAvailable =
+    hostPlatform === "win32" ? switchWindowAvailable : switchWorkspaceAvailable;
   const showConnectionPrompt = status !== "connected";
   const scannerCameraSize = Math.max(
     240,
@@ -1303,25 +1313,31 @@ export function RemoteControlMaster() {
         <View style={styles.shortcuts}>
           <View style={styles.shortcutGroup}>
             <Pressable
-              disabled={!switchWorkspaceAvailable}
+              disabled={!primarySwitchAvailable}
               style={[
                 styles.desktopSwitchButton,
-                !switchWorkspaceAvailable ? styles.disabledControl : null,
+                !primarySwitchAvailable ? styles.disabledControl : null,
               ]}
-              accessibilityLabel="Previous desktop"
-              onPress={withHaptic(() => remoteActions.switchWorkspace("left"))}
+              accessibilityLabel={
+                hostPlatform === "win32"
+                  ? "Previous window"
+                  : "Previous desktop"
+              }
+              onPress={withHaptic(() => switchPrimaryHorizontal("left"))}
             >
               <PanelRightOpenIcon size={24} color="#b8afa5" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
-              disabled={!switchWorkspaceAvailable}
+              disabled={!primarySwitchAvailable}
               style={[
                 styles.desktopSwitchButton,
-                !switchWorkspaceAvailable ? styles.disabledControl : null,
+                !primarySwitchAvailable ? styles.disabledControl : null,
               ]}
-              accessibilityLabel="Next desktop"
-              onPress={withHaptic(() => remoteActions.switchWorkspace("right"))}
+              accessibilityLabel={
+                hostPlatform === "win32" ? "Next window" : "Next desktop"
+              }
+              onPress={withHaptic(() => switchPrimaryHorizontal("right"))}
             >
               <PanelRightCloseIcon size={24} color="#b8afa5" />
             </Pressable>
@@ -1386,12 +1402,12 @@ export function RemoteControlMaster() {
             onRightClick={() => socket.sendRightClick()}
             onScroll={(dx, dy) => {
               const direction = unnaturalScrolling ? -1 : 1;
-              socket.sendScroll(dx * -direction, dy * direction);
+              socket.sendScroll(dx * direction, dy * direction);
             }}
             onZoom={(direction) => socket.sendZoom(direction)}
             onSwipeSpaces={(direction) => {
-              if (switchWorkspaceAvailable) {
-                remoteActions.switchWorkspace(direction);
+              if (primarySwitchAvailable) {
+                switchPrimaryHorizontal(direction);
               }
             }}
           />

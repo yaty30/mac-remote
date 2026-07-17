@@ -529,6 +529,9 @@ async function handleRemoteMessage(
     case "textCommand":
       await hostAdapter.textCommand(message.command);
       break;
+    case "moveCaret":
+      await keyboardController.moveCaret(message.direction, message.count);
+      break;
     case "pressKey":
       await keyboardController.pressKey(message.key);
       break;

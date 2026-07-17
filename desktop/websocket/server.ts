@@ -419,6 +419,21 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid textCommand payload");
   }
 
+  if (data.type === "moveCaret") {
+    if (
+      (data.direction === "left" || data.direction === "right") &&
+      typeof data.count === "number"
+    ) {
+      return {
+        type: "moveCaret",
+        direction: data.direction,
+        count: clampCount(data.count),
+      };
+    }
+
+    throw new Error("Invalid moveCaret payload");
+  }
+
   if (data.type === "pressKey") {
     if (
       data.key === "backspace" ||
@@ -461,6 +476,14 @@ function clampScroll(value: number): number {
   }
 
   return Math.max(-200, Math.min(200, value));
+}
+
+function clampCount(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(500, Math.round(value)));
 }
 
 function clampPercent(value: number): number {
