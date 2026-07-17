@@ -2,10 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   Monitor as MonitorIcon,
   MonitorX as MonitorOffIcon,
-  Signal,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
 } from "lucide-react-native";
 import {
   LinearGradient as ExpoLinearGradient,
@@ -26,20 +22,10 @@ interface HeaderProps {
   onSleep?: () => void;
 }
 
-const statusLabels: Record<ConnectionStatus, string> = {
-  idle: "Not connected",
-  connecting: "Connecting",
-  connected: "Connected",
-  disconnected: "Disconnected",
-  error: "Connecting",
-};
-
 const HeaderButtonGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
 
 export function Header({
-  latencyMs,
-  status,
   title = "Remote Control",
   titleContent,
   onScan,
@@ -48,13 +34,6 @@ export function Header({
 }: HeaderProps) {
   const [sleep, setSleep] = useState(false);
   const monitorIsOn = !sleep;
-  const latencyBand =
-    status === "connected" && typeof latencyMs === "number"
-      ? getLatencyBand(latencyMs)
-      : null;
-  const roundedLatencyMs =
-    typeof latencyMs === "number" ? Math.round(latencyMs) : null;
-  const LatencyIcon = latencyBand?.Icon;
 
   return (
     <View style={styles.container}>
@@ -65,27 +44,6 @@ export function Header({
               {title}
             </Text>
           )}
-          <View style={styles.statusRow}>
-            <View
-              style={[
-                styles.dot,
-                status === "connected" ? styles.dotConnected : styles.dotIdle,
-              ]}
-            />
-            <Text style={styles.status}>{statusLabels[status]}</Text>
-            {latencyBand && LatencyIcon && roundedLatencyMs !== null ? (
-              <View style={styles.latencyBadge}>
-                <LatencyIcon
-                  color={latencyBand.color}
-                  size={12}
-                  strokeWidth={2.5}
-                />
-                <Text style={[styles.latencyText, { color: latencyBand.color }]}>
-                  {roundedLatencyMs}ms
-                </Text>
-              </View>
-            ) : null}
-          </View>
         </View>
 
         <View style={styles.actionRow}>
@@ -98,12 +56,12 @@ export function Header({
             onPress={withHaptic(onScan)}
           >
             <HeaderButtonGradient
-              colors={["#f4b760", "#e2943b", "#c8762f"]}
+              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
               start={{ x: 0.15, y: 0 }}
               end={{ x: 0.85, y: 1 }}
               style={styles.headerActionGradient}
             >
-              <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
+              <Ionicons name="qr-code-outline" size={20} color="#f0a942" />
             </HeaderButtonGradient>
           </Pressable>
 
@@ -116,12 +74,12 @@ export function Header({
             onPress={withHaptic(onToggleSettings)}
           >
             <HeaderButtonGradient
-              colors={["#f4b760", "#e2943b", "#c8762f"]}
+              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
               start={{ x: 0.15, y: 0 }}
               end={{ x: 0.85, y: 1 }}
               style={styles.headerActionGradient}
             >
-              <Ionicons name="settings" size={20} color="#1b1008" />
+              <Ionicons name="settings" size={20} color="#f0a942" />
             </HeaderButtonGradient>
           </Pressable>
 
@@ -165,39 +123,13 @@ export function Header({
   );
 }
 
-function getLatencyBand(latencyMs: number) {
-  if (latencyMs <= 50) {
-    return {
-      Icon: Signal,
-      color: "#74f0a7",
-    };
-  }
-
-  if (latencyMs <= 100) {
-    return {
-      Icon: SignalHigh,
-      color: "#ffd166",
-    };
-  }
-
-  if (latencyMs <= 150) {
-    return {
-      Icon: SignalMedium,
-      color: "#ff941f",
-    };
-  }
-
-  return {
-    Icon: SignalLow,
-    color: "#ff603c",
-  };
-}
-
 const styles = StyleSheet.create({
   container: {
     gap: 14,
     paddingHorizontal: 18,
     paddingTop: 8,
+    zIndex: 50,
+    elevation: 50,
   },
   topRow: {
     alignItems: "center",
@@ -218,42 +150,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0,
   },
-  statusRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 8,
-  },
-  dot: {
-    borderRadius: 999,
-    height: 9,
-    width: 9,
-  },
-  dotConnected: {
-    backgroundColor: "#74f0a7",
-  },
-  dotIdle: {
-    backgroundColor: "#ff941f",
-  },
-  status: {
-    color: "#a7a39d",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  latencyBadge: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-    minHeight: 24,
-  },
-  latencyText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
   headerActionButton: {
     alignItems: "center",
-    backgroundColor: "#15120f",
+    backgroundColor: "rgba(18, 17, 15, 0.78)",
     borderRadius: 18,
     borderWidth: 1,
     elevation: 5,
@@ -261,9 +160,9 @@ const styles = StyleSheet.create({
     minHeight: 52,
     overflow: "hidden",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
     width: 52,
   },
   headerActionButtonPressed: {
@@ -274,16 +173,16 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   settingsButton: {
-    borderColor: "#ffbf66",
+    borderColor: "rgba(240, 169, 66, 0.42)",
   },
   scanButton: {
-    borderColor: "#ffbf66",
+    borderColor: "rgba(240, 169, 66, 0.42)",
   },
   monitorOffButton: {
-    borderColor: "#713127",
+    borderColor: "rgba(255, 87, 72, 0.48)",
   },
   monitorOnButton: {
-    borderColor: "#4a3124",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   headerActionGradient: {
     alignItems: "center",

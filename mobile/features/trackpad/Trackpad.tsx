@@ -1,5 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  Signal,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
+} from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -18,9 +24,11 @@ import {
   TapGestureHandler,
 } from "react-native-gesture-handler";
 import { triggerLongPressHaptic } from "../../utils/haptics";
+import type { ConnectionStatus } from "../../types/protocol";
 import { useTrackpadGestures } from "./useTrackpadGestures";
 
 interface TrackpadProps {
+  latencyMs?: number | null;
   onMove: (dx: number, dy: number) => void;
   onClick: () => void;
   onDoubleClick: () => void;
@@ -28,6 +36,7 @@ interface TrackpadProps {
   onScroll: (dx: number, dy: number) => void;
   onZoom: (direction: "in" | "out") => void;
   onSwipeSpaces: (direction: "left" | "right") => void;
+  status: ConnectionStatus;
 }
 
 const SCROLL_DOT_RANGE = 22;
@@ -54,6 +63,7 @@ interface ScrollDotSavedPosition {
 }
 
 export function Trackpad({
+  latencyMs,
   onMove,
   onClick,
   onDoubleClick,
@@ -61,6 +71,7 @@ export function Trackpad({
   onScroll,
   onZoom,
   onSwipeSpaces,
+  status,
 }: TrackpadProps) {
   const {
     handleSinglePan,
@@ -109,6 +120,13 @@ export function Trackpad({
   const [scrollDotPlacing, setScrollDotPlacing] = useState(false);
   const [scrollDotHome, setScrollDotHome] =
     useState<ScrollDotPosition | null>(null);
+  const latencyBand =
+    status === "connected" && typeof latencyMs === "number"
+      ? getLatencyBand(latencyMs)
+      : null;
+  const roundedLatencyMs =
+    typeof latencyMs === "number" ? Math.round(latencyMs) : null;
+  const LatencyIcon = latencyBand?.Icon;
 
   const resetTouchMark = useCallback(() => {
     if (!TRACKPAD_TOUCH_MARK_ANIMATION_ENABLED) {
@@ -180,7 +198,7 @@ export function Trackpad({
 
       return clampScrollDotPosition(
         width / 2 - SCROLL_DOT_SIZE / 2,
-        height / 2 - SCROLL_DOT_SIZE / 2 - 20,
+        height * 0.14 - SCROLL_DOT_SIZE / 2,
         width,
         height,
       );
@@ -632,6 +650,8 @@ export function Trackpad({
                 onHandlerStateChange={handleTouchMarkSinglePanState}
               >
                 <View
+                  accessible
+                  accessibilityLabel="Trackpad"
                   style={styles.trackpad}
                   onLayout={handleTrackpadLayout}
                   onResponderRelease={resetTouchMark}
@@ -639,6 +659,25 @@ export function Trackpad({
                   onTouchCancel={resetTouchMark}
                   onTouchEnd={resetTouchMark}
                 >
+                  <View pointerEvents="none" style={styles.infoDisplay}>
+                    {latencyBand && LatencyIcon && roundedLatencyMs !== null ? (
+                      <View style={styles.infoLatencyPill}>
+                        <LatencyIcon
+                          color={latencyBand.color}
+                          size={12}
+                          strokeWidth={2.5}
+                        />
+                        <Text
+                          style={[
+                            styles.infoLatencyText,
+                            { color: latencyBand.color },
+                          ]}
+                        >
+                          {roundedLatencyMs}ms
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                   <PanGestureHandler
                     ref={scrollDotPanRef}
                     minPointers={1}
@@ -739,16 +778,68 @@ export function Trackpad({
   );
 }
 
+function getLatencyBand(latencyMs: number) {
+  if (latencyMs <= 50) {
+    return {
+      Icon: Signal,
+      color: "#74f0a7",
+    };
+  }
+
+  if (latencyMs <= 100) {
+    return {
+      Icon: SignalHigh,
+      color: "#ffd166",
+    };
+  }
+
+  if (latencyMs <= 150) {
+    return {
+      Icon: SignalMedium,
+      color: "#ff941f",
+    };
+  }
+
+  return {
+    Icon: SignalLow,
+    color: "#ff603c",
+  };
+}
+
 const styles = StyleSheet.create({
   trackpad: {
     alignItems: "center",
-    backgroundColor: "#11100e",
-    borderColor: "#2a2118",
+    backgroundColor: "rgba(20, 19, 17, 0.82)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 28,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
     overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.3,
+    shadowRadius: 22,
+  },
+  infoDisplay: {
+    alignItems: "flex-start",
+    gap: 8,
+    position: "absolute",
+    left: 14,
+    top: 14,
+    zIndex: 3,
+  },
+  infoLatencyPill: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 14,
+    paddingHorizontal: 4,
+    opacity: 0.8,
+  },
+  infoLatencyText: {
+    fontSize: 12,
+    fontWeight: "800",
   },
   centerMark: {
     alignItems: "center",
@@ -779,9 +870,9 @@ const styles = StyleSheet.create({
     marginTop: -SCROLL_DOT_SIZE / 2,
     position: "absolute",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.44,
+    shadowRadius: 22,
     top: "50%",
     width: SCROLL_DOT_SIZE,
     zIndex: 2,

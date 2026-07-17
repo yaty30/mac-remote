@@ -97,6 +97,7 @@ const ScanButtonGradient =
 const DEVICE_NAME_MIN_LENGTH = 3;
 const DEVICE_NAME_MAX_LENGTH = 20;
 const DEVICE_DROPDOWN_MAX_HEIGHT = 286;
+const DEVICE_SWITCH_MIN_OVERLAY_MS = 1000;
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -109,6 +110,10 @@ export function RemoteControlMaster() {
   const remoteKeyboardSelectionActiveRef = useRef(false);
   const scannerOpenRef = useRef(false);
   const deviceDropdownAnim = useRef(new Animated.Value(0)).current;
+  const deviceSwitchStartedAtRef = useRef(0);
+  const deviceSwitchDismissTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -177,6 +182,10 @@ export function RemoteControlMaster() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
+  const [deviceSwitchOverlayMounted, setDeviceSwitchOverlayMounted] =
+    useState(false);
+  const [switchingDeviceName, setSwitchingDeviceName] = useState("");
+  const [switchingDeviceHost, setSwitchingDeviceHost] = useState("");
   const [playbackPaused, setPlaybackPaused] = useState(false);
   const [typedText, setTypedText] = useState("");
   const [keyboardSelection, setKeyboardSelection] = useState({
@@ -207,6 +216,7 @@ export function RemoteControlMaster() {
     shortcutWebsite,
   } = useCustomShortcuts();
   const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
+  const deviceSwitchOverlayAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
@@ -328,6 +338,50 @@ export function RemoteControlMaster() {
       }
     });
   }, [keyboardOverlay, keyboardPanelAnim]);
+
+  useEffect(() => {
+    if (!switchingDeviceHost || status !== "connected") {
+      return;
+    }
+
+    if (host !== switchingDeviceHost) {
+      return;
+    }
+
+    if (deviceSwitchDismissTimerRef.current !== null) {
+      clearTimeout(deviceSwitchDismissTimerRef.current);
+      deviceSwitchDismissTimerRef.current = null;
+    }
+
+    const elapsed = Date.now() - deviceSwitchStartedAtRef.current;
+    const remaining = Math.max(0, DEVICE_SWITCH_MIN_OVERLAY_MS - elapsed);
+
+    deviceSwitchDismissTimerRef.current = setTimeout(() => {
+      deviceSwitchDismissTimerRef.current = null;
+      Animated.timing(deviceSwitchOverlayAnim, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setDeviceSwitchOverlayMounted(false);
+          setSwitchingDeviceHost("");
+          setSwitchingDeviceName("");
+        }
+      });
+    }, remaining);
+  }, [deviceSwitchOverlayAnim, host, status, switchingDeviceHost]);
+
+  useEffect(
+    () => () => {
+      if (deviceSwitchDismissTimerRef.current !== null) {
+        clearTimeout(deviceSwitchDismissTimerRef.current);
+        deviceSwitchDismissTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   function toggleSettings() {
     setDeviceDropdownOpen(false);
@@ -480,6 +534,27 @@ export function RemoteControlMaster() {
     const selectedDevice = savedDevices.find((device) => device.host === host);
 
     return hostPlatform ?? selectedDevice?.platform;
+  }
+
+  function switchSavedDevice(device: SavedDevice) {
+    if (deviceSwitchDismissTimerRef.current !== null) {
+      clearTimeout(deviceSwitchDismissTimerRef.current);
+      deviceSwitchDismissTimerRef.current = null;
+    }
+
+    deviceSwitchStartedAtRef.current = Date.now();
+    setSwitchingDeviceHost(device.host);
+    setSwitchingDeviceName(device.name);
+    setDeviceSwitchOverlayMounted(true);
+    deviceSwitchOverlayAnim.stopAnimation();
+    deviceSwitchOverlayAnim.setValue(0);
+    Animated.timing(deviceSwitchOverlayAnim, {
+      toValue: 1,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    selectSavedDevice(device);
   }
 
   function handleScannerBarcode(event: { data: string }) {
@@ -797,6 +872,23 @@ export function RemoteControlMaster() {
   const keyboardBackdropAnimatedStyle = {
     opacity: keyboardPanelAnim,
   };
+  const deviceSwitchOverlayAnimatedStyle = {
+    opacity: deviceSwitchOverlayAnim,
+    transform: [
+      {
+        scale: deviceSwitchOverlayAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.96, 1],
+        }),
+      },
+      {
+        translateY: deviceSwitchOverlayAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [10, 0],
+        }),
+      },
+    ],
+  };
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
   const monitorMeta = hostDisplay
     ? hostDisplay.isTv
@@ -830,7 +922,9 @@ export function RemoteControlMaster() {
     width: Math.max(58, Math.floor(keyboardShortcutButtonWidth)),
   };
   const selectedDevicePlatform = getSelectedDevicePlatform();
+  const deviceDropdownHorizontalInset = 18;
   const deviceDropdownAnimatedStyle = {
+    marginLeft: 0,
     maxHeight: deviceDropdownAnim.interpolate({
       inputRange: [0, 1],
       outputRange: [0, DEVICE_DROPDOWN_MAX_HEIGHT],
@@ -844,6 +938,7 @@ export function RemoteControlMaster() {
         }),
       },
     ],
+    width: Math.max(0, windowWidth - deviceDropdownHorizontalInset * 2),
   };
   const devicePickerTitle = hostName || "No device saved";
 
@@ -859,6 +954,39 @@ export function RemoteControlMaster() {
           />
         </Animated.View>
       ) : null}
+
+      {deviceDropdownOpen ? (
+        <Pressable
+          accessibilityLabel="Close device list"
+          style={styles.deviceDropdownDismissLayer}
+          onPressIn={() => setDeviceDropdownOpen(false)}
+        />
+      ) : null}
+
+      <Modal
+        animationType="none"
+        transparent
+        visible={deviceSwitchOverlayMounted}
+      >
+        <Animated.View
+          accessibilityLabel="Connecting to device"
+          accessibilityRole="alert"
+          onStartShouldSetResponder={() => true}
+          style={styles.deviceSwitchOverlay}
+        >
+          <Animated.View
+            style={[styles.deviceSwitchCard, deviceSwitchOverlayAnimatedStyle]}
+          >
+            <View style={styles.deviceSwitchSpinner}>
+              <Ionicons name="sync" size={22} color="#f0a942" />
+            </View>
+            <Text style={styles.deviceSwitchTitle}>Connecting</Text>
+            <Text style={styles.deviceSwitchText} numberOfLines={1}>
+              {switchingDeviceName || "Selected device"}
+            </Text>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
 
       <Header
         latencyMs={latencyMs}
@@ -891,7 +1019,7 @@ export function RemoteControlMaster() {
               <Ionicons
                 name={deviceDropdownOpen ? "chevron-up" : "chevron-down"}
                 size={19}
-                color="#73869a"
+                color="#b7b2ab"
               />
             </Pressable>
             {deviceDropdownMounted ? (
@@ -916,7 +1044,7 @@ export function RemoteControlMaster() {
                         >
                           <Pressable
                             style={styles.homeDeviceOptionSelect}
-                            onPress={withHaptic(() => selectSavedDevice(device))}
+                            onPress={withHaptic(() => switchSavedDevice(device))}
                           >
                             <View style={styles.homeDeviceOptionIcon}>
                               <DevicePlatformIcon
@@ -1439,7 +1567,7 @@ export function RemoteControlMaster() {
           />
         </ScrollView>
 
-        <View style={styles.shortcuts}>
+        <View style={styles.controlShortcutRow}>
           <View style={styles.shortcutGroup}>
             {isWindowsHost ? (
               <>
@@ -1448,7 +1576,7 @@ export function RemoteControlMaster() {
                   accessibilityLabel="Escape key"
                   onPress={withHaptic(() => socket.sendKey("escape"))}
                 >
-                  <Minimize2Icon size={24} color="#b8afa5" />
+                  <Minimize2Icon size={22} color="#b8afa5" />
                 </Pressable>
                 <View style={styles.shortcutDivider} />
                 <Pressable
@@ -1456,7 +1584,7 @@ export function RemoteControlMaster() {
                   accessibilityLabel="Close current browser tab"
                   onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
                 >
-                  <SquareXIcon size={24} color="#b8afa5" />
+                  <SquareXIcon size={22} color="#b8afa5" />
                 </Pressable>
               </>
             ) : (
@@ -1470,7 +1598,7 @@ export function RemoteControlMaster() {
                   accessibilityLabel="Previous desktop"
                   onPress={withHaptic(() => switchPrimaryHorizontal("left"))}
                 >
-                  <PanelRightOpenIcon size={24} color="#b8afa5" />
+                  <PanelRightOpenIcon size={22} color="#b8afa5" />
                 </Pressable>
                 <View style={styles.shortcutDivider} />
                 <Pressable
@@ -1482,7 +1610,7 @@ export function RemoteControlMaster() {
                   accessibilityLabel="Next desktop"
                   onPress={withHaptic(() => switchPrimaryHorizontal("right"))}
                 >
-                  <PanelRightCloseIcon size={24} color="#b8afa5" />
+                  <PanelRightCloseIcon size={22} color="#b8afa5" />
                 </Pressable>
               </>
             )}
@@ -1494,7 +1622,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Previous browser page"
               onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
             >
-              <Undo2 size={24} color="#f0c17c" />
+              <Undo2 size={22} color="#f0c17c" />
             </Pressable>
             <View
               style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1506,7 +1634,7 @@ export function RemoteControlMaster() {
                 socket.sendTextCommand("browserForward"),
               )}
             >
-              <Redo2 size={24} color="#f0c17c" />
+              <Redo2 size={22} color="#f0c17c" />
             </Pressable>
           </View>
 
@@ -1516,7 +1644,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Left arrow key"
               onPress={withHaptic(() => socket.sendKey("leftArrow"))}
             >
-              <ClockArrowLeftIcon size={24} color="#9e9890" />
+              <ClockArrowLeftIcon size={22} color="#9e9890" />
             </Pressable>
             <View style={styles.shortcutDivider} />
             <Pressable
@@ -1524,7 +1652,7 @@ export function RemoteControlMaster() {
               accessibilityLabel="Right arrow key"
               onPress={withHaptic(() => socket.sendKey("rightArrow"))}
             >
-              <ClockArrowRightIcon size={24} color="#9e9890" />
+              <ClockArrowRightIcon size={22} color="#9e9890" />
             </Pressable>
           </View>
         </View>
@@ -1539,6 +1667,7 @@ export function RemoteControlMaster() {
           }}
         >
           <Trackpad
+            latencyMs={latencyMs}
             onMove={(dx, dy) =>
               socket.sendMove(dx * sensitivity, dy * sensitivity)
             }
@@ -1555,6 +1684,7 @@ export function RemoteControlMaster() {
                 switchPrimaryHorizontal(direction);
               }
             }}
+            status={status}
           />
         </View>
 
@@ -1566,21 +1696,7 @@ export function RemoteControlMaster() {
                 accessibilityLabel="Escape key"
                 onPress={withHaptic(() => socket.sendKey("escape"))}
               >
-                <Minimize2Icon size={24} color="#f0c17c" />
-              </Pressable>
-              <View
-                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-              />
-              <Pressable
-                disabled={!switchWindowAvailable}
-                style={[
-                  styles.desktopSwitchButton,
-                  !switchWindowAvailable ? styles.disabledControl : null,
-                ]}
-                accessibilityLabel="Switch window"
-                onPress={withHaptic(() => remoteActions.switchWindow("next"))}
-              >
-                <Ionicons name="albums-outline" size={24} color="#f0c17c" />
+                <Minimize2Icon size={22} color="#f0c17c" />
               </Pressable>
               <View
                 style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1594,7 +1710,7 @@ export function RemoteControlMaster() {
                 accessibilityLabel={overviewLabel}
                 onPress={withHaptic(remoteActions.showOverview)}
               >
-                <LayoutPanelTopIcon size={24} color="#f0c17c" />
+                <LayoutPanelTopIcon size={22} color="#f0c17c" />
               </Pressable>
               <View
                 style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1606,7 +1722,7 @@ export function RemoteControlMaster() {
                 }
                 onPress={withHaptic(toggleRemotePlayback)}
               >
-                <PlaybackIcon size={24} color="#f0c17c" />
+                <PlaybackIcon size={22} color="#f0c17c" />
               </Pressable>
               <View
                 style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
@@ -1616,7 +1732,7 @@ export function RemoteControlMaster() {
                 accessibilityLabel="Close current browser tab"
                 onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
               >
-                <SquareXIcon size={24} color="#f0c17c" />
+                <SquareXIcon size={22} color="#f0c17c" />
               </Pressable>
             </View>
           </View>
@@ -1652,12 +1768,12 @@ export function RemoteControlMaster() {
             )}
           >
             <ScanButtonGradient
-              colors={["#f4b760", "#e2943b", "#c8762f"]}
+              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 0.9, y: 1 }}
               style={styles.keyboardMouseButtonGradient}
             >
-              <KeyboardIcon size={23} color="#1b1008" />
+              <KeyboardIcon size={23} color="#f0a942" />
               <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
                 Keyboard
               </Text>
@@ -1866,6 +1982,63 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 14,
   },
+  deviceDropdownDismissLayer: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 40,
+  },
+  deviceSwitchOverlay: {
+    alignItems: "center",
+    backgroundColor: "#070707",
+    bottom: 0,
+    flex: 1,
+    justifyContent: "center",
+    left: 0,
+    paddingHorizontal: 24,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 2000,
+  },
+  deviceSwitchCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(18, 17, 15, 0.94)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+    minWidth: 210,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.38,
+    shadowRadius: 26,
+  },
+  deviceSwitchSpinner: {
+    alignItems: "center",
+    backgroundColor: "rgba(240, 169, 66, 0.1)",
+    borderColor: "rgba(240, 169, 66, 0.34)",
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  deviceSwitchTitle: {
+    color: "#f7f5f1",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  deviceSwitchText: {
+    color: "#a7a39d",
+    fontSize: 13,
+    fontWeight: "700",
+    maxWidth: 190,
+  },
   remoteControls: {
     flex: 1,
     gap: 12,
@@ -1878,11 +2051,17 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 18,
   },
+  controlShortcutRow: {
+    flexDirection: "row",
+    flexShrink: 0,
+    gap: 8,
+    paddingHorizontal: 14,
+  },
   remoteActionRow: {
     flexDirection: "row",
     flexShrink: 0,
-    height: 56,
-    paddingHorizontal: 18,
+    height: 48,
+    paddingHorizontal: 14,
   },
   shortcutGroup: {
     alignItems: "center",
@@ -1892,7 +2071,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     flexDirection: "row",
-    minHeight: 56,
+    minHeight: 48,
     overflow: "hidden",
   },
   shortcutGroupPrimary: {
@@ -1901,7 +2080,7 @@ const styles = StyleSheet.create({
   },
   shortcutDivider: {
     backgroundColor: "#231c16",
-    height: 26,
+    height: 22,
     width: 1,
   },
   shortcutDividerPrimary: {
@@ -1954,72 +2133,83 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
-    minHeight: 54,
+    minHeight: 46,
   },
   homeDevicePicker: {
     alignSelf: "stretch",
     gap: 6,
+    minWidth: 0,
+    position: "relative",
     zIndex: 20,
   },
   homeDeviceButton: {
     alignItems: "center",
-    backgroundColor: "#f6f8fa",
-    borderColor: "#8ca0b4",
+    backgroundColor: "rgba(18, 17, 15, 0.86)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     borderRadius: 8,
-    borderWidth: 2,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 10,
     minHeight: 50,
+    minWidth: 0,
     paddingHorizontal: 12,
-    shadowColor: "#486177",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 5,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
   },
   homeDeviceButtonPressed: {
     opacity: 0.82,
   },
   homeDeviceIcon: {
     alignItems: "center",
-    backgroundColor: "#2d3c48",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 6,
     height: 30,
     justifyContent: "center",
     width: 30,
   },
   homeDeviceName: {
-    color: "#273440",
+    color: "#f7f5f1",
     flex: 1,
     fontSize: 18,
     fontWeight: "900",
     letterSpacing: 0,
+    minWidth: 0,
   },
   homeDeviceDropdown: {
-    backgroundColor: "#ffffff",
-    borderColor: "#d0d7de",
-    borderRadius: 8,
+    backgroundColor: "rgba(18, 17, 15, 0.98)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.38,
+    shadowRadius: 22,
+    left: 0,
+    position: "absolute",
+    top: 60,
+    zIndex: 30,
   },
   homeDeviceDropdownList: {
     maxHeight: 220,
+    width: "100%",
   },
   homeDeviceOption: {
     alignItems: "center",
-    borderBottomColor: "#eef1f4",
+    alignSelf: "stretch",
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: 8,
     minHeight: 64,
     paddingHorizontal: 10,
     paddingVertical: 8,
+    width: "100%",
   },
   homeDeviceOptionSelected: {
-    backgroundColor: "#f1f3f5",
+    backgroundColor: "rgba(240, 169, 66, 0.09)",
   },
   homeDeviceOptionSelect: {
     alignItems: "center",
@@ -2031,14 +2221,14 @@ const styles = StyleSheet.create({
   },
   homeDeviceOptionIcon: {
     alignItems: "center",
-    backgroundColor: "#2d3c48",
-    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 8,
     height: 32,
     justifyContent: "center",
     width: 32,
   },
   homeDeviceOptionName: {
-    color: "#273440",
+    color: "#f7f5f1",
     flex: 1,
     fontSize: 14,
     fontWeight: "900",
@@ -2246,8 +2436,8 @@ const styles = StyleSheet.create({
   },
   deviceDeleteButton: {
     alignItems: "center",
-    backgroundColor: "#32191d",
-    borderColor: "#5b2730",
+    backgroundColor: "rgba(73, 24, 26, 0.84)",
+    borderColor: "rgba(255, 87, 87, 0.3)",
     borderRadius: 8,
     borderWidth: 1,
     height: 40,
@@ -2256,8 +2446,8 @@ const styles = StyleSheet.create({
   },
   deviceEditButton: {
     alignItems: "center",
-    backgroundColor: "#202219",
-    borderColor: "#48502e",
+    backgroundColor: "rgba(42, 32, 20, 0.9)",
+    borderColor: "rgba(240, 169, 66, 0.28)",
     borderRadius: 8,
     borderWidth: 1,
     height: 40,
@@ -2506,35 +2696,35 @@ const styles = StyleSheet.create({
   mouseButtonRow: {
     flexShrink: 0,
     flexDirection: "row",
-    gap: 12,
-    height: 52,
-    paddingHorizontal: 18,
+    gap: 8,
+    height: 48,
+    paddingHorizontal: 14,
   },
   mouseButton: {
     alignItems: "center",
-    backgroundColor: "#15120f",
-    borderColor: "#4a3124",
-    borderRadius: 8,
+    backgroundColor: "rgba(18, 17, 15, 0.78)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 18,
     borderWidth: 1,
     elevation: 4,
     flexDirection: "row",
     gap: 10,
     justifyContent: "center",
-    minHeight: 52,
+    minHeight: 48,
     overflow: "hidden",
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
   },
   mouseButtonSide: {
     flex: 3,
     paddingHorizontal: 0,
   },
   keyboardMouseButton: {
-    backgroundColor: "#c8762f",
-    borderColor: "#eba84e",
+    backgroundColor: "rgba(31, 25, 18, 0.82)",
+    borderColor: "rgba(240, 169, 66, 0.62)",
     flex: 4,
     paddingHorizontal: 0,
     shadowOpacity: 0.24,
@@ -2565,7 +2755,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   accentButtonText: {
-    color: "#1b1008",
+    color: "#f0a942",
   },
   keyboardBg: {
     backgroundColor: "rgba(7, 7, 7, 0.82)",
