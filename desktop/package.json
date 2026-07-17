@@ -10,11 +10,11 @@
   "main": "dist/electron/main.js",
   "scripts": {
     "build": "tsc && node scripts/build-native.mjs && node scripts/copy-static.mjs",
-    "dev": "npm run build && env -u ELECTRON_RUN_AS_NODE electron .",
+    "dev": "npm run build && node scripts/start-electron.mjs",
     "pack:app": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
-    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "start": "node scripts/start-electron.mjs",
     "typecheck": "tsc --noEmit"
   },
   "build": {
