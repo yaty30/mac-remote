@@ -1,4 +1,5 @@
 import { Button, Point, mouse, screen } from "@nut-tree-fork/nut-js";
+import type { HostPlatform } from "../types/protocol";
 
 const EDGE_PRESSURE_ZONE = 6;
 const EDGE_RELEASE_DISTANCE = 24;
@@ -11,7 +12,10 @@ export class MouseController {
   private verticalEdgeLock: VerticalEdgeLock = null;
   private verticalEdgeReleaseDistance = 0;
 
-  constructor(private readonly sensitivity: number) {
+  constructor(
+    private readonly sensitivity: number,
+    private readonly platform: HostPlatform,
+  ) {
     mouse.config.autoDelayMs = 0;
     mouse.config.mouseSpeed = 32000;
   }
@@ -29,7 +33,9 @@ export class MouseController {
       height,
     );
 
-    await mouse.move(buildMovementPath(current, new Point(nextX, nextY)));
+    await mouse.move(
+      buildMovementPath(current, new Point(nextX, nextY), this.platform),
+    );
   }
 
   async leftClick(): Promise<void> {
@@ -80,7 +86,7 @@ export class MouseController {
     dy: number,
     screenHeight: number,
   ): number {
-    if (process.platform !== "darwin") {
+    if (this.platform !== "darwin") {
       return nextY;
     }
 
@@ -132,7 +138,15 @@ export class MouseController {
   }
 }
 
-function buildMovementPath(from: Point, to: Point): Point[] {
+function buildMovementPath(
+  from: Point,
+  to: Point,
+  platform: HostPlatform,
+): Point[] {
+  if (platform === "win32") {
+    return [to];
+  }
+
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
   const steps = clamp(Math.ceil(distance / 12), 1, 10);
   const path: Point[] = [];

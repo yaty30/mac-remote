@@ -21,16 +21,17 @@ import {
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
+import { createHostAdapter } from "../host/createHostAdapter";
 import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
 import type {
   DesktopStatus,
   HostDisplayInfo,
+  HostPlatform,
   HostMessage,
   RemoteMessage,
 } from "../types/protocol";
 import { RemoteWebSocketServer } from "../websocket/server";
-import { runShortcut, runWebsiteShortcut } from "../websocket/shortcuts";
 
 const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
 const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
@@ -47,16 +48,26 @@ let latestStatus: DesktopStatus = {
   status: "starting",
   hostName,
   protocolVersion,
-  platform: process.platform,
+  platform: getSupportedPlatform(),
   port,
   addresses: [],
   connectedClients: 0,
 };
 
+const keyboardController = new KeyboardController();
+const hostAdapter = createHostAdapter(keyboardController);
 const mouseController = new MouseController(
   Number.isFinite(sensitivity) ? sensitivity : 1.8,
+  hostAdapter.platform,
 );
-const keyboardController = new KeyboardController();
+
+function getSupportedPlatform(): HostPlatform {
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return process.platform;
+  }
+
+  throw new Error("Only macOS and Windows are supported.");
+}
 
 function getAccessibilityTarget(): { name: string; path: string } | undefined {
   if (process.platform !== "darwin") {
@@ -400,15 +411,16 @@ async function stopMobileServer(): Promise<void> {
 async function getHostState(): Promise<HostMessage> {
   let brightness: number | undefined;
   let volume: number | undefined;
+  const display = getCurrentDisplayInfo();
 
   try {
-    brightness = await keyboardController.getDisplayBrightness();
+    brightness = await hostAdapter.getDisplayBrightness();
   } catch (error) {
     console.warn("[desktop] failed to read display brightness", error);
   }
 
   try {
-    volume = await keyboardController.getOutputVolume();
+    volume = await hostAdapter.getOutputVolume();
   } catch (error) {
     console.warn("[desktop] failed to read output volume", error);
   }
@@ -416,9 +428,11 @@ async function getHostState(): Promise<HostMessage> {
   return {
     type: "hostState",
     hostName,
+    platform: hostAdapter.platform,
+    capabilities: hostAdapter.getCapabilities(display),
     brightness,
     volume,
-    display: getCurrentDisplayInfo(),
+    display,
   };
 }
 
@@ -442,13 +456,22 @@ async function handleRemoteMessage(
       await mouseController.scroll(message.dx, message.dy);
       break;
     case "zoom":
-      await keyboardController.zoom(message.direction);
+      await hostAdapter.zoom(message.direction);
+      break;
+    case "switchWorkspace":
+      await hostAdapter.switchWorkspace(message.direction);
+      break;
+    case "switchWindow":
+      await hostAdapter.switchWindow(message.direction);
+      break;
+    case "showOverview":
+      await hostAdapter.showOverview();
       break;
     case "swipeSpaces":
-      await keyboardController.switchSpace(message.direction);
+      await hostAdapter.switchWorkspace(message.direction);
       break;
     case "missionControl":
-      await keyboardController.openMissionControl();
+      await hostAdapter.showOverview();
       break;
     case "requestHostState":
       return await getHostState();
@@ -462,7 +485,7 @@ async function handleRemoteMessage(
         return await getHostState();
       }
 
-      await keyboardController.adjustBrightness(message.delta);
+      await hostAdapter.adjustBrightness(message.delta);
       return await getHostState();
     }
     case "setBrightness": {
@@ -471,7 +494,7 @@ async function handleRemoteMessage(
         return await getHostState();
       }
 
-      await keyboardController.setBrightness(message.value);
+      await hostAdapter.setBrightness(message.value);
       return await getHostState();
     }
     case "setVolume": {
@@ -480,31 +503,31 @@ async function handleRemoteMessage(
         return await getHostState();
       }
 
-      await keyboardController.setVolume(message.value);
+      await hostAdapter.setVolume(message.value);
       return await getHostState();
     }
     case "sleep":
-      await keyboardController.sleep();
+      await hostAdapter.sleep();
       break;
     case "restartHost":
-      await keyboardController.restartHost();
+      await hostAdapter.restartHost();
       break;
     case "shortcut":
-      await runShortcut(message.shortcut);
+      await hostAdapter.runShortcut(message.shortcut);
       break;
     case "websiteShortcut":
-      await runWebsiteShortcut(message.url);
+      await hostAdapter.runWebsiteShortcut(message.url);
       break;
     case "typeText":
       await keyboardController.typeText(message.text);
       break;
     case "pasteText": {
       clipboard.writeText(message.text);
-      await keyboardController.textCommand("paste");
+      await hostAdapter.textCommand("paste");
       break;
     }
     case "textCommand":
-      await keyboardController.textCommand(message.command);
+      await hostAdapter.textCommand(message.command);
       break;
     case "pressKey":
       await keyboardController.pressKey(message.key);
@@ -527,7 +550,7 @@ function createWindow(): void {
     resizable: true,
     frame: !isMac && !isWindows,
     autoHideMenuBar: isWindows,
-    title: "Mac Remote",
+    title: "Remote Control",
     backgroundColor: "#080808",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -565,16 +588,18 @@ async function publishStatus(status: DesktopStatus): Promise<void> {
 
 function withDesktopContext(status: DesktopStatus): DesktopStatus {
   const accessibilityTarget = getAccessibilityTarget();
+  const display = getCurrentDisplayInfo();
 
   return {
     ...status,
     hostName,
     protocolVersion,
-    platform: process.platform,
+    platform: hostAdapter.platform,
+    capabilities: hostAdapter.getCapabilities(display),
     accessibilityTrusted: getAccessibilityTrusted(),
     accessibilityTargetName: accessibilityTarget?.name,
     accessibilityTargetPath: accessibilityTarget?.path,
-    display: getCurrentDisplayInfo(),
+    display,
   };
 }
 
@@ -771,13 +796,17 @@ function getCurrentDisplayInfo(): HostDisplayInfo {
   const display = electronScreen.getDisplayNearestPoint(cursorPoint);
   const name = getDisplayName(display);
   const isTv = isTvDisplayName(name);
+  const controlCapabilities = hostAdapter.getDisplayControlCapabilities({
+    display,
+    info: { isTv },
+  });
 
   return {
     id: display.id,
     name,
     isTv,
-    brightnessAdjustable: process.platform === "darwin" && !isTv,
-    volumeAdjustable: !isTv,
+    brightnessAdjustable: controlCapabilities.brightnessAdjustable,
+    volumeAdjustable: controlCapabilities.volumeAdjustable,
   };
 }
 

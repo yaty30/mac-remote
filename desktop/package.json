@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "local.remote-control.desktop",
-    "productName": "Mac Remote",
+    "productName": "Remote Control",
     "electronVersion": "42.3.0",
     "icon": "../iconset/playstore.png",
     "directories": {

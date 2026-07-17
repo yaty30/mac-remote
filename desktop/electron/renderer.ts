@@ -10,6 +10,7 @@ type WindowAction = "minimize" | "maximize" | "close";
 type HealthState = "ready" | "warning" | "error";
 type LucideNodeName = "circle" | "path" | "rect";
 type LucideNode = readonly [LucideNodeName, Readonly<Record<string, string>>];
+type HostPlatform = "darwin" | "win32";
 
 interface StartupSettings {
   available: boolean;
@@ -24,11 +25,22 @@ interface HostDisplayInfo {
   volumeAdjustable: boolean;
 }
 
+interface HostCapabilities {
+  brightness: boolean;
+  volume: boolean;
+  switchWorkspace: boolean;
+  switchWindow: boolean;
+  showOverview: boolean;
+  sleep: boolean;
+  restart: boolean;
+}
+
 interface DesktopStatus {
   status: ConnectionStatus;
   hostName?: string;
   protocolVersion?: string;
-  platform?: string;
+  platform?: HostPlatform;
+  capabilities?: HostCapabilities;
   accessibilityTrusted?: boolean;
   accessibilityTargetName?: string;
   accessibilityTargetPath?: string;
@@ -207,7 +219,7 @@ function renderStatus(status: DesktopStatus): void {
     status.pairingUrl ??
     (primaryAddress ? `ws://${primaryAddress}:${status.port}` : `Port ${status.port}`);
 
-  deviceName.textContent = status.hostName ?? "Mac Remote";
+  deviceName.textContent = status.hostName ?? "Remote Control";
   statusText.textContent = statusLabel;
   statusBadge.className = `status ${status.status}`;
 
@@ -435,7 +447,7 @@ function getDeviceHint(status: DesktopStatus): string {
   }
 
   if (status.addresses.length === 0) {
-    return "Connect this Mac and iPhone to the same Wi-Fi.";
+    return "Connect this computer and iPhone to the same Wi-Fi.";
   }
 
   return "Pair an iPhone to get started.";
