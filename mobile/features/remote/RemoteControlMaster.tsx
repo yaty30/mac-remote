@@ -548,6 +548,17 @@ export function RemoteControlMaster() {
     event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
   ) {
     const { selection } = event.nativeEvent;
+
+    if (hostPlatform === "win32" && keyboardActiveRef.current) {
+      const remoteCursor = remoteKeyboardCursorRef.current;
+
+      if (selection.start !== remoteCursor || selection.end !== remoteCursor) {
+        setLocalKeyboardSelection(remoteCursor);
+      }
+
+      return;
+    }
+
     keyboardSelectionRef.current = selection;
     setKeyboardSelection(selection);
 
@@ -694,8 +705,9 @@ export function RemoteControlMaster() {
     switchWindowAvailable,
     switchWorkspaceAvailable,
   } = controlsAvailability;
+  const isWindowsHost = hostPlatform === "win32";
   const primarySwitchAvailable =
-    hostPlatform === "win32" ? switchWindowAvailable : switchWorkspaceAvailable;
+    isWindowsHost ? switchWindowAvailable : switchWorkspaceAvailable;
   const showConnectionPrompt = status !== "connected";
   const scannerCameraSize = Math.max(
     240,
@@ -1312,35 +1324,51 @@ export function RemoteControlMaster() {
 
         <View style={styles.shortcuts}>
           <View style={styles.shortcutGroup}>
-            <Pressable
-              disabled={!primarySwitchAvailable}
-              style={[
-                styles.desktopSwitchButton,
-                !primarySwitchAvailable ? styles.disabledControl : null,
-              ]}
-              accessibilityLabel={
-                hostPlatform === "win32"
-                  ? "Previous window"
-                  : "Previous desktop"
-              }
-              onPress={withHaptic(() => switchPrimaryHorizontal("left"))}
-            >
-              <PanelRightOpenIcon size={24} color="#b8afa5" />
-            </Pressable>
-            <View style={styles.shortcutDivider} />
-            <Pressable
-              disabled={!primarySwitchAvailable}
-              style={[
-                styles.desktopSwitchButton,
-                !primarySwitchAvailable ? styles.disabledControl : null,
-              ]}
-              accessibilityLabel={
-                hostPlatform === "win32" ? "Next window" : "Next desktop"
-              }
-              onPress={withHaptic(() => switchPrimaryHorizontal("right"))}
-            >
-              <PanelRightCloseIcon size={24} color="#b8afa5" />
-            </Pressable>
+            {isWindowsHost ? (
+              <>
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Escape key"
+                  onPress={withHaptic(() => socket.sendKey("escape"))}
+                >
+                  <Minimize2Icon size={24} color="#b8afa5" />
+                </Pressable>
+                <View style={styles.shortcutDivider} />
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Close current browser tab"
+                  onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
+                >
+                  <SquareXIcon size={24} color="#b8afa5" />
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  disabled={!primarySwitchAvailable}
+                  style={[
+                    styles.desktopSwitchButton,
+                    !primarySwitchAvailable ? styles.disabledControl : null,
+                  ]}
+                  accessibilityLabel="Previous desktop"
+                  onPress={withHaptic(() => switchPrimaryHorizontal("left"))}
+                >
+                  <PanelRightOpenIcon size={24} color="#b8afa5" />
+                </Pressable>
+                <View style={styles.shortcutDivider} />
+                <Pressable
+                  disabled={!primarySwitchAvailable}
+                  style={[
+                    styles.desktopSwitchButton,
+                    !primarySwitchAvailable ? styles.disabledControl : null,
+                  ]}
+                  accessibilityLabel="Next desktop"
+                  onPress={withHaptic(() => switchPrimaryHorizontal("right"))}
+                >
+                  <PanelRightCloseIcon size={24} color="#b8afa5" />
+                </Pressable>
+              </>
+            )}
           </View>
 
           <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
@@ -1413,67 +1441,69 @@ export function RemoteControlMaster() {
           />
         </View>
 
-        <View style={styles.remoteActionRow}>
-          <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Escape key"
-              onPress={withHaptic(() => socket.sendKey("escape"))}
-            >
-              <Minimize2Icon size={24} color="#f0c17c" />
-            </Pressable>
-            <View
-              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-            />
-            <Pressable
-              disabled={!switchWindowAvailable}
-              style={[
-                styles.desktopSwitchButton,
-                !switchWindowAvailable ? styles.disabledControl : null,
-              ]}
-              accessibilityLabel="Switch window"
-              onPress={withHaptic(() => remoteActions.switchWindow("next"))}
-            >
-              <Ionicons name="albums-outline" size={24} color="#f0c17c" />
-            </Pressable>
-            <View
-              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-            />
-            <Pressable
-              disabled={!overviewAvailable}
-              style={[
-                styles.desktopSwitchButton,
-                !overviewAvailable ? styles.disabledControl : null,
-              ]}
-              accessibilityLabel={overviewLabel}
-              onPress={withHaptic(remoteActions.showOverview)}
-            >
-              <LayoutPanelTopIcon size={24} color="#f0c17c" />
-            </Pressable>
-            <View
-              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-            />
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel={
-                playbackPaused ? "Play media" : "Pause media"
-              }
-              onPress={withHaptic(toggleRemotePlayback)}
-            >
-              <PlaybackIcon size={24} color="#f0c17c" />
-            </Pressable>
-            <View
-              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-            />
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Close current browser tab"
-              onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
-            >
-              <SquareXIcon size={24} color="#f0c17c" />
-            </Pressable>
+        {!isWindowsHost ? (
+          <View style={styles.remoteActionRow}>
+            <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Escape key"
+                onPress={withHaptic(() => socket.sendKey("escape"))}
+              >
+                <Minimize2Icon size={24} color="#f0c17c" />
+              </Pressable>
+              <View
+                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+              />
+              <Pressable
+                disabled={!switchWindowAvailable}
+                style={[
+                  styles.desktopSwitchButton,
+                  !switchWindowAvailable ? styles.disabledControl : null,
+                ]}
+                accessibilityLabel="Switch window"
+                onPress={withHaptic(() => remoteActions.switchWindow("next"))}
+              >
+                <Ionicons name="albums-outline" size={24} color="#f0c17c" />
+              </Pressable>
+              <View
+                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+              />
+              <Pressable
+                disabled={!overviewAvailable}
+                style={[
+                  styles.desktopSwitchButton,
+                  !overviewAvailable ? styles.disabledControl : null,
+                ]}
+                accessibilityLabel={overviewLabel}
+                onPress={withHaptic(remoteActions.showOverview)}
+              >
+                <LayoutPanelTopIcon size={24} color="#f0c17c" />
+              </Pressable>
+              <View
+                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+              />
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel={
+                  playbackPaused ? "Play media" : "Pause media"
+                }
+                onPress={withHaptic(toggleRemotePlayback)}
+              >
+                <PlaybackIcon size={24} color="#f0c17c" />
+              </Pressable>
+              <View
+                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+              />
+              <Pressable
+                style={styles.desktopSwitchButton}
+                accessibilityLabel="Close current browser tab"
+                onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
+              >
+                <SquareXIcon size={24} color="#f0c17c" />
+              </Pressable>
+            </View>
           </View>
-        </View>
+        ) : null}
 
         <View style={styles.mouseButtonRow}>
           <Pressable
