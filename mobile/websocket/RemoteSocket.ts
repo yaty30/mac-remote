@@ -122,12 +122,24 @@ export class RemoteSocket {
     this.send({ type: "zoom", direction });
   }
 
+  switchWorkspace(direction: "left" | "right"): void {
+    this.send({ type: "switchWorkspace", direction });
+  }
+
+  switchWindow(direction: "next" | "previous" = "next"): void {
+    this.send({ type: "switchWindow", direction });
+  }
+
+  showOverview(): void {
+    this.send({ type: "showOverview" });
+  }
+
   sendSwipeSpaces(direction: "left" | "right"): void {
-    this.send({ type: "swipeSpaces", direction });
+    this.switchWorkspace(direction);
   }
 
   sendMissionControl(): void {
-    this.send({ type: "missionControl" });
+    this.showOverview();
   }
 
   requestHostState(): void {

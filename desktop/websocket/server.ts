@@ -256,8 +256,28 @@ function parseRemoteMessage(raw: string): RemoteMessage {
     throw new Error("Invalid swipeSpaces payload");
   }
 
+  if (data.type === "switchWorkspace") {
+    if (data.direction === "left" || data.direction === "right") {
+      return { type: "switchWorkspace", direction: data.direction };
+    }
+
+    throw new Error("Invalid switchWorkspace payload");
+  }
+
+  if (data.type === "switchWindow") {
+    if (data.direction === "next" || data.direction === "previous") {
+      return { type: "switchWindow", direction: data.direction };
+    }
+
+    throw new Error("Invalid switchWindow payload");
+  }
+
   if (data.type === "missionControl") {
     return { type: "missionControl" };
+  }
+
+  if (data.type === "showOverview") {
+    return { type: "showOverview" };
   }
 
   if (data.type === "requestHostState") {

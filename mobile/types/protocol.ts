@@ -4,6 +4,17 @@ export type ShortcutId =
   | "amazon"
   | "youtube"
   | "spotify";
+export type HostPlatform = "darwin" | "win32";
+
+export interface HostCapabilities {
+  brightness: boolean;
+  volume: boolean;
+  switchWorkspace: boolean;
+  switchWindow: boolean;
+  showOverview: boolean;
+  sleep: boolean;
+  restart: boolean;
+}
 
 export type ConnectionStatus =
   | "idle"
@@ -19,6 +30,9 @@ export type RemoteMessage =
   | RightClickMessage
   | ScrollMessage
   | ZoomMessage
+  | SwitchWorkspaceMessage
+  | SwitchWindowMessage
+  | ShowOverviewMessage
   | SwipeSpacesMessage
   | MissionControlMessage
   | RequestHostStateMessage
@@ -75,6 +89,20 @@ export interface ZoomMessage {
   direction: "in" | "out";
 }
 
+export interface SwitchWorkspaceMessage {
+  type: "switchWorkspace";
+  direction: "left" | "right";
+}
+
+export interface SwitchWindowMessage {
+  type: "switchWindow";
+  direction: "next" | "previous";
+}
+
+export interface ShowOverviewMessage {
+  type: "showOverview";
+}
+
 export interface SwipeSpacesMessage {
   type: "swipeSpaces";
   direction: "left" | "right";
@@ -114,6 +142,8 @@ export interface RestartHostMessage {
 export interface HostStateMessage {
   type: "hostState";
   hostName?: string;
+  platform: HostPlatform;
+  capabilities: HostCapabilities;
   brightness?: number;
   volume?: number;
   display?: HostDisplayInfo;
