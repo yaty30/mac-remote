@@ -518,13 +518,15 @@ async function handleRemoteMessage(
 
 function createWindow(): void {
   const isMac = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1010,
     height: 800,
     minWidth: 720,
     minHeight: 520,
     resizable: true,
-    frame: !isMac,
+    frame: !isMac && !isWindows,
+    autoHideMenuBar: isWindows,
     title: "Mac Remote",
     backgroundColor: "#080808",
     webPreferences: {
@@ -534,11 +536,16 @@ function createWindow(): void {
 
   if (isMac) {
     windowOptions.titleBarStyle = "hidden";
-    // mac tracffic light buttons padding
+    // mac traffic light buttons padding
     windowOptions.trafficLightPosition = { x: 10, y: 10 };
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+
+  if (isWindows) {
+    mainWindow.setMenu(null);
+    mainWindow.maximize();
+  }
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
 
