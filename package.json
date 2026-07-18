@@ -26,6 +26,7 @@
     "concurrently": "^9.2.1"
   },
   "dependencies": {
+    "@lucide/lab": "^0.1.2",
     "@react-native-community/slider": "^5.2.0"
   }
 }

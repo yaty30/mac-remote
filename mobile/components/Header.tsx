@@ -19,6 +19,7 @@ interface HeaderProps {
   titleContent?: ReactNode;
   onScan?: () => void;
   onToggleSettings?: () => void;
+  settingsDisabled?: boolean;
   onSleep?: () => void;
 }
 
@@ -30,6 +31,7 @@ export function Header({
   titleContent,
   onScan,
   onToggleSettings,
+  settingsDisabled = false,
   onSleep,
 }: HeaderProps) {
   const [sleep, setSleep] = useState(false);
@@ -66,10 +68,16 @@ export function Header({
           </Pressable>
 
           <Pressable
+            disabled={settingsDisabled || !onToggleSettings}
             style={({ pressed }) => [
               styles.headerActionButton,
               styles.settingsButton,
-              pressed ? styles.headerActionButtonPressed : null,
+              pressed && !settingsDisabled && onToggleSettings
+                ? styles.headerActionButtonPressed
+                : null,
+              settingsDisabled || !onToggleSettings
+                ? styles.headerActionButtonDisabled
+                : null,
             ]}
             onPress={withHaptic(onToggleSettings)}
           >

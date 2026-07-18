@@ -1,5 +1,6 @@
 import "react-native-gesture-handler";
 import * as Font from "expo/node_modules/expo-font";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
@@ -13,6 +14,10 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
+
+void SplashScreen.preventAutoHideAsync().catch(() => {
+  // The native splash may already be hidden during development reloads.
+});
 
 function applyDefaultFont() {
   const defaultTextProps = (Text as unknown as { defaultProps?: TextProps });
@@ -64,6 +69,16 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!fontsReady) {
+      return;
+    }
+
+    void SplashScreen.hideAsync().catch(() => {
+      // Ignore if the native splash is already hidden.
+    });
+  }, [fontsReady]);
 
   if (!fontsReady) {
     return null;

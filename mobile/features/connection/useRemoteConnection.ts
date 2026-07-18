@@ -37,6 +37,7 @@ export function useRemoteConnection(
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [connectionHydrated, setConnectionHydrated] = useState(false);
 
   useEffect(() => {
     onResetHostStateRef.current = onResetHostState;
@@ -146,6 +147,11 @@ export function useRemoteConnection(
       })
       .catch(() => {
         // Ignore storage errors.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setConnectionHydrated(true);
+        }
       });
 
     return () => {
@@ -254,6 +260,23 @@ export function useRemoteConnection(
     connectToHost(device.host, device.name);
   }
 
+  function cancelConnection() {
+    socket.disconnect();
+    statusRef.current = "idle";
+    hostRef.current = "";
+    setStatus("idle");
+    setLatencyMs(null);
+    setHost("");
+    setHostName("");
+    onResetHostStateRef.current();
+    setDeviceDropdownOpen(false);
+    AsyncStorage.multiRemove([HOST_STORAGE_KEY, HOST_NAME_STORAGE_KEY]).catch(
+      () => {
+        // Ignore storage errors.
+      },
+    );
+  }
+
   function deleteSavedDevice(device: SavedDevice) {
     setSavedDevices((currentDevices) => {
       const nextDevices = currentDevices.filter((item) => item.id !== device.id);
@@ -306,6 +329,8 @@ export function useRemoteConnection(
   }
 
   return {
+    cancelConnection,
+    connectionHydrated,
     connectToHost,
     deleteSavedDevice,
     deviceDropdownOpen,

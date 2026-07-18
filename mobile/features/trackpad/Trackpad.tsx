@@ -100,6 +100,7 @@ export function Trackpad({
   const scrollDotPanRef = useRef(null);
   const scrollDotX = useRef(new Animated.Value(0)).current;
   const scrollDotY = useRef(new Animated.Value(0)).current;
+  const scrollDotScale = useRef(new Animated.Value(1)).current;
   const scrollDotSpeed = useRef({ x: 0, y: 0 });
   const scrollDotVisualOffset = useRef({ x: 0, y: 0 });
   const scrollDotFrame = useRef<number | null>(null);
@@ -118,8 +119,11 @@ export function Trackpad({
   const touchMarkY = useRef(new Animated.Value(0)).current;
   const [scrollDotActive, setScrollDotActive] = useState(false);
   const [scrollDotPlacing, setScrollDotPlacing] = useState(false);
-  const [scrollDotHome, setScrollDotHome] =
-    useState<ScrollDotPosition | null>(null);
+  const [scrollDotPlacementMoving, setScrollDotPlacementMoving] =
+    useState(false);
+  const [scrollDotHome, setScrollDotHome] = useState<ScrollDotPosition | null>(
+    null,
+  );
   const latencyBand =
     status === "connected" && typeof latencyMs === "number"
       ? getLatencyBand(latencyMs)
@@ -347,6 +351,16 @@ export function Trackpad({
     [clearScrollDotLongPressTimer, stopScrollDotLoop],
   );
 
+  useEffect(() => {
+    scrollDotScale.stopAnimation();
+    Animated.spring(scrollDotScale, {
+      toValue: scrollDotPlacing && scrollDotPlacementMoving ? 1.24 : 1,
+      tension: 180,
+      friction: 14,
+      useNativeDriver: true,
+    }).start();
+  }, [scrollDotPlacementMoving, scrollDotPlacing, scrollDotScale]);
+
   const animateScrollDotHome = useCallback(
     (onFinished?: () => void) => {
       const { x, y } = scrollDotVisualOffset.current;
@@ -425,6 +439,10 @@ export function Trackpad({
       const { translationX, translationY } = event.nativeEvent;
 
       if (scrollDotPlacementMode.current) {
+        setScrollDotPlacementMoving(
+          hasScrollDotTouchMoved(translationX, translationY),
+        );
+
         const { width, height } = trackpadLayout.current;
         const start = scrollDotDragStart.current;
 
@@ -487,6 +505,7 @@ export function Trackpad({
         scrollDotX.setValue(0);
         scrollDotY.setValue(0);
         setScrollDotPlacing(false);
+        setScrollDotPlacementMoving(false);
         setScrollDotActive(true);
         scrollDotLongPressEligible.current = true;
         scrollDotLongPressMoved.current = false;
@@ -517,6 +536,7 @@ export function Trackpad({
           scrollDotY.setValue(0);
           stopScrollDotLoop();
           setScrollDotPlacing(true);
+          setScrollDotPlacementMoving(false);
           triggerLongPressHaptic();
         }, SCROLL_DOT_LONG_PRESS_MS);
         return;
@@ -536,6 +556,7 @@ export function Trackpad({
         scrollDotDragStart.current = null;
         scrollDotSpeed.current = { x: 0, y: 0 };
         setScrollDotPlacing(false);
+        setScrollDotPlacementMoving(false);
         stopScrollDotLoop();
 
         if (wasPlacing) {
@@ -698,6 +719,7 @@ export function Trackpad({
                           transform: [
                             { translateX: scrollDotX },
                             { translateY: scrollDotY },
+                            { scale: scrollDotScale },
                           ],
                         },
                       ]}
@@ -706,9 +728,7 @@ export function Trackpad({
                         style={[
                           styles.scrollDotFace,
                           scrollDotActive ? styles.scrollDotFaceActive : null,
-                          scrollDotPlacing
-                            ? styles.scrollDotFacePlacing
-                            : null,
+                          scrollDotPlacing ? styles.scrollDotFacePlacing : null,
                         ]}
                       >
                         <View style={styles.scrollDotAxisVertical} />
@@ -861,7 +881,7 @@ const styles = StyleSheet.create({
   scrollDot: {
     alignItems: "center",
     backgroundColor: "#211a14",
-    borderColor: "#4a3727",
+    borderColor: "#744c2c",
     borderRadius: SCROLL_DOT_SIZE / 2,
     borderWidth: 1,
     height: SCROLL_DOT_SIZE,
@@ -869,7 +889,7 @@ const styles = StyleSheet.create({
     left: 10,
     marginTop: -SCROLL_DOT_SIZE / 2,
     position: "absolute",
-    shadowColor: "#000000",
+    shadowColor: "#413028",
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.44,
     shadowRadius: 22,

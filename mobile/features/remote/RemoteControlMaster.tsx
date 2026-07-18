@@ -55,6 +55,8 @@ import {
   Redo2,
 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppSplashOverlay } from "../../components/AppSplashOverlay";
+import { FloatingIconOverlay } from "../../components/FloatingIconOverlay";
 import { Header } from "../../components/Header";
 import { ShortcutButton } from "../../components/ShortcutButton";
 import { Trackpad } from "../trackpad/Trackpad";
@@ -94,10 +96,11 @@ import { useRemoteControlsAvailability } from "./useRemoteControlsAvailability";
 
 const ScanButtonGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
-const DEVICE_NAME_MIN_LENGTH = 3;
+const DEVICE_NAME_MIN_LENGTH = 2;
 const DEVICE_NAME_MAX_LENGTH = 20;
 const DEVICE_DROPDOWN_MAX_HEIGHT = 286;
 const DEVICE_SWITCH_MIN_OVERLAY_MS = 1000;
+const DEVICE_SWITCH_CANCEL_DELAY_MS = 3000;
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -114,6 +117,13 @@ export function RemoteControlMaster() {
   const deviceSwitchDismissTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const deviceSwitchCancelTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const previousDeviceRef = useRef<{ host: string; name?: string } | null>(
+    null,
+  );
+  const deviceSwitchCancellingRef = useRef(false);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -155,6 +165,8 @@ export function RemoteControlMaster() {
     volumeStep,
   } = useHostMedia(socket, controlsAvailability);
   const {
+    cancelConnection,
+    connectionHydrated,
     connectToHost,
     deleteSavedDevice,
     deviceDropdownOpen,
@@ -182,7 +194,10 @@ export function RemoteControlMaster() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
+  const [appSplashReleased, setAppSplashReleased] = useState(false);
   const [deviceSwitchOverlayMounted, setDeviceSwitchOverlayMounted] =
+    useState(false);
+  const [deviceSwitchCancelVisible, setDeviceSwitchCancelVisible] =
     useState(false);
   const [switchingDeviceName, setSwitchingDeviceName] = useState("");
   const [switchingDeviceHost, setSwitchingDeviceHost] = useState("");
@@ -194,7 +209,9 @@ export function RemoteControlMaster() {
   });
   const [keyboardInputKey, setKeyboardInputKey] = useState(0);
   const [deviceDropdownMounted, setDeviceDropdownMounted] = useState(false);
-  const [renamingDevice, setRenamingDevice] = useState<SavedDevice | null>(null);
+  const [renamingDevice, setRenamingDevice] = useState<SavedDevice | null>(
+    null,
+  );
   const [renameDeviceName, setRenameDeviceName] = useState("");
   const [renameDeviceError, setRenameDeviceError] = useState("");
   const {
@@ -217,6 +234,18 @@ export function RemoteControlMaster() {
   } = useCustomShortcuts();
   const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
   const deviceSwitchOverlayAnim = useRef(new Animated.Value(0)).current;
+  const deviceSwitchSpinnerAnim = useRef(new Animated.Value(0)).current;
+  const deviceSwitchCancelAnim = useRef(new Animated.Value(0)).current;
+  const showConnectionPrompt = status !== "connected";
+  const appSplashReadyToDismiss =
+    connectionHydrated &&
+    (!host.trim() || (status === "connected" && hostPlatform !== null));
+
+  useEffect(() => {
+    if (appSplashReadyToDismiss) {
+      setAppSplashReleased(true);
+    }
+  }, [appSplashReadyToDismiss]);
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
@@ -227,7 +256,9 @@ export function RemoteControlMaster() {
 
         const nextHostName = sanitizeHostName(message.hostName);
 
-        if (nextHostName) {
+        const savedDevice = savedDevices.find((device) => device.host === host);
+
+        if (nextHostName && !savedDevice) {
           persistHostName(nextHostName);
         }
       }
@@ -237,8 +268,10 @@ export function RemoteControlMaster() {
   }, [
     applyHostProfile,
     applyHostState,
+    host,
     persistHostName,
     persistHostPlatform,
+    savedDevices,
     socket,
   ]);
 
@@ -340,7 +373,7 @@ export function RemoteControlMaster() {
   }, [keyboardOverlay, keyboardPanelAnim]);
 
   useEffect(() => {
-    if (!switchingDeviceHost || status !== "connected") {
+    if (!switchingDeviceHost || status !== "connected" || !hostPlatform) {
       return;
     }
 
@@ -368,16 +401,110 @@ export function RemoteControlMaster() {
           setDeviceSwitchOverlayMounted(false);
           setSwitchingDeviceHost("");
           setSwitchingDeviceName("");
+          previousDeviceRef.current = null;
         }
       });
     }, remaining);
-  }, [deviceSwitchOverlayAnim, host, status, switchingDeviceHost]);
+  }, [
+    deviceSwitchOverlayAnim,
+    host,
+    hostPlatform,
+    status,
+    switchingDeviceHost,
+  ]);
+
+  useEffect(() => {
+    if (!deviceSwitchOverlayMounted) {
+      deviceSwitchSpinnerAnim.stopAnimation();
+      deviceSwitchSpinnerAnim.setValue(0);
+      return;
+    }
+
+    deviceSwitchSpinnerAnim.setValue(0);
+    const spinnerAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(deviceSwitchSpinnerAnim, {
+          toValue: 0.5,
+          duration: 820,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(deviceSwitchSpinnerAnim, {
+          toValue: 1,
+          duration: 860,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    spinnerAnimation.start();
+
+    return () => {
+      spinnerAnimation.stop();
+    };
+  }, [deviceSwitchOverlayMounted, deviceSwitchSpinnerAnim]);
+
+  useEffect(() => {
+    if (deviceSwitchCancellingRef.current) {
+      return;
+    }
+
+    if (
+      !deviceSwitchOverlayMounted ||
+      !switchingDeviceHost ||
+      host !== switchingDeviceHost ||
+      (status !== "connecting" && (status !== "connected" || hostPlatform))
+    ) {
+      if (deviceSwitchCancelTimerRef.current !== null) {
+        clearTimeout(deviceSwitchCancelTimerRef.current);
+        deviceSwitchCancelTimerRef.current = null;
+      }
+      setDeviceSwitchCancelVisible(false);
+      deviceSwitchCancelAnim.stopAnimation();
+      deviceSwitchCancelAnim.setValue(0);
+      return;
+    }
+
+    const elapsed = Date.now() - deviceSwitchStartedAtRef.current;
+    const delay = Math.max(0, DEVICE_SWITCH_CANCEL_DELAY_MS - elapsed);
+
+    deviceSwitchCancelTimerRef.current = setTimeout(() => {
+      deviceSwitchCancelTimerRef.current = null;
+      setDeviceSwitchCancelVisible(true);
+      deviceSwitchCancelAnim.setValue(0);
+      Animated.timing(deviceSwitchCancelAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }, delay);
+
+    return () => {
+      if (deviceSwitchCancelTimerRef.current !== null) {
+        clearTimeout(deviceSwitchCancelTimerRef.current);
+        deviceSwitchCancelTimerRef.current = null;
+      }
+    };
+  }, [
+    deviceSwitchCancelAnim,
+    deviceSwitchOverlayMounted,
+    host,
+    hostPlatform,
+    status,
+    switchingDeviceHost,
+  ]);
 
   useEffect(
     () => () => {
       if (deviceSwitchDismissTimerRef.current !== null) {
         clearTimeout(deviceSwitchDismissTimerRef.current);
         deviceSwitchDismissTimerRef.current = null;
+      }
+      if (deviceSwitchCancelTimerRef.current !== null) {
+        clearTimeout(deviceSwitchCancelTimerRef.current);
+        deviceSwitchCancelTimerRef.current = null;
       }
     },
     [],
@@ -504,7 +631,7 @@ export function RemoteControlMaster() {
     );
 
     if (cleanName.length < DEVICE_NAME_MIN_LENGTH) {
-      setRenameDeviceError("Use at least 3 letters.");
+      setRenameDeviceError("Use at least 2 letters.");
       return;
     }
 
@@ -536,12 +663,34 @@ export function RemoteControlMaster() {
     return hostPlatform ?? selectedDevice?.platform;
   }
 
-  function switchSavedDevice(device: SavedDevice) {
+  function clearDeviceSwitchTimers() {
     if (deviceSwitchDismissTimerRef.current !== null) {
       clearTimeout(deviceSwitchDismissTimerRef.current);
       deviceSwitchDismissTimerRef.current = null;
     }
 
+    if (deviceSwitchCancelTimerRef.current !== null) {
+      clearTimeout(deviceSwitchCancelTimerRef.current);
+      deviceSwitchCancelTimerRef.current = null;
+    }
+  }
+
+  function resetDeviceSwitchCancelButton() {
+    setDeviceSwitchCancelVisible(false);
+    deviceSwitchCancelAnim.stopAnimation();
+    deviceSwitchCancelAnim.setValue(0);
+  }
+
+  function switchSavedDevice(device: SavedDevice) {
+    if (device.host === host && status === "connected") {
+      setDeviceDropdownOpen(false);
+      return;
+    }
+
+    clearDeviceSwitchTimers();
+    resetDeviceSwitchCancelButton();
+
+    previousDeviceRef.current = host ? { host, name: hostName } : null;
     deviceSwitchStartedAtRef.current = Date.now();
     setSwitchingDeviceHost(device.host);
     setSwitchingDeviceName(device.name);
@@ -555,6 +704,39 @@ export function RemoteControlMaster() {
       useNativeDriver: true,
     }).start();
     selectSavedDevice(device);
+  }
+
+  function cancelDeviceSwitch() {
+    if (deviceSwitchCancellingRef.current) {
+      return;
+    }
+
+    const previousDevice = previousDeviceRef.current;
+
+    clearDeviceSwitchTimers();
+    deviceSwitchCancellingRef.current = true;
+    previousDeviceRef.current = null;
+
+    if (previousDevice?.host && previousDevice.host !== switchingDeviceHost) {
+      connectToHost(previousDevice.host, previousDevice.name);
+    } else {
+      cancelConnection();
+    }
+
+    Animated.timing(deviceSwitchOverlayAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setDeviceSwitchOverlayMounted(false);
+        setSwitchingDeviceHost("");
+        setSwitchingDeviceName("");
+        deviceSwitchCancellingRef.current = false;
+        resetDeviceSwitchCancelButton();
+      }
+    });
   }
 
   function handleScannerBarcode(event: { data: string }) {
@@ -791,7 +973,10 @@ export function RemoteControlMaster() {
 
     const prev = bufferRef.current;
     const selection = keyboardSelectionRef.current;
-    const selectionStart = Math.max(0, Math.min(selection.start, selection.end));
+    const selectionStart = Math.max(
+      0,
+      Math.min(selection.start, selection.end),
+    );
     const selectionEnd = Math.min(
       prev.length,
       Math.max(selection.start, selection.end),
@@ -814,11 +999,7 @@ export function RemoteControlMaster() {
     } else {
       syncRemoteKeyboardCursor(selectionEnd);
 
-      for (
-        let index = 0;
-        index < selectionEnd - selectionStart;
-        index += 1
-      ) {
+      for (let index = 0; index < selectionEnd - selectionStart; index += 1) {
         socket.sendKey("backspace");
       }
 
@@ -889,6 +1070,37 @@ export function RemoteControlMaster() {
       },
     ],
   };
+  const deviceSwitchSpinnerAnimatedStyle = {
+    transform: [
+      {
+        rotate: deviceSwitchSpinnerAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["0deg", "360deg"],
+        }),
+      },
+    ],
+  };
+  const deviceSwitchCancelAnimatedStyle = {
+    maxHeight: deviceSwitchCancelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 42],
+    }),
+    opacity: deviceSwitchCancelAnim,
+    transform: [
+      {
+        scale: deviceSwitchCancelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.86, 1],
+        }),
+      },
+      {
+        translateY: deviceSwitchCancelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-6, 0],
+        }),
+      },
+    ],
+  };
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
   const monitorMeta = hostDisplay
     ? hostDisplay.isTv
@@ -903,9 +1115,9 @@ export function RemoteControlMaster() {
     switchWorkspaceAvailable,
   } = controlsAvailability;
   const isWindowsHost = hostPlatform === "win32";
-  const primarySwitchAvailable =
-    isWindowsHost ? switchWindowAvailable : switchWorkspaceAvailable;
-  const showConnectionPrompt = status !== "connected";
+  const primarySwitchAvailable = isWindowsHost
+    ? switchWindowAvailable
+    : switchWorkspaceAvailable;
   const scannerCameraSize = Math.max(
     240,
     Math.min(windowWidth - 64, windowHeight - 236, 420),
@@ -939,6 +1151,16 @@ export function RemoteControlMaster() {
       },
     ],
     width: Math.max(0, windowWidth - deviceDropdownHorizontalInset * 2),
+  };
+  const deviceDropdownChevronAnimatedStyle = {
+    transform: [
+      {
+        rotate: deviceDropdownAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["0deg", "180deg"],
+        }),
+      },
+    ],
   };
   const devicePickerTitle = hostName || "No device saved";
 
@@ -974,16 +1196,44 @@ export function RemoteControlMaster() {
           onStartShouldSetResponder={() => true}
           style={styles.deviceSwitchOverlay}
         >
+          <FloatingIconOverlay
+            active={deviceSwitchOverlayMounted}
+            maxOpacity={0.16}
+            spawnIntervalMs={520}
+          />
           <Animated.View
             style={[styles.deviceSwitchCard, deviceSwitchOverlayAnimatedStyle]}
           >
             <View style={styles.deviceSwitchSpinner}>
-              <Ionicons name="sync" size={22} color="#f0a942" />
+              <Animated.View style={deviceSwitchSpinnerAnimatedStyle}>
+                <Ionicons name="sync" size={22} color="#f0a942" />
+              </Animated.View>
             </View>
             <Text style={styles.deviceSwitchTitle}>Connecting</Text>
             <Text style={styles.deviceSwitchText} numberOfLines={1}>
               {switchingDeviceName || "Selected device"}
             </Text>
+            {deviceSwitchCancelVisible ? (
+              <Animated.View
+                style={[
+                  styles.deviceSwitchCancelSlot,
+                  deviceSwitchCancelAnimatedStyle,
+                ]}
+              >
+                <Pressable
+                  accessibilityLabel="Cancel device connection"
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.deviceSwitchCancelButton,
+                    pressed ? styles.deviceSwitchCancelButtonPressed : null,
+                  ]}
+                  onPress={withHaptic(cancelDeviceSwitch)}
+                >
+                  <Ionicons name="close" size={16} color="#f7f5f1" />
+                  <Text style={styles.deviceSwitchCancelText}>Cancel</Text>
+                </Pressable>
+              </Animated.View>
+            ) : null}
           </Animated.View>
         </Animated.View>
       </Modal>
@@ -999,9 +1249,7 @@ export function RemoteControlMaster() {
                 styles.homeDeviceButton,
                 pressed ? styles.homeDeviceButtonPressed : null,
               ]}
-              onPress={withHaptic(() =>
-                setDeviceDropdownOpen((open) => !open),
-              )}
+              onPress={withHaptic(() => setDeviceDropdownOpen((open) => !open))}
             >
               <View style={styles.homeDeviceIcon}>
                 <DevicePlatformIcon
@@ -1016,11 +1264,9 @@ export function RemoteControlMaster() {
               >
                 {devicePickerTitle}
               </Text>
-              <Ionicons
-                name={deviceDropdownOpen ? "chevron-up" : "chevron-down"}
-                size={19}
-                color="#b7b2ab"
-              />
+              <Animated.View style={deviceDropdownChevronAnimatedStyle}>
+                <Ionicons name="chevron-down" size={19} color="#b7b2ab" />
+              </Animated.View>
             </Pressable>
             {deviceDropdownMounted ? (
               <Animated.View
@@ -1044,7 +1290,9 @@ export function RemoteControlMaster() {
                         >
                           <Pressable
                             style={styles.homeDeviceOptionSelect}
-                            onPress={withHaptic(() => switchSavedDevice(device))}
+                            onPress={withHaptic(() =>
+                              switchSavedDevice(device),
+                            )}
                           >
                             <View style={styles.homeDeviceOptionIcon}>
                               <DevicePlatformIcon
@@ -1072,14 +1320,18 @@ export function RemoteControlMaster() {
                             <Pressable
                               accessibilityLabel={`Rename ${device.name}`}
                               style={styles.deviceEditButton}
-                              onPress={withHaptic(() => openRenameDevice(device))}
+                              onPress={withHaptic(() =>
+                                openRenameDevice(device),
+                              )}
                             >
                               <Pencil size={17} color="#ffffff" />
                             </Pressable>
                             <Pressable
                               accessibilityLabel={`Delete ${device.name}`}
                               style={styles.deviceDeleteButton}
-                              onPress={withHaptic(() => deleteSavedDevice(device))}
+                              onPress={withHaptic(() =>
+                                deleteSavedDevice(device),
+                              )}
                             >
                               <Ionicons
                                 name="trash-outline"
@@ -1102,8 +1354,11 @@ export function RemoteControlMaster() {
           </View>
         }
         onScan={openScanner}
+        settingsDisabled={showConnectionPrompt}
         onToggleSettings={toggleSettings}
-        onSleep={sleepAvailable ? sendSleep : undefined}
+        onSleep={
+          !showConnectionPrompt && sleepAvailable ? sendSleep : undefined
+        }
       />
 
       <Animated.View
@@ -1187,11 +1442,7 @@ export function RemoteControlMaster() {
             style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
             onPress={withHaptic(pasteFromPhoneClipboard)}
           >
-            <Ionicons
-              name="phone-portrait-outline"
-              size={18}
-              color="#ffffff"
-            />
+            <Ionicons name="phone-portrait-outline" size={18} color="#ffffff" />
             <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
           </Pressable>
           <Pressable
@@ -1204,10 +1455,7 @@ export function RemoteControlMaster() {
         </View>
       </Animated.View>
 
-      <SettingsBottomSheet
-        isOpen={showSettings}
-        onOpenChange={setShowSettings}
-      >
+      <SettingsBottomSheet isOpen={showSettings} onOpenChange={setShowSettings}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           style={styles.settingsScroll}
@@ -1246,7 +1494,11 @@ export function RemoteControlMaster() {
             <View style={styles.settingsCardHeader}>
               <View style={styles.settingsCardTitleRow}>
                 <View style={styles.settingsCardIcon}>
-                  <Ionicons name="speedometer-outline" size={18} color="#ffffff" />
+                  <Ionicons
+                    name="speedometer-outline"
+                    size={18}
+                    color="#ffffff"
+                  />
                 </View>
                 <Text style={styles.sensitivityLabel}>Sensitivity</Text>
               </View>
@@ -1275,9 +1527,7 @@ export function RemoteControlMaster() {
                 <View style={styles.settingsCardIcon}>
                   <Ionicons name="swap-vertical" size={18} color="#ffffff" />
                 </View>
-                <Text style={styles.sensitivityLabel}>
-                  Unnatural scrolling
-                </Text>
+                <Text style={styles.sensitivityLabel}>Unnatural scrolling</Text>
               </View>
               <View style={styles.settingSwitchWrap}>
                 <Switch
@@ -1355,7 +1605,11 @@ export function RemoteControlMaster() {
             <View style={styles.settingHeaderRow}>
               <View style={styles.settingsCardTitleRow}>
                 <View style={styles.settingsCardIcon}>
-                  <Ionicons name="volume-high-outline" size={18} color="#ffffff" />
+                  <Ionicons
+                    name="volume-high-outline"
+                    size={18}
+                    color="#ffffff"
+                  />
                 </View>
                 <Text style={styles.sensitivityLabel}>Volume</Text>
               </View>
@@ -1477,7 +1731,11 @@ export function RemoteControlMaster() {
               ]}
               onPress={withHaptic(confirmRestartHost)}
             >
-              <Ionicons name="reload-circle-outline" size={22} color="#ffffff" />
+              <Ionicons
+                name="reload-circle-outline"
+                size={22}
+                color="#ffffff"
+              />
               <Text style={styles.restartHostText}>
                 {restartCountdown === null
                   ? "Force Restart Host"
@@ -1496,19 +1754,27 @@ export function RemoteControlMaster() {
       <View style={styles.remoteControls}>
         {showConnectionPrompt ? (
           <View style={styles.connectionPrompt}>
+            <FloatingIconOverlay active={showConnectionPrompt} />
             <Pressable
               accessibilityLabel="Scan to connect to host"
               accessibilityRole="button"
               onPress={withHaptic(openScanner)}
-              style={styles.connectionPromptButton}
+              style={({ pressed }) => [
+                styles.connectionPromptButton,
+                pressed ? styles.mouseButtonPressed : null,
+              ]}
             >
               <ScanButtonGradient
-                colors={["#f4b760", "#e2943b", "#c8762f"]}
-                end={{ x: 0.85, y: 1 }}
-                start={{ x: 0.15, y: 0 }}
+                colors={[
+                  "rgba(44, 33, 23, 0.72)",
+                  "rgba(24, 20, 16, 0.72)",
+                  "rgba(14, 13, 11, 0.72)",
+                ]}
+                start={{ x: 0.1, y: 0 }}
+                end={{ x: 0.9, y: 1 }}
                 style={styles.connectionPromptButtonGradient}
               >
-                <Ionicons name="scan-outline" size={22} color="#1b1008" />
+                <Ionicons name="scan-outline" size={23} color="#f0a942" />
                 <Text style={styles.connectionPromptButtonText}>
                   Scan to Connect
                 </Text>
@@ -1517,288 +1783,317 @@ export function RemoteControlMaster() {
           </View>
         ) : (
           <>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.shortcutsScroller}
-          contentContainerStyle={styles.shortcuts}
-        >
-          <ShortcutButton
-            SvgIcon={NetflixIcon}
-            label="Netflix"
-            onPress={() => sendShortcut("netflix")}
-          />
-          <ShortcutButton
-            icon="logo-youtube"
-            iconColor="#ff0033"
-            label="YouTube"
-            onPress={() => sendShortcut("youtube")}
-          />
-          <ShortcutButton
-            SvgIcon={DisneyPlusIcon}
-            label="Disney+"
-            onPress={() => sendShortcut("disney")}
-          />
-          <ShortcutButton
-            SvgIcon={PrimeIcon}
-            label="Amazon Prime"
-            onPress={() => sendShortcut("amazon")}
-          />
-          <ShortcutButton
-            SvgIcon={SpotifyIcon}
-            label="Spotify"
-            onPress={() => sendShortcut("spotify")}
-          />
-          {customShortcuts.map((shortcut) => (
-            <ShortcutButton
-              key={shortcut.id}
-              imageUri={shortcut.iconUri}
-              initial={shortcut.name}
-              label={shortcut.name}
-              onPress={() => sendCustomShortcut(shortcut)}
-              onLongPress={() => openEditShortcutModal(shortcut)}
-            />
-          ))}
-          <ShortcutButton
-            icon="add"
-            iconColor="#ff941f"
-            label="Add Shortcut"
-            onPress={openShortcutModal}
-          />
-        </ScrollView>
-
-        <View style={styles.controlShortcutRow}>
-          <View style={styles.shortcutGroup}>
-            {isWindowsHost ? (
-              <>
-                <Pressable
-                  style={styles.desktopSwitchButton}
-                  accessibilityLabel="Escape key"
-                  onPress={withHaptic(() => socket.sendKey("escape"))}
-                >
-                  <Minimize2Icon size={22} color="#b8afa5" />
-                </Pressable>
-                <View style={styles.shortcutDivider} />
-                <Pressable
-                  style={styles.desktopSwitchButton}
-                  accessibilityLabel="Close current browser tab"
-                  onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
-                >
-                  <SquareXIcon size={22} color="#b8afa5" />
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Pressable
-                  disabled={!primarySwitchAvailable}
-                  style={[
-                    styles.desktopSwitchButton,
-                    !primarySwitchAvailable ? styles.disabledControl : null,
-                  ]}
-                  accessibilityLabel="Previous desktop"
-                  onPress={withHaptic(() => switchPrimaryHorizontal("left"))}
-                >
-                  <PanelRightOpenIcon size={22} color="#b8afa5" />
-                </Pressable>
-                <View style={styles.shortcutDivider} />
-                <Pressable
-                  disabled={!primarySwitchAvailable}
-                  style={[
-                    styles.desktopSwitchButton,
-                    !primarySwitchAvailable ? styles.disabledControl : null,
-                  ]}
-                  accessibilityLabel="Next desktop"
-                  onPress={withHaptic(() => switchPrimaryHorizontal("right"))}
-                >
-                  <PanelRightCloseIcon size={22} color="#b8afa5" />
-                </Pressable>
-              </>
-            )}
-          </View>
-
-          <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Previous browser page"
-              onPress={withHaptic(() => socket.sendTextCommand("browserBack"))}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.shortcutsScroller}
+              contentContainerStyle={styles.shortcuts}
             >
-              <Undo2 size={22} color="#f0c17c" />
-            </Pressable>
+              <ShortcutButton
+                SvgIcon={NetflixIcon}
+                label="Netflix"
+                onPress={() => sendShortcut("netflix")}
+              />
+              <ShortcutButton
+                icon="logo-youtube"
+                iconColor="#ff0033"
+                label="YouTube"
+                onPress={() => sendShortcut("youtube")}
+              />
+              <ShortcutButton
+                SvgIcon={DisneyPlusIcon}
+                label="Disney+"
+                onPress={() => sendShortcut("disney")}
+              />
+              <ShortcutButton
+                SvgIcon={PrimeIcon}
+                label="Amazon Prime"
+                onPress={() => sendShortcut("amazon")}
+              />
+              <ShortcutButton
+                SvgIcon={SpotifyIcon}
+                label="Spotify"
+                onPress={() => sendShortcut("spotify")}
+              />
+              {customShortcuts.map((shortcut) => (
+                <ShortcutButton
+                  key={shortcut.id}
+                  imageUri={shortcut.iconUri}
+                  initial={shortcut.name}
+                  label={shortcut.name}
+                  onPress={() => sendCustomShortcut(shortcut)}
+                  onLongPress={() => openEditShortcutModal(shortcut)}
+                />
+              ))}
+              <ShortcutButton
+                icon="add"
+                iconColor="#ff941f"
+                label="Add Shortcut"
+                onPress={openShortcutModal}
+              />
+            </ScrollView>
+
+            <View style={styles.controlShortcutRow}>
+              <View style={styles.shortcutGroup}>
+                {isWindowsHost ? (
+                  <>
+                    <Pressable
+                      style={styles.desktopSwitchButton}
+                      accessibilityLabel="Escape key"
+                      onPress={withHaptic(() => socket.sendKey("escape"))}
+                    >
+                      <Minimize2Icon size={22} color="#b8afa5" />
+                    </Pressable>
+                    <View style={styles.shortcutDivider} />
+                    <Pressable
+                      style={styles.desktopSwitchButton}
+                      accessibilityLabel="Close current browser tab"
+                      onPress={withHaptic(() =>
+                        socket.sendTextCommand("closeTab"),
+                      )}
+                    >
+                      <SquareXIcon size={22} color="#b8afa5" />
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Pressable
+                      disabled={!primarySwitchAvailable}
+                      style={[
+                        styles.desktopSwitchButton,
+                        !primarySwitchAvailable ? styles.disabledControl : null,
+                      ]}
+                      accessibilityLabel="Previous desktop"
+                      onPress={withHaptic(() =>
+                        switchPrimaryHorizontal("left"),
+                      )}
+                    >
+                      <PanelRightOpenIcon size={22} color="#b8afa5" />
+                    </Pressable>
+                    <View style={styles.shortcutDivider} />
+                    <Pressable
+                      disabled={!primarySwitchAvailable}
+                      style={[
+                        styles.desktopSwitchButton,
+                        !primarySwitchAvailable ? styles.disabledControl : null,
+                      ]}
+                      accessibilityLabel="Next desktop"
+                      onPress={withHaptic(() =>
+                        switchPrimaryHorizontal("right"),
+                      )}
+                    >
+                      <PanelRightCloseIcon size={22} color="#b8afa5" />
+                    </Pressable>
+                  </>
+                )}
+              </View>
+
+              <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Previous browser page"
+                  onPress={withHaptic(() =>
+                    socket.sendTextCommand("browserBack"),
+                  )}
+                >
+                  <Undo2 size={22} color="#f0c17c" />
+                </Pressable>
+                <View
+                  style={[
+                    styles.shortcutDivider,
+                    styles.shortcutDividerPrimary,
+                  ]}
+                />
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Next browser page"
+                  onPress={withHaptic(() =>
+                    socket.sendTextCommand("browserForward"),
+                  )}
+                >
+                  <Redo2 size={22} color="#f0c17c" />
+                </Pressable>
+              </View>
+
+              <View style={styles.shortcutGroup}>
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Left arrow key"
+                  onPress={withHaptic(() => socket.sendKey("leftArrow"))}
+                >
+                  <ClockArrowLeftIcon size={22} color="#9e9890" />
+                </Pressable>
+                <View style={styles.shortcutDivider} />
+                <Pressable
+                  style={styles.desktopSwitchButton}
+                  accessibilityLabel="Right arrow key"
+                  onPress={withHaptic(() => socket.sendKey("rightArrow"))}
+                >
+                  <ClockArrowRightIcon size={22} color="#9e9890" />
+                </Pressable>
+              </View>
+            </View>
+
             <View
-              style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-            />
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Next browser page"
-              onPress={withHaptic(() =>
-                socket.sendTextCommand("browserForward"),
-              )}
-            >
-              <Redo2 size={22} color="#f0c17c" />
-            </Pressable>
-          </View>
-
-          <View style={styles.shortcutGroup}>
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Left arrow key"
-              onPress={withHaptic(() => socket.sendKey("leftArrow"))}
-            >
-              <ClockArrowLeftIcon size={22} color="#9e9890" />
-            </Pressable>
-            <View style={styles.shortcutDivider} />
-            <Pressable
-              style={styles.desktopSwitchButton}
-              accessibilityLabel="Right arrow key"
-              onPress={withHaptic(() => socket.sendKey("rightArrow"))}
-            >
-              <ClockArrowRightIcon size={22} color="#9e9890" />
-            </Pressable>
-          </View>
-        </View>
-
-        <View
-          style={styles.trackpadWrap}
-          onStartShouldSetResponder={() => keyboardVisible}
-          onResponderRelease={() => {
-            if (keyboardVisible) {
-              dismissKeyboardInput();
-            }
-          }}
-        >
-          <Trackpad
-            latencyMs={latencyMs}
-            onMove={(dx, dy) =>
-              socket.sendMove(dx * sensitivity, dy * sensitivity)
-            }
-            onClick={() => socket.sendLeftClick()}
-            onDoubleClick={() => socket.sendDoubleClick()}
-            onRightClick={() => socket.sendRightClick()}
-            onScroll={(dx, dy) => {
-              const direction = unnaturalScrolling ? -1 : 1;
-              socket.sendScroll(dx * direction, dy * direction);
-            }}
-            onZoom={(direction) => socket.sendZoom(direction)}
-            onSwipeSpaces={(direction) => {
-              if (primarySwitchAvailable) {
-                switchPrimaryHorizontal(direction);
-              }
-            }}
-            status={status}
-          />
-        </View>
-
-        {!isWindowsHost ? (
-          <View style={styles.remoteActionRow}>
-            <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Escape key"
-                onPress={withHaptic(() => socket.sendKey("escape"))}
-              >
-                <Minimize2Icon size={22} color="#f0c17c" />
-              </Pressable>
-              <View
-                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-              />
-              <Pressable
-                disabled={!overviewAvailable}
-                style={[
-                  styles.desktopSwitchButton,
-                  !overviewAvailable ? styles.disabledControl : null,
-                ]}
-                accessibilityLabel={overviewLabel}
-                onPress={withHaptic(remoteActions.showOverview)}
-              >
-                <LayoutPanelTopIcon size={22} color="#f0c17c" />
-              </Pressable>
-              <View
-                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
-              />
-              <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel={
-                  playbackPaused ? "Play media" : "Pause media"
+              style={styles.trackpadWrap}
+              onStartShouldSetResponder={() => keyboardVisible}
+              onResponderRelease={() => {
+                if (keyboardVisible) {
+                  dismissKeyboardInput();
                 }
-                onPress={withHaptic(toggleRemotePlayback)}
-              >
-                <PlaybackIcon size={22} color="#f0c17c" />
-              </Pressable>
-              <View
-                style={[styles.shortcutDivider, styles.shortcutDividerPrimary]}
+              }}
+            >
+              <Trackpad
+                latencyMs={latencyMs}
+                onMove={(dx, dy) =>
+                  socket.sendMove(dx * sensitivity, dy * sensitivity)
+                }
+                onClick={() => socket.sendLeftClick()}
+                onDoubleClick={() => socket.sendDoubleClick()}
+                onRightClick={() => socket.sendRightClick()}
+                onScroll={(dx, dy) => {
+                  const direction = unnaturalScrolling ? -1 : 1;
+                  socket.sendScroll(dx * direction, dy * direction);
+                }}
+                onZoom={(direction) => socket.sendZoom(direction)}
+                onSwipeSpaces={(direction) => {
+                  if (primarySwitchAvailable) {
+                    switchPrimaryHorizontal(direction);
+                  }
+                }}
+                status={status}
               />
+            </View>
+
+            {!isWindowsHost ? (
+              <View style={styles.remoteActionRow}>
+                <View
+                  style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}
+                >
+                  <Pressable
+                    style={styles.desktopSwitchButton}
+                    accessibilityLabel="Escape key"
+                    onPress={withHaptic(() => socket.sendKey("escape"))}
+                  >
+                    <Minimize2Icon size={22} color="#f0c17c" />
+                  </Pressable>
+                  <View
+                    style={[
+                      styles.shortcutDivider,
+                      styles.shortcutDividerPrimary,
+                    ]}
+                  />
+                  <Pressable
+                    disabled={!overviewAvailable}
+                    style={[
+                      styles.desktopSwitchButton,
+                      !overviewAvailable ? styles.disabledControl : null,
+                    ]}
+                    accessibilityLabel={overviewLabel}
+                    onPress={withHaptic(remoteActions.showOverview)}
+                  >
+                    <LayoutPanelTopIcon size={22} color="#f0c17c" />
+                  </Pressable>
+                  <View
+                    style={[
+                      styles.shortcutDivider,
+                      styles.shortcutDividerPrimary,
+                    ]}
+                  />
+                  <Pressable
+                    style={styles.desktopSwitchButton}
+                    accessibilityLabel={
+                      playbackPaused ? "Play media" : "Pause media"
+                    }
+                    onPress={withHaptic(toggleRemotePlayback)}
+                  >
+                    <PlaybackIcon size={22} color="#f0c17c" />
+                  </Pressable>
+                  <View
+                    style={[
+                      styles.shortcutDivider,
+                      styles.shortcutDividerPrimary,
+                    ]}
+                  />
+                  <Pressable
+                    style={styles.desktopSwitchButton}
+                    accessibilityLabel="Close current browser tab"
+                    onPress={withHaptic(() =>
+                      socket.sendTextCommand("closeTab"),
+                    )}
+                  >
+                    <SquareXIcon size={22} color="#f0c17c" />
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.mouseButtonRow}>
               <Pressable
-                style={styles.desktopSwitchButton}
-                accessibilityLabel="Close current browser tab"
-                onPress={withHaptic(() => socket.sendTextCommand("closeTab"))}
+                accessibilityLabel="Refresh"
+                style={({ pressed }) => [
+                  styles.mouseButton,
+                  styles.mouseButtonSide,
+                  pressed ? styles.mouseButtonPressed : null,
+                ]}
+                onPress={withHaptic(() => socket.sendTextCommand("reload"))}
               >
-                <SquareXIcon size={22} color="#f0c17c" />
+                <ScanButtonGradient
+                  colors={["#2b211a", "#1b1714", "#11100e"]}
+                  start={{ x: 0.18, y: 0 }}
+                  end={{ x: 0.82, y: 1 }}
+                  style={styles.sideMouseButtonGradient}
+                >
+                  <RefreshCwIcon size={23} color="#ffffff" />
+                </ScanButtonGradient>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.mouseButton,
+                  styles.keyboardMouseButton,
+                  pressed ? styles.mouseButtonPressed : null,
+                ]}
+                onPress={withHaptic(
+                  keyboardVisible ? dismissKeyboardInput : focusKeyboard,
+                )}
+              >
+                <ScanButtonGradient
+                  colors={[
+                    "rgba(44, 33, 23, 0.72)",
+                    "rgba(24, 20, 16, 0.72)",
+                    "rgba(14, 13, 11, 0.72)",
+                  ]}
+                  start={{ x: 0.1, y: 0 }}
+                  end={{ x: 0.9, y: 1 }}
+                  style={styles.keyboardMouseButtonGradient}
+                >
+                  <KeyboardIcon size={23} color="#f0a942" />
+                  <Text
+                    style={[styles.mouseButtonText, styles.accentButtonText]}
+                  >
+                    Keyboard
+                  </Text>
+                </ScanButtonGradient>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Right Click"
+                style={({ pressed }) => [
+                  styles.mouseButton,
+                  styles.mouseButtonSide,
+                  pressed ? styles.mouseButtonPressed : null,
+                ]}
+                onPress={withHaptic(() => socket.sendRightClick())}
+              >
+                <ScanButtonGradient
+                  colors={["#2b211a", "#1b1714", "#11100e"]}
+                  start={{ x: 0.18, y: 0 }}
+                  end={{ x: 0.82, y: 1 }}
+                  style={styles.sideMouseButtonGradient}
+                >
+                  <MouseRightIcon size={23} color="#ffffff" />
+                </ScanButtonGradient>
               </Pressable>
             </View>
-          </View>
-        ) : null}
-
-        <View style={styles.mouseButtonRow}>
-          <Pressable
-            accessibilityLabel="Refresh"
-            style={({ pressed }) => [
-              styles.mouseButton,
-              styles.mouseButtonSide,
-              pressed ? styles.mouseButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => socket.sendTextCommand("reload"))}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.sideMouseButtonGradient}
-            >
-              <RefreshCwIcon size={23} color="#ffffff" />
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.mouseButton,
-              styles.keyboardMouseButton,
-              pressed ? styles.mouseButtonPressed : null,
-            ]}
-            onPress={withHaptic(
-              keyboardVisible ? dismissKeyboardInput : focusKeyboard,
-            )}
-          >
-            <ScanButtonGradient
-              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
-              start={{ x: 0.1, y: 0 }}
-              end={{ x: 0.9, y: 1 }}
-              style={styles.keyboardMouseButtonGradient}
-            >
-              <KeyboardIcon size={23} color="#f0a942" />
-              <Text style={[styles.mouseButtonText, styles.accentButtonText]}>
-                Keyboard
-              </Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Right Click"
-            style={({ pressed }) => [
-              styles.mouseButton,
-              styles.mouseButtonSide,
-              pressed ? styles.mouseButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => socket.sendRightClick())}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.sideMouseButtonGradient}
-            >
-              <MouseRightIcon size={23} color="#ffffff" />
-            </ScanButtonGradient>
-          </Pressable>
-        </View>
-
           </>
         )}
       </View>
@@ -1853,10 +2148,7 @@ export function RemoteControlMaster() {
                   style={[styles.scannerCorner, styles.scannerCornerTopRight]}
                 />
                 <View
-                  style={[
-                    styles.scannerCorner,
-                    styles.scannerCornerBottomLeft,
-                  ]}
+                  style={[styles.scannerCorner, styles.scannerCornerBottomLeft]}
                 />
                 <View
                   style={[
@@ -1953,6 +2245,7 @@ export function RemoteControlMaster() {
         onSave={saveCustomShortcut}
         website={shortcutWebsite}
       />
+      <AppSplashOverlay visible={!appSplashReleased} />
     </SafeAreaView>
   );
 }
@@ -2039,6 +2332,31 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     maxWidth: 190,
   },
+  deviceSwitchCancelSlot: {
+    marginTop: 4,
+    overflow: "hidden",
+  },
+  deviceSwitchCancelButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    height: 36,
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  deviceSwitchCancelButtonPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    transform: [{ scale: 0.98 }],
+  },
+  deviceSwitchCancelText: {
+    color: "#f7f5f1",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   remoteControls: {
     flex: 1,
     gap: 12,
@@ -2100,31 +2418,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
+    overflow: "hidden",
     paddingHorizontal: 18,
+    position: "relative",
   },
   connectionPromptButton: {
-    backgroundColor: "#c8762f",
-    borderColor: "#ffbf66",
+    backgroundColor: "rgba(31, 25, 18, 0.82)",
+    borderColor: "rgba(240, 169, 66, 0.62)",
     borderRadius: 18,
     borderWidth: 1,
     elevation: 5,
     overflow: "hidden",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    zIndex: 1,
   },
   connectionPromptButtonGradient: {
     alignItems: "center",
+    alignSelf: "stretch",
     borderRadius: 18,
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
+    justifyContent: "center",
     minHeight: 58,
     overflow: "hidden",
     paddingHorizontal: 22,
   },
   connectionPromptButtonText: {
-    color: "#1b1008",
+    color: "#f0a942",
     fontSize: 15,
     fontWeight: "900",
   },
@@ -2179,21 +2502,29 @@ const styles = StyleSheet.create({
   },
   homeDeviceDropdown: {
     backgroundColor: "rgba(18, 17, 15, 0.98)",
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(240, 169, 66, 0.2)",
     borderRadius: 14,
     borderWidth: 1,
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.38,
-    shadowRadius: 22,
+    elevation: 18,
+    shadowColor: "#4d250496",
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.72,
+    shadowRadius: 34,
     left: 0,
     position: "absolute",
     top: 60,
     zIndex: 30,
   },
   homeDeviceDropdownList: {
+    backgroundColor: "rgba(18, 17, 15, 0.98)",
+    borderRadius: 14,
+    elevation: 12,
     maxHeight: 220,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.48,
+    shadowRadius: 24,
     width: "100%",
   },
   homeDeviceOption: {

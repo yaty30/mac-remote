@@ -58,7 +58,9 @@ export class WindowsHostAdapter implements HostAdapter {
 
       return Number.isFinite(value) ? clampPercent(value) : undefined;
     } catch (error) {
-      console.warn("[windows-host] failed to read display brightness", error);
+      if (!isUnsupportedWmiBrightnessError(error)) {
+        console.warn("[windows-host] failed to read display brightness", error);
+      }
       return undefined;
     }
   }
@@ -76,12 +78,20 @@ export class WindowsHostAdapter implements HostAdapter {
   async setBrightness(value: number): Promise<void> {
     const target = clampPercent(value);
 
-    await runPowerShell(`
-      $methods = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop
-      foreach ($method in $methods) {
-        Invoke-CimMethod -InputObject $method -MethodName WmiSetBrightness -Arguments @{ Timeout = 1; Brightness = ${target} } | Out-Null
+    try {
+      await runPowerShell(`
+        $methods = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop
+        foreach ($method in $methods) {
+          Invoke-CimMethod -InputObject $method -MethodName WmiSetBrightness -Arguments @{ Timeout = 1; Brightness = ${target} } | Out-Null
+        }
+      `);
+    } catch (error) {
+      if (isUnsupportedWmiBrightnessError(error)) {
+        return;
       }
-    `);
+
+      throw error;
+    }
   }
 
   async getOutputVolume(): Promise<number | undefined> {
@@ -196,6 +206,17 @@ function runPowerShell(script: string): Promise<string> {
     "-Command",
     script,
   ]);
+}
+
+function isUnsupportedWmiBrightnessError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+
+  return (
+    message.includes("WmiMonitorBrightness") &&
+    (message.includes("HRESULT 0x8004100c") ||
+      message.includes("NotImplemented"))
+  );
 }
 
 function escapePowerShell(value: string): string {

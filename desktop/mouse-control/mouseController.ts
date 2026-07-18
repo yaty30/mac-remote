@@ -1,3 +1,7 @@
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { Button, Point, mouse, screen } from "@nut-tree-fork/nut-js";
 import type { HostPlatform } from "../types/protocol";
 
@@ -5,6 +9,13 @@ const EDGE_PRESSURE_ZONE = 6;
 const EDGE_RELEASE_DISTANCE = 24;
 const WINDOWS_POINTER_FRAME_MS = 8;
 const WINDOWS_POINTER_IDLE_RESET_MS = 250;
+const WINDOWS_POINTER_ACCELERATION_START = 3;
+const WINDOWS_POINTER_ACCELERATION_MAX = 2.25;
+const WINDOWS_POINTER_ACCELERATION_DISTANCE = 28;
+const WINDOWS_POINTER_FLUSH_TIMEOUT_MS = 80;
+const WINDOWS_POINTER_MIN_SMOOTH_MS = 4;
+const WINDOWS_POINTER_MAX_SMOOTH_MS = 14;
+const WINDOWS_POINTER_DEFAULT_SMOOTH_MS = 8;
 const SCREEN_SIZE_CACHE_MS = 1000;
 const SCROLL_AXIS_DEADZONE_RATIO = 0.35;
 
@@ -19,6 +30,7 @@ export class MouseController {
   private windowsPointerFlush: Promise<void> = Promise.resolve();
   private windowsVirtualPosition: Point | null = null;
   private windowsLastPointerFlushAt = 0;
+  private readonly windowsRelativePointer: WindowsRelativePointerInput | null;
   private screenSizeCache:
     | { width: number; height: number; readAt: number }
     | null = null;
@@ -31,11 +43,23 @@ export class MouseController {
   ) {
     mouse.config.autoDelayMs = 0;
     mouse.config.mouseSpeed = 32000;
+    this.windowsRelativePointer =
+      platform === "win32" ? new WindowsRelativePointerInput() : null;
   }
 
   async moveRelative(dx: number, dy: number): Promise<void> {
     if (this.platform === "win32") {
-      this.queueWindowsPointerMove(dx * this.sensitivity, dy * this.sensitivity);
+      const scaled = this.scaleWindowsPointerDelta(
+        dx * this.sensitivity,
+        dy * this.sensitivity,
+      );
+
+      if (this.windowsRelativePointer?.move(scaled.dx, scaled.dy)) {
+        this.windowsVirtualPosition = null;
+        return;
+      }
+
+      this.queueWindowsPointerMove(scaled.dx, scaled.dy);
       return;
     }
 
@@ -138,6 +162,11 @@ export class MouseController {
       return;
     }
 
+    await this.windowsRelativePointer?.flush();
+    await this.flushWindowsAbsolutePointerMove();
+  }
+
+  private async flushWindowsAbsolutePointerMove(): Promise<void> {
     if (this.windowsPointerTimer !== null) {
       clearTimeout(this.windowsPointerTimer);
       this.windowsPointerTimer = null;
@@ -178,6 +207,33 @@ export class MouseController {
     this.windowsPointerFlush = nextFlush.catch(() => undefined);
 
     await nextFlush;
+  }
+
+  private scaleWindowsPointerDelta(
+    dx: number,
+    dy: number,
+  ): { dx: number; dy: number } {
+    const distance = Math.hypot(dx, dy);
+
+    if (distance <= WINDOWS_POINTER_ACCELERATION_START) {
+      return { dx, dy };
+    }
+
+    const progress = clamp(
+      (distance - WINDOWS_POINTER_ACCELERATION_START) /
+        WINDOWS_POINTER_ACCELERATION_DISTANCE,
+      0,
+      1,
+    );
+    const boost =
+      1 +
+      (WINDOWS_POINTER_ACCELERATION_MAX - 1) *
+        (1 - Math.pow(1 - progress, 2));
+
+    return {
+      dx: dx * boost,
+      dy: dy * boost,
+    };
   }
 
   private async getScreenSize(): Promise<{ width: number; height: number }> {
@@ -306,6 +362,325 @@ function buildMovementPath(
   return path;
 }
 
+class WindowsRelativePointerInput {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private disabled = false;
+  private remainderX = 0;
+  private remainderY = 0;
+  private flushSequence = 0;
+  private stdoutBuffer = "";
+  private lastMoveAt = 0;
+  private readonly flushWaiters = new Map<string, () => void>();
+
+  move(dx: number, dy: number): boolean {
+    const command = this.consumeMove(dx, dy, this.resolveSmoothDurationMs());
+
+    if (!command) {
+      return true;
+    }
+
+    return this.write(command);
+  }
+
+  async flush(): Promise<void> {
+    const remainderCommand = this.consumeMove(0, 0, 0, true);
+
+    if (remainderCommand) {
+      this.write(remainderCommand);
+    }
+
+    if (!this.child || this.disabled) {
+      return;
+    }
+
+    const id = String(++this.flushSequence);
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.flushWaiters.delete(id);
+        resolve();
+      }, WINDOWS_POINTER_FLUSH_TIMEOUT_MS);
+
+      this.flushWaiters.set(id, () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      if (!this.write(`f ${id}`)) {
+        clearTimeout(timeout);
+        this.flushWaiters.delete(id);
+        resolve();
+      }
+    });
+  }
+
+  private consumeMove(
+    dx: number,
+    dy: number,
+    durationMs: number,
+    force = false,
+  ): string | null {
+    const nextX = this.remainderX + dx;
+    const nextY = this.remainderY + dy;
+    const moveX = force ? Math.round(nextX) : Math.trunc(nextX);
+    const moveY = force ? Math.round(nextY) : Math.trunc(nextY);
+
+    this.remainderX = nextX - moveX;
+    this.remainderY = nextY - moveY;
+
+    if (moveX === 0 && moveY === 0) {
+      return null;
+    }
+
+    return `m ${moveX} ${moveY} ${durationMs}`;
+  }
+
+  private resolveSmoothDurationMs(): number {
+    const now = Date.now();
+    const elapsed = this.lastMoveAt > 0 ? now - this.lastMoveAt : 0;
+
+    this.lastMoveAt = now;
+
+    if (elapsed <= 0) {
+      return WINDOWS_POINTER_DEFAULT_SMOOTH_MS;
+    }
+
+    return clamp(
+      Math.round(elapsed),
+      WINDOWS_POINTER_MIN_SMOOTH_MS,
+      WINDOWS_POINTER_MAX_SMOOTH_MS,
+    );
+  }
+
+  private write(command: string): boolean {
+    const child = this.ensureChild();
+
+    if (!child) {
+      return false;
+    }
+
+    try {
+      child.stdin.write(`${command}\n`);
+      return true;
+    } catch {
+      this.disable();
+      return false;
+    }
+  }
+
+  private ensureChild(): ChildProcessWithoutNullStreams | null {
+    if (this.disabled) {
+      return null;
+    }
+
+    if (this.child) {
+      return this.child;
+    }
+
+    try {
+      const child = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          WINDOWS_RELATIVE_POINTER_SCRIPT,
+        ],
+        {
+          windowsHide: true,
+        },
+      );
+
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => this.handleStdout(chunk));
+      child.once("error", () => this.disable());
+      child.once("exit", () => this.disable());
+      this.child = child;
+      return child;
+    } catch {
+      this.disable();
+      return null;
+    }
+  }
+
+  private handleStdout(chunk: string): void {
+    this.stdoutBuffer += chunk;
+
+    while (true) {
+      const lineEnd = this.stdoutBuffer.indexOf("\n");
+
+      if (lineEnd < 0) {
+        return;
+      }
+
+      const line = this.stdoutBuffer.slice(0, lineEnd).trim();
+      this.stdoutBuffer = this.stdoutBuffer.slice(lineEnd + 1);
+
+      if (!line.startsWith("ok ")) {
+        continue;
+      }
+
+      const id = line.slice(3);
+      const waiter = this.flushWaiters.get(id);
+
+      if (waiter) {
+        this.flushWaiters.delete(id);
+        waiter();
+      }
+    }
+  }
+
+  private disable(): void {
+    const child = this.child;
+
+    this.disabled = true;
+    this.child = null;
+
+    if (child && !child.killed) {
+      child.kill();
+    }
+
+    for (const waiter of this.flushWaiters.values()) {
+      waiter();
+    }
+
+    this.flushWaiters.clear();
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
+
+const WINDOWS_RELATIVE_POINTER_SCRIPT = `
+$ErrorActionPreference = "Stop"
+Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+public static class RemoteControlMouseInput {
+  private const int MaxSmoothSteps = 96;
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct INPUT {
+    public UInt32 type;
+    public MOUSEINPUT mi;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct MOUSEINPUT {
+    public Int32 dx;
+    public Int32 dy;
+    public UInt32 mouseData;
+    public UInt32 dwFlags;
+    public UInt32 time;
+    public IntPtr dwExtraInfo;
+  }
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern UInt32 SendInput(UInt32 nInputs, INPUT[] pInputs, Int32 cbSize);
+
+  public static void Move(Int32 dx, Int32 dy, Int32 durationMs) {
+    if (dx == 0 && dy == 0) {
+      return;
+    }
+
+    int steps = Math.Max(Math.Abs(dx), Math.Abs(dy));
+
+    if (durationMs <= 0 || steps <= 1) {
+      MoveOnce(dx, dy);
+      return;
+    }
+
+    steps = Math.Min(steps, MaxSmoothSteps);
+
+    long durationTicks = Stopwatch.Frequency * durationMs / 1000;
+    Stopwatch stopwatch = Stopwatch.StartNew();
+    int sentX = 0;
+    int sentY = 0;
+
+    for (int step = 1; step <= steps; step++) {
+      int targetX = (int)Math.Round((double)dx * step / steps);
+      int targetY = (int)Math.Round((double)dy * step / steps);
+      int nextDx = targetX - sentX;
+      int nextDy = targetY - sentY;
+
+      if (nextDx != 0 || nextDy != 0) {
+        MoveOnce(nextDx, nextDy);
+        sentX = targetX;
+        sentY = targetY;
+      }
+
+      if (step < steps) {
+        WaitUntil(stopwatch, durationTicks * step / steps);
+      }
+    }
+  }
+
+  private static void MoveOnce(Int32 dx, Int32 dy) {
+    if (dx == 0 && dy == 0) {
+      return;
+    }
+
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 0;
+    inputs[0].mi.dx = dx;
+    inputs[0].mi.dy = dy;
+    inputs[0].mi.mouseData = 0;
+    inputs[0].mi.dwFlags = 0x0001;
+    inputs[0].mi.time = 0;
+    inputs[0].mi.dwExtraInfo = IntPtr.Zero;
+
+    UInt32 sent = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    if (sent != 1) {
+      throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+  }
+
+  private static void WaitUntil(Stopwatch stopwatch, long targetTicks) {
+    while (stopwatch.ElapsedTicks < targetTicks) {
+      long remainingTicks = targetTicks - stopwatch.ElapsedTicks;
+      double remainingMs = remainingTicks * 1000.0 / Stopwatch.Frequency;
+
+      if (remainingMs > 1.5) {
+        Thread.Sleep(1);
+      } else {
+        Thread.SpinWait(80);
+      }
+    }
+  }
+}
+"@
+
+while (($line = [Console]::In.ReadLine()) -ne $null) {
+  if ($line.Length -eq 0) {
+    continue
+  }
+
+  $parts = $line.Split(" ")
+
+  try {
+    if ($parts[0] -eq "m" -and $parts.Length -ge 4) {
+      [RemoteControlMouseInput]::Move([int]$parts[1], [int]$parts[2], [int]$parts[3])
+      continue
+    }
+
+    if ($parts[0] -eq "f" -and $parts.Length -ge 2) {
+      [Console]::Out.WriteLine("ok " + $parts[1])
+      [Console]::Out.Flush()
+      continue
+    }
+
+    if ($parts[0] -eq "q") {
+      break
+    }
+  } catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+  }
+}
+`;
