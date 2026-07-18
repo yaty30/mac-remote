@@ -17,6 +17,7 @@ interface ShortcutButtonProps {
   label: string;
   onPress: () => void;
   onLongPress?: () => void;
+  size?: number;
 }
 
 const ShortcutGradient =
@@ -31,12 +32,21 @@ export function ShortcutButton({
   label,
   onPress,
   onLongPress,
+  size = 70,
 }: ShortcutButtonProps) {
+  const iconSize = Math.max(24, Math.round(size * 0.51));
+  const initialSize = Math.max(18, Math.round(size * 0.34));
+
   return (
     <Pressable
       accessibilityLabel={label}
       style={({ pressed }) => [
         styles.button,
+        {
+          borderRadius: Math.max(12, Math.round(size * 0.26)),
+          height: size,
+          width: size,
+        },
         pressed ? styles.buttonPressed : null,
       ]}
       onPress={withHaptic(onPress)}
@@ -49,15 +59,29 @@ export function ShortcutButton({
         style={styles.buttonGradient}
       >
         {SvgIcon ? (
-          <SvgIcon width={36} height={36} />
+          <SvgIcon width={iconSize} height={iconSize} />
         ) : imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.imageIcon} />
+          <Image
+            source={{ uri: imageUri }}
+            style={[
+              styles.imageIcon,
+              {
+                borderRadius: Math.max(6, Math.round(size * 0.11)),
+                height: iconSize,
+                width: iconSize,
+              },
+            ]}
+          />
         ) : initial ? (
-          <Text style={styles.initialIcon}>
+          <Text style={[styles.initialIcon, { fontSize: initialSize }]}>
             {initial.slice(0, 1).toUpperCase()}
           </Text>
         ) : (
-          <Ionicons name={icon ?? "apps-outline"} size={32} color={iconColor} />
+          <Ionicons
+            name={icon ?? "apps-outline"}
+            size={Math.max(22, Math.round(size * 0.46))}
+            color={iconColor}
+          />
         )}
       </ShortcutGradient>
     </Pressable>
@@ -72,14 +96,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     elevation: 5,
-    justifyContent: "center",
-    height: 70,
     overflow: "hidden",
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.28,
     shadowRadius: 12,
-    width: 70,
+    justifyContent: "center",
   },
   buttonPressed: {
     opacity: 0.82,
@@ -95,8 +117,6 @@ const styles = StyleSheet.create({
   },
   imageIcon: {
     borderRadius: 8,
-    height: 36,
-    width: 36,
   },
   initialIcon: {
     color: "#ffffff",

@@ -134,7 +134,7 @@ export function Header({
 const styles = StyleSheet.create({
   container: {
     gap: 14,
-    paddingHorizontal: 18,
+    paddingHorizontal: 10,
     paddingTop: 8,
     zIndex: 50,
     elevation: 50,
@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     flex: 1,
+    minWidth: 0,
     paddingRight: 12,
   },
   actionRow: {

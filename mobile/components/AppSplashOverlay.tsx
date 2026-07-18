@@ -3,18 +3,12 @@ import {
   LinearGradient as ExpoLinearGradient,
   type LinearGradientProps,
 } from "expo-linear-gradient";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ComponentType,
-} from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Animated, Easing, StyleSheet } from "react-native";
 import { faceAlien } from "@lucide/lab";
 
 const SplashLogoGradient =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
-
 
 interface AppSplashOverlayProps {
   visible: boolean;
@@ -22,16 +16,18 @@ interface AppSplashOverlayProps {
 
 export function AppSplashOverlay({ visible }: AppSplashOverlayProps) {
   const [mounted, setMounted] = useState(visible);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const logoOpacityAnim = useRef(new Animated.Value(0)).current;
   const logoAnim = useRef(new Animated.Value(0.94)).current;
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      fadeAnim.setValue(0);
+      fadeAnim.setValue(1);
+      logoOpacityAnim.setValue(0);
       logoAnim.setValue(0.94);
       Animated.parallel([
-        Animated.timing(fadeAnim, {
+        Animated.timing(logoOpacityAnim, {
           toValue: 1,
           duration: 360,
           easing: Easing.out(Easing.cubic),
@@ -57,7 +53,7 @@ export function AppSplashOverlay({ visible }: AppSplashOverlayProps) {
         setMounted(false);
       }
     });
-  }, [fadeAnim, logoAnim, visible]);
+  }, [fadeAnim, logoAnim, logoOpacityAnim, visible]);
 
   if (!mounted) {
     return null;
@@ -72,23 +68,17 @@ export function AppSplashOverlay({ visible }: AppSplashOverlayProps) {
         style={[
           styles.logoShadow,
           {
+            opacity: logoOpacityAnim,
             transform: [{ scale: logoAnim }],
           },
         ]}
       >
-        <SplashLogoGradient
-          colors={["#ffd27a", "#f0a942", "#c8762f"]}
-          start={{ x: 0.18, y: 0 }}
-          end={{ x: 0.82, y: 1 }}
-          style={styles.logoGradient}
-        >
-          <Icon
-            iconNode={faceAlien}
-            size={58}
-            color="#1b1008"
-            strokeWidth={2.35}
-          />
-        </SplashLogoGradient>
+        <Icon
+          iconNode={faceAlien}
+          size={58}
+          color="#f1a127"
+          strokeWidth={1.35}
+        />
       </Animated.View>
     </Animated.View>
   );

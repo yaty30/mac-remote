@@ -101,6 +101,11 @@ const DEVICE_NAME_MAX_LENGTH = 20;
 const DEVICE_DROPDOWN_MAX_HEIGHT = 286;
 const DEVICE_SWITCH_MIN_OVERLAY_MS = 1000;
 const DEVICE_SWITCH_CANCEL_DELAY_MS = 3000;
+const BODY_HORIZONTAL_PADDING = 10;
+const SHORTCUT_GAP = 8;
+const SHORTCUT_VISIBLE_COUNT = 5;
+const SHORTCUT_MIN_SIZE = 54;
+const SHORTCUT_MAX_SIZE = 70;
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -1133,8 +1138,21 @@ export function RemoteControlMaster() {
   const keyboardShortcutButtonStyle = {
     width: Math.max(58, Math.floor(keyboardShortcutButtonWidth)),
   };
+  const shortcutButtonSize = clamp(
+    Math.floor(
+      (windowWidth -
+        BODY_HORIZONTAL_PADDING * 2 -
+        SHORTCUT_GAP * (SHORTCUT_VISIBLE_COUNT - 1)) /
+        SHORTCUT_VISIBLE_COUNT,
+    ),
+    SHORTCUT_MIN_SIZE,
+    SHORTCUT_MAX_SIZE,
+  );
+  const shortcutsScrollerStyle = {
+    height: shortcutButtonSize,
+  };
   const selectedDevicePlatform = getSelectedDevicePlatform();
-  const deviceDropdownHorizontalInset = 18;
+  const deviceDropdownHorizontalInset = BODY_HORIZONTAL_PADDING;
   const deviceDropdownAnimatedStyle = {
     marginLeft: 0,
     maxHeight: deviceDropdownAnim.interpolate({
@@ -1260,7 +1278,7 @@ export function RemoteControlMaster() {
               <Text
                 style={styles.homeDeviceName}
                 numberOfLines={1}
-                adjustsFontSizeToFit
+                ellipsizeMode="tail"
               >
                 {devicePickerTitle}
               </Text>
@@ -1786,34 +1804,39 @@ export function RemoteControlMaster() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.shortcutsScroller}
+              style={[styles.shortcutsScroller, shortcutsScrollerStyle]}
               contentContainerStyle={styles.shortcuts}
             >
               <ShortcutButton
                 SvgIcon={NetflixIcon}
                 label="Netflix"
                 onPress={() => sendShortcut("netflix")}
+                size={shortcutButtonSize}
               />
               <ShortcutButton
                 icon="logo-youtube"
                 iconColor="#ff0033"
                 label="YouTube"
                 onPress={() => sendShortcut("youtube")}
+                size={shortcutButtonSize}
               />
               <ShortcutButton
                 SvgIcon={DisneyPlusIcon}
                 label="Disney+"
                 onPress={() => sendShortcut("disney")}
+                size={shortcutButtonSize}
               />
               <ShortcutButton
                 SvgIcon={PrimeIcon}
                 label="Amazon Prime"
                 onPress={() => sendShortcut("amazon")}
+                size={shortcutButtonSize}
               />
               <ShortcutButton
                 SvgIcon={SpotifyIcon}
                 label="Spotify"
                 onPress={() => sendShortcut("spotify")}
+                size={shortcutButtonSize}
               />
               {customShortcuts.map((shortcut) => (
                 <ShortcutButton
@@ -1823,6 +1846,7 @@ export function RemoteControlMaster() {
                   label={shortcut.name}
                   onPress={() => sendCustomShortcut(shortcut)}
                   onLongPress={() => openEditShortcutModal(shortcut)}
+                  size={shortcutButtonSize}
                 />
               ))}
               <ShortcutButton
@@ -1830,6 +1854,7 @@ export function RemoteControlMaster() {
                 iconColor="#ff941f"
                 label="Add Shortcut"
                 onPress={openShortcutModal}
+                size={shortcutButtonSize}
               />
             </ScrollView>
 
@@ -2268,6 +2293,10 @@ function DevicePlatformIcon({
   return <Ionicons name="desktop-outline" size={size} color="#ffffff" />;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 const styles = StyleSheet.create({
   screen: {
     backgroundColor: "#070707",
@@ -2366,20 +2395,20 @@ const styles = StyleSheet.create({
   shortcuts: {
     flexShrink: 0,
     flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 18,
+    gap: SHORTCUT_GAP,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
   controlShortcutRow: {
     flexDirection: "row",
     flexShrink: 0,
     gap: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
   remoteActionRow: {
     flexDirection: "row",
     flexShrink: 0,
     height: 48,
-    paddingHorizontal: 14,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
   shortcutGroup: {
     alignItems: "center",
@@ -2407,7 +2436,6 @@ const styles = StyleSheet.create({
   shortcutsScroller: {
     flexGrow: 0,
     flexShrink: 0,
-    height: 70,
     width: "100%",
   },
   scanButtonPressed: {
@@ -2419,7 +2447,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     overflow: "hidden",
-    paddingHorizontal: 18,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
     position: "relative",
   },
   connectionPromptButton: {
@@ -2486,8 +2514,6 @@ const styles = StyleSheet.create({
   },
   homeDeviceIcon: {
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 6,
     height: 30,
     justifyContent: "center",
     width: 30,
@@ -2588,7 +2614,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: 12,
-    marginHorizontal: 18,
+    marginHorizontal: BODY_HORIZONTAL_PADDING,
     minHeight: 72,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -2930,10 +2956,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     bottom: 356,
     gap: 14,
-    left: 18,
+    left: BODY_HORIZONTAL_PADDING,
     padding: 14,
     position: "absolute",
-    right: 18,
+    right: BODY_HORIZONTAL_PADDING,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.35,
@@ -3022,14 +3048,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     minHeight: 0,
-    paddingHorizontal: 18,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
   mouseButtonRow: {
     flexShrink: 0,
     flexDirection: "row",
     gap: 8,
     height: 48,
-    paddingHorizontal: 14,
+    paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
   mouseButton: {
     alignItems: "center",
