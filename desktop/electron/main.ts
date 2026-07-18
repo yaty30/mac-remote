@@ -34,7 +34,6 @@ import type {
 import { RemoteWebSocketServer } from "../websocket/server";
 
 const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
-const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
 const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
 const hostName = getDeviceName();
@@ -56,10 +55,7 @@ let latestStatus: DesktopStatus = {
 
 const keyboardController = new KeyboardController();
 const hostAdapter = createHostAdapter(keyboardController);
-const mouseController = new MouseController(
-  Number.isFinite(sensitivity) ? sensitivity : 1.8,
-  hostAdapter.platform,
-);
+const mouseController = new MouseController(hostAdapter.platform);
 
 function getSupportedPlatform(): HostPlatform {
   if (process.platform === "darwin" || process.platform === "win32") {

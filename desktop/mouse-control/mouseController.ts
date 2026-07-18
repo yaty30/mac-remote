@@ -37,10 +37,7 @@ export class MouseController {
   private verticalEdgeLock: VerticalEdgeLock = null;
   private verticalEdgeReleaseDistance = 0;
 
-  constructor(
-    private readonly sensitivity: number,
-    private readonly platform: HostPlatform,
-  ) {
+  constructor(private readonly platform: HostPlatform) {
     mouse.config.autoDelayMs = 0;
     mouse.config.mouseSpeed = 32000;
     this.windowsRelativePointer =
@@ -49,10 +46,7 @@ export class MouseController {
 
   async moveRelative(dx: number, dy: number): Promise<void> {
     if (this.platform === "win32") {
-      const scaled = this.scaleWindowsPointerDelta(
-        dx * this.sensitivity,
-        dy * this.sensitivity,
-      );
+      const scaled = this.scaleWindowsPointerDelta(dx, dy);
 
       if (this.windowsRelativePointer?.move(scaled.dx, scaled.dy)) {
         this.windowsVirtualPosition = null;
@@ -66,12 +60,10 @@ export class MouseController {
     const current = await mouse.getPosition();
     const width = await screen.width();
     const height = await screen.height();
-    const scaledDx = dx * this.sensitivity;
-    const scaledDy = dy * this.sensitivity;
-    const nextX = clamp(Math.round(current.x + scaledDx), 0, width - 1);
+    const nextX = clamp(Math.round(current.x + dx), 0, width - 1);
     const nextY = this.resolveVerticalEdgeY(
-      clamp(Math.round(current.y + scaledDy), 0, height - 1),
-      scaledDy,
+      clamp(Math.round(current.y + dy), 0, height - 1),
+      dy,
       height,
     );
 

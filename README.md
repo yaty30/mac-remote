@@ -148,11 +148,8 @@ The mobile app sends JSON over WebSocket:
 
 ## Configuration
 
-Desktop sensitivity defaults to `1.8` and can be changed with:
-
-```bash
-REMOTE_SENSITIVITY=2.4 npm run dev
-```
+Pointer sensitivity is controlled from the mobile app settings. The desktop
+host treats incoming pointer deltas as already scaled by the mobile app.
 
 The WebSocket port defaults to `8787` and can be changed with:
 
