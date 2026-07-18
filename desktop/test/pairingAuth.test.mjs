@@ -159,6 +159,57 @@ test("proof-based pairing token replay is rejected by token id", () => {
   });
 });
 
+test("legacy raw token auth can be disabled for production mode", () => {
+  withStorage((storagePath) => {
+    const devManager = new PairingAuthManager(storagePath);
+    const clientId = "phone-a";
+    const pairingToken = devManager.getPairingToken().token;
+    const auth = devManager.authenticate({
+      type: "authRequest",
+      clientId,
+      clientName: "Phone A",
+      pairingToken,
+    });
+
+    assert.equal(auth.type, "authAccepted");
+
+    const productionManager = new PairingAuthManager(storagePath, {
+      allowLegacyRawTokenAuth: false,
+    });
+    const rawReconnect = productionManager.authenticate({
+      type: "authRequest",
+      clientId,
+      clientName: "Phone A",
+      deviceToken: auth.deviceToken,
+    });
+
+    assert.deepEqual(rawReconnect, {
+      type: "authRejected",
+      reason: "missingCredentials",
+    });
+
+    const nonce = "production-nonce";
+    const proofReconnect = productionManager.authenticate(
+      {
+        type: "authRequest",
+        clientId,
+        clientName: "Phone A",
+        deviceTokenProof: buildTokenProof(
+          sha256Hex(auth.deviceToken),
+          clientId,
+          nonce,
+        ),
+      },
+      nonce,
+    );
+
+    assert.deepEqual(proofReconnect, {
+      type: "authAccepted",
+      paired: false,
+    });
+  });
+});
+
 test("revoke removes device trust and blocks future device-token auth", () => {
   withManager((manager) => {
     const pairingToken = manager.getPairingToken().token;

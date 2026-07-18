@@ -47,12 +47,21 @@ interface StoredAuthState {
 
 type AuthResult = AuthAcceptedMessage | AuthRejectedMessage;
 
+interface PairingAuthManagerOptions {
+  allowLegacyRawTokenAuth?: boolean;
+}
+
 export class PairingAuthManager {
   private activePairingToken: PairingTokenState | null = null;
   private state: StoredAuthState;
+  private readonly allowLegacyRawTokenAuth: boolean;
 
-  constructor(private readonly storagePath: string) {
+  constructor(
+    private readonly storagePath: string,
+    options: PairingAuthManagerOptions = {},
+  ) {
     this.state = this.readState();
+    this.allowLegacyRawTokenAuth = options.allowLegacyRawTokenAuth ?? true;
   }
 
   getPairingToken(): PairingTokenState {
@@ -129,7 +138,7 @@ export class PairingAuthManager {
       );
     }
 
-    if (message.deviceToken) {
+    if (message.deviceToken && this.allowLegacyRawTokenAuth) {
       return this.authenticateDeviceToken(clientId, message.deviceToken);
     }
 
@@ -147,7 +156,7 @@ export class PairingAuthManager {
       );
     }
 
-    if (message.pairingToken) {
+    if (message.pairingToken && this.allowLegacyRawTokenAuth) {
       return this.authenticatePairingToken(
         clientId,
         clientName,

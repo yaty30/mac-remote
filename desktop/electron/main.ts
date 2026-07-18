@@ -229,8 +229,8 @@ function escapeXml(value: string): string {
 }
 
 function startMobileServer(): void {
-  if (process.env.REMOTE_MOBILE_SERVER === "0") {
-    console.log("[mobile-server] disabled by REMOTE_MOBILE_SERVER=0");
+  if (!shouldAutoStartMobileServer()) {
+    console.log("[mobile-server] disabled");
     return;
   }
 
@@ -618,16 +618,19 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
   }
 
   const pairingUrl = `ws://${address}:${status.port}`;
-  const expoUrl = await resolveExpoUrl(status.addresses);
+  const expoDevToolsEnabled = shouldShowExpoDevTools();
+  const expoUrl = expoDevToolsEnabled
+    ? await resolveExpoUrl(status.addresses)
+    : undefined;
   const pairingToken = pairingAuth?.getPairingToken();
   schedulePairingQrRefresh(pairingToken?.expiresAt);
 
   if (
     latestStatus.pairingUrl === pairingUrl &&
-    latestStatus.expoUrl === expoUrl &&
     latestStatus.pairingTokenExpiresAt === pairingToken?.expiresAt &&
     latestStatus.pairingQrDataUrl &&
-    latestStatus.expoQrDataUrl
+    (!expoDevToolsEnabled ||
+      (latestStatus.expoUrl === expoUrl && latestStatus.expoQrDataUrl))
   ) {
     return {
       ...status,
@@ -636,7 +639,7 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
       expoUrl,
       pairingTokenExpiresAt: pairingToken?.expiresAt,
       pairingQrDataUrl: latestStatus.pairingQrDataUrl,
-      expoQrDataUrl: latestStatus.expoQrDataUrl,
+      expoQrDataUrl: expoDevToolsEnabled ? latestStatus.expoQrDataUrl : undefined,
     };
   }
 
@@ -661,15 +664,54 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
         light: "#ffffff",
       },
     }),
-    expoQrDataUrl: await QRCode.toDataURL(expoUrl, {
-      margin: 1,
-      scale: 7,
-      color: {
-        dark: "#0b0d12",
-        light: "#ffffff",
-      },
-    }),
+    expoQrDataUrl:
+      expoDevToolsEnabled && expoUrl
+        ? await QRCode.toDataURL(expoUrl, {
+            margin: 1,
+            scale: 7,
+            color: {
+              dark: "#0b0d12",
+              light: "#ffffff",
+            },
+          })
+        : undefined,
   };
+}
+
+function shouldShowExpoDevTools(): boolean {
+  if (process.env.REMOTE_EXPO_URL?.trim()) {
+    return true;
+  }
+
+  return shouldAutoStartMobileServer();
+}
+
+function shouldAutoStartMobileServer(): boolean {
+  const override = process.env.REMOTE_MOBILE_SERVER?.trim();
+
+  if (override === "1") {
+    return true;
+  }
+
+  if (override === "0") {
+    return false;
+  }
+
+  return !app.isPackaged;
+}
+
+function shouldAllowLegacyRawTokenAuth(): boolean {
+  const override = process.env.REMOTE_LEGACY_RAW_TOKEN_AUTH?.trim();
+
+  if (override === "1") {
+    return true;
+  }
+
+  if (override === "0") {
+    return false;
+  }
+
+  return !app.isPackaged;
 }
 
 function schedulePairingQrRefresh(expiresAt: number | undefined): void {
@@ -869,6 +911,7 @@ app.whenReady().then(() => {
   startMobileServer();
   pairingAuth = new PairingAuthManager(
     path.join(app.getPath("userData"), "paired-devices.json"),
+    { allowLegacyRawTokenAuth: shouldAllowLegacyRawTokenAuth() },
   );
   ipcMain.handle("status:get", () => withDesktopContext(latestStatus));
   ipcMain.handle("clipboard:write", (_event, text: unknown) => {

@@ -32,17 +32,6 @@
       "dist/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../mobile",
-        "to": "mobile",
-        "filter": [
-          "**/*",
-          "!.expo/**",
-          "!node_modules/.cache/**"
-        ]
-      }
-    ],
     "asarUnpack": [
       "node_modules/@nut-tree-fork/**/*"
     ],

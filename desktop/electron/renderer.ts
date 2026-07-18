@@ -94,6 +94,7 @@ const qrImage = query<HTMLImageElement>("#qrImage");
 const qrFallback = query<HTMLElement>("#qrFallback");
 const pairingUrlText = query<HTMLElement>("#pairingUrlText");
 const serverUrl = query<HTMLElement>("#serverUrl");
+const expoPanel = query<HTMLDivElement>("#expoPanel");
 const expoQrImage = query<HTMLImageElement>("#expoQrImage");
 const expoFallback = query<HTMLElement>("#expoFallback");
 const expoQrUrl = query<HTMLElement>("#expoQrUrl");
@@ -271,11 +272,29 @@ function renderStatus(status: DesktopStatus): void {
   }
 
   renderQr(qrImage, qrFallback, status.pairingQrDataUrl, "Pairing QR unavailable");
-  renderQr(expoQrImage, expoFallback, status.expoQrDataUrl, "Expo QR unavailable");
+  renderExpoPanel(status);
   renderAddresses(status);
   renderHealth(status);
   renderDevices(status);
   updateButtons(status);
+}
+
+function renderExpoPanel(status: DesktopStatus): void {
+  if (!expoPanel || !expoQrImage || !expoFallback || !expoQrUrl) {
+    return;
+  }
+
+  const visible = Boolean(status.expoUrl || status.expoQrDataUrl);
+  expoPanel.classList.toggle("hidden", !visible);
+
+  if (!visible) {
+    expoQrImage.removeAttribute("src");
+    expoQrImage.classList.add("hidden");
+    return;
+  }
+
+  expoQrUrl.textContent = status.errorMessage ?? status.expoUrl ?? "Expo URL unavailable";
+  renderQr(expoQrImage, expoFallback, status.expoQrDataUrl, "Expo QR unavailable");
 }
 
 function applyPlatform(platform: string | undefined): void {

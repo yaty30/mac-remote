@@ -102,11 +102,10 @@ The unpacked app is created under:
 desktop/release/mac/Mac Remote.app
 ```
 
-When the desktop app opens, it also starts the Expo mobile server in the
-background with `npm run start -- --clear` from the mobile workspace. The app
-prefers the repo's `mobile/` workspace when the packaged `.app` is still inside
-this checkout, and falls back to the bundled `Contents/Resources/mobile` copy.
-Node.js and npm must be installed on the Mac that runs the app.
+When the desktop app runs in development, it also starts the Expo mobile server
+in the background with `npm run start -- --clear` from the mobile workspace and
+shows the Expo QR code. Packaged desktop apps do not start Expo and do not show
+the Expo QR by default; they show only the pairing QR for the mobile app.
 
 To disable the automatic mobile server:
 
@@ -114,10 +113,17 @@ To disable the automatic mobile server:
 REMOTE_MOBILE_SERVER=0 npm run desktop:dev
 ```
 
-To point the packaged app at a specific mobile checkout:
+To force Expo tools back on, for example when testing a packaged desktop build
+with a separate mobile checkout:
 
 ```bash
-REMOTE_MOBILE_DIR=/path/to/remote-control/mobile open "desktop/release/mac/Mac Remote.app"
+REMOTE_MOBILE_SERVER=1 REMOTE_MOBILE_DIR=/path/to/remote-control/mobile open "desktop/release/mac/Mac Remote.app"
+```
+
+To show an Expo QR for an already-running Expo server without auto-starting it:
+
+```bash
+REMOTE_MOBILE_SERVER=0 REMOTE_EXPO_URL=exp://192.168.1.25:8081 npm run desktop:dev
 ```
 
 For a DMG and ZIP:
@@ -231,3 +237,24 @@ LaunchAgent logs are written to `~/Library/Logs/local.remote-control.dev.out.log
 - Build mobile release artifacts through EAS or native IDE tooling.
 - Keep the Expo QR/mobile dev server enabled only for development builds when moving to a production desktop app.
 - Run `npm test`, desktop and mobile typechecks, and a manual macOS/Windows/iOS/Android smoke test before release.
+
+## Encryption Plan
+
+Current auth uses a challenge-response proof so the saved device token is not
+sent raw over the LAN during normal reconnect. The WebSocket transport itself is
+still `ws://`, so the next security layer should be app-level encryption:
+
+1. Keep `authChallenge`, pairing token proof, and device token proof as the
+   readable handshake.
+2. Add a client nonce to the auth proof response and derive a per-session key
+   from the token hash, desktop nonce, client nonce, and protocol version.
+3. Add a new encrypted envelope message, for example
+   `{ type: "encrypted", nonce, sequence, payload }`.
+4. Encrypt control messages after auth using authenticated encryption such as
+   XChaCha20-Poly1305 or AES-GCM from a vetted cross-platform crypto package.
+5. Reject replayed or out-of-order encrypted command sequence numbers.
+6. Keep `ping`, `pong`, `authChallenge`, `authRequest`, and `authRejected`
+   readable so connection setup and latency checks remain simple.
+
+This avoids self-signed TLS certificate trust problems on iOS/Android while
+still protecting command payloads on the local network.
