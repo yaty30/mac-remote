@@ -15,10 +15,14 @@ import {
 import {
   Alert,
   Animated,
+  Dimensions,
   Easing,
   Keyboard,
+  type KeyboardEvent,
+  type LayoutChangeEvent,
   Modal,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -106,12 +110,16 @@ const SHORTCUT_GAP = 8;
 const SHORTCUT_VISIBLE_COUNT = 5;
 const SHORTCUT_MIN_SIZE = 54;
 const SHORTCUT_MAX_SIZE = 70;
+const KEYBOARD_PANEL_KEYBOARD_GAP = 12;
+const KEYBOARD_PANEL_TOP = 106;
+const KEYBOARD_PANEL_RESTING_BOTTOM = 112;
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const keyboardInputRef = useRef<TextInput>(null);
   const keyboardActiveRef = useRef(false);
+  const fullScreenLayoutHeightRef = useRef(windowHeight);
   const bufferRef = useRef("");
   const keyboardSelectionRef = useRef({ start: 0, end: 0 });
   const remoteKeyboardCursorRef = useRef(0);
@@ -196,7 +204,9 @@ export function RemoteControlMaster() {
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [screenLayoutHeight, setScreenLayoutHeight] = useState(windowHeight);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
   const [appSplashReleased, setAppSplashReleased] = useState(false);
@@ -330,19 +340,47 @@ export function RemoteControlMaster() {
   }, [restartCountdown]);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+    const resolveKeyboardHeight = (event: KeyboardEvent) => {
+      const frame = event.endCoordinates;
+      const heightFromScreenY =
+        typeof frame.screenY === "number"
+          ? Math.max(0, windowHeight - frame.screenY)
+          : 0;
+      const nextHeight =
+        Platform.OS === "android"
+          ? heightFromScreenY
+          : Math.max(heightFromScreenY, frame.height ?? 0);
+
+      setKeyboardHeight(Math.round(nextHeight));
       setKeyboardVisible(true);
-    });
+    };
 
     const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
       setKeyboardVisible(false);
     });
+    const showSub = Keyboard.addListener(
+      "keyboardDidShow",
+      resolveKeyboardHeight,
+    );
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [windowHeight]);
+
+  useEffect(() => {
+    if (keyboardOverlay || keyboardVisible) {
+      return;
+    }
+
+    fullScreenLayoutHeightRef.current = Math.max(
+      fullScreenLayoutHeightRef.current,
+      screenLayoutHeight,
+      windowHeight,
+    );
+  }, [keyboardOverlay, keyboardVisible, screenLayoutHeight, windowHeight]);
 
   useEffect(() => {
     if (!keyboardVisible) {
@@ -376,6 +414,12 @@ export function RemoteControlMaster() {
       }
     });
   }, [keyboardOverlay, keyboardPanelAnim]);
+
+  useEffect(() => {
+    if (keyboardOverlay && keyboardUiMounted) {
+      refocusKeyboardInput();
+    }
+  }, [keyboardOverlay, keyboardUiMounted]);
 
   useEffect(() => {
     if (!switchingDeviceHost || status !== "connected" || !hostPlatform) {
@@ -767,20 +811,29 @@ export function RemoteControlMaster() {
 
   function focusKeyboard() {
     keyboardActiveRef.current = true;
+    keyboardInputRef.current?.blur();
     clearKeyboardInput();
     setKeyboardOverlay(true);
+
+    if (Platform.OS === "android") {
+      keyboardInputRef.current?.focus();
+    }
 
     refocusKeyboardInput();
   }
 
   function refocusKeyboardInput() {
-    requestAnimationFrame(() => {
+    const focusInput = () => {
       keyboardInputRef.current?.focus();
-    });
+    };
 
-    setTimeout(() => {
-      keyboardInputRef.current?.focus();
-    }, 60);
+    requestAnimationFrame(focusInput);
+    setTimeout(focusInput, 80);
+
+    if (Platform.OS === "android") {
+      setTimeout(focusInput, 180);
+      setTimeout(focusInput, 320);
+    }
   }
 
   function sendTextChunk(text: string) {
@@ -1038,6 +1091,44 @@ export function RemoteControlMaster() {
     setPlaybackPaused((current) => !current);
   }
 
+  function handleScreenLayout(event: LayoutChangeEvent) {
+    const nextHeight = Math.round(event.nativeEvent.layout.height);
+
+    setScreenLayoutHeight((current) =>
+      current === nextHeight ? current : nextHeight,
+    );
+  }
+
+  const androidKeyboardPanelTop = clamp(Math.round(windowHeight * 0.08), 54, 76);
+  const androidKeyboardPanelGap = clamp(Math.round(windowHeight * 0.09), 56, 82);
+  const currentWindowHeight = Dimensions.get("window").height;
+  const androidWindowShrinkInset =
+    keyboardOverlay && Platform.OS === "android"
+      ? Math.max(0, fullScreenLayoutHeightRef.current - currentWindowHeight)
+      : 0;
+  const androidParentAlreadyResized =
+    keyboardOverlay &&
+    Platform.OS === "android" &&
+    screenLayoutHeight < fullScreenLayoutHeightRef.current - 48;
+  const keyboardPanelInset =
+    keyboardOverlay && Platform.OS === "android" && !androidParentAlreadyResized
+      ? Math.max(keyboardHeight, androidWindowShrinkInset)
+      : keyboardHeight;
+  const keyboardPanelTop =
+    keyboardOverlay && Platform.OS === "android"
+      ? androidKeyboardPanelTop
+      : KEYBOARD_PANEL_TOP;
+  const keyboardPanelKeyboardGap =
+    keyboardOverlay && Platform.OS === "android"
+      ? androidKeyboardPanelGap
+      : KEYBOARD_PANEL_KEYBOARD_GAP;
+  const keyboardPanelBottom = keyboardOverlay
+    ? keyboardPanelInset + keyboardPanelKeyboardGap
+    : KEYBOARD_PANEL_RESTING_BOTTOM;
+  const keyboardPanelDynamicStyle = {
+    bottom: keyboardPanelBottom,
+    top: keyboardPanelTop,
+  };
   const keyboardPanelAnimatedStyle = {
     opacity: keyboardPanelAnim,
     transform: [
@@ -1183,7 +1274,7 @@ export function RemoteControlMaster() {
   const devicePickerTitle = hostName || "No device saved";
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} onLayout={handleScreenLayout}>
       {keyboardUiMounted ? (
         <Animated.View
           style={[styles.keyboardBg, keyboardBackdropAnimatedStyle]}
@@ -1383,6 +1474,7 @@ export function RemoteControlMaster() {
         style={[
           styles.keyboardPanel,
           keyboardUiMounted ? null : styles.keyboardPanelHidden,
+          keyboardPanelDynamicStyle,
           keyboardPanelAnimatedStyle,
         ]}
         pointerEvents={keyboardUiMounted ? "auto" : "none"}
@@ -1390,15 +1482,32 @@ export function RemoteControlMaster() {
         <View style={styles.keyboardPanelHeader}>
           <View style={styles.keyboardPanelTitleRow}>
             <View style={styles.keyboardPanelIcon}>
-              <Ionicons name="keypad-outline" size={18} color="#ffffff" />
+              <ScanButtonGradient
+                colors={["#ffbd62", "#f0a942", "#b86a25"]}
+                start={{ x: 0.18, y: 0 }}
+                end={{ x: 0.82, y: 1 }}
+                style={styles.keyboardPanelIconGradient}
+              >
+                <Ionicons name="keypad-outline" size={18} color="#1b1008" />
+              </ScanButtonGradient>
             </View>
             <Text style={styles.keyboardPanelTitle}>Keyboard</Text>
           </View>
           <Pressable
-            style={styles.keyboardPanelClose}
+            style={({ pressed }) => [
+              styles.keyboardPanelClose,
+              pressed ? styles.keyboardPanelClosePressed : null,
+            ]}
             onPress={withHaptic(dismissKeyboardInput)}
           >
-            <Ionicons name="close" size={20} color="#ec3434" />
+            <ScanButtonGradient
+              colors={["#4b211c", "#321917", "#1b1110"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardPanelCloseGradient}
+            >
+              <Ionicons name="close" size={20} color="#ff8a72" />
+            </ScanButtonGradient>
           </Pressable>
         </View>
 
@@ -1409,6 +1518,7 @@ export function RemoteControlMaster() {
           onChangeText={handleKeyboardTextChange}
           onKeyPress={handleKeyboardKeyPress}
           onSelectionChange={handleKeyboardSelectionChange}
+          autoFocus={keyboardOverlay}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
@@ -1417,6 +1527,7 @@ export function RemoteControlMaster() {
           keyboardAppearance="dark"
           selection={keyboardSelection}
           selectionColor="#ff941f"
+          showSoftInputOnFocus
           style={[
             styles.keyboardPreview,
             typedText ? null : styles.keyboardPreviewEmpty,
@@ -1425,50 +1536,120 @@ export function RemoteControlMaster() {
 
         <View style={styles.keyboardShortcutGrid}>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(() => sendKeyboardShortcut("selectAll"))}
           >
-            <Ionicons name="scan-outline" size={18} color="#ffffff" />
-            <Text style={styles.keyboardShortcutText}>Select All</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons name="scan-outline" size={18} color="#f0c17c" />
+              <Text style={styles.keyboardShortcutText}>Select All</Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(insertKeyboardNewLine)}
           >
-            <Ionicons
-              name="return-down-forward-outline"
-              size={18}
-              color="#ffffff"
-            />
-            <Text style={styles.keyboardShortcutText}>New Line</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons
+                name="return-down-forward-outline"
+                size={18}
+                color="#f0c17c"
+              />
+              <Text style={styles.keyboardShortcutText}>New Line</Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(() => sendKeyboardShortcut("copy"))}
           >
-            <Ionicons name="copy-outline" size={18} color="#ffffff" />
-            <Text style={styles.keyboardShortcutText}>Copy</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons name="copy-outline" size={18} color="#f0c17c" />
+              <Text style={styles.keyboardShortcutText}>Copy</Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(() => sendKeyboardShortcut("paste"))}
           >
-            <Ionicons name="clipboard-outline" size={18} color="#ffffff" />
-            <Text style={styles.keyboardShortcutText}>Paste</Text>
+            <ScanButtonGradient
+              colors={["#2b211a", "#1b1714", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons name="clipboard-outline" size={18} color="#f0c17c" />
+              <Text style={styles.keyboardShortcutText}>Paste</Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(pasteFromPhoneClipboard)}
           >
-            <Ionicons name="phone-portrait-outline" size={18} color="#ffffff" />
-            <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
+            <ScanButtonGradient
+              colors={["#3b2816", "#211811", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons
+                name="phone-portrait-outline"
+                size={18}
+                color="#f0a942"
+              />
+              <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
+            </ScanButtonGradient>
           </Pressable>
           <Pressable
-            style={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            style={({ pressed }) => [
+              styles.keyboardShortcutButton,
+              keyboardShortcutButtonStyle,
+              pressed ? styles.keyboardShortcutButtonPressed : null,
+            ]}
             onPress={withHaptic(() => sendKeyboardShortcut("clear"))}
           >
-            <Ionicons name="backspace-outline" size={18} color="#ffffff" />
-            <Text style={styles.keyboardShortcutText}>Clear</Text>
+            <ScanButtonGradient
+              colors={["#342019", "#211613", "#11100e"]}
+              start={{ x: 0.18, y: 0 }}
+              end={{ x: 0.82, y: 1 }}
+              style={styles.keyboardShortcutGradient}
+            >
+              <Ionicons name="backspace-outline" size={18} color="#ffb08a" />
+              <Text style={styles.keyboardShortcutText}>Clear</Text>
+            </ScanButtonGradient>
           </Pressable>
         </View>
       </Animated.View>
@@ -2950,21 +3131,21 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   keyboardPanel: {
-    backgroundColor: "rgba(18, 17, 15, 0.9)",
-    borderColor: "rgba(255, 148, 31, 0.28)",
+    backgroundColor: "rgba(18, 17, 15, 0.94)",
+    borderColor: "rgba(240, 169, 66, 0.34)",
     borderRadius: 8,
     borderWidth: 1,
-    bottom: 356,
     gap: 14,
+    elevation: 18,
     left: BODY_HORIZONTAL_PADDING,
     padding: 14,
     position: "absolute",
     right: BODY_HORIZONTAL_PADDING,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    top: 106,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.46,
+    shadowRadius: 28,
+    top: KEYBOARD_PANEL_TOP,
     zIndex: 1000,
   },
   keyboardPanelHidden: {
@@ -2982,11 +3163,26 @@ const styles = StyleSheet.create({
   },
   keyboardPanelIcon: {
     alignItems: "center",
-    backgroundColor: "#ff941f",
-    borderRadius: 8,
+    backgroundColor: "#211811",
+    borderColor: "rgba(240, 169, 66, 0.5)",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 4,
     height: 32,
     justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: "#f0a942",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
     width: 32,
+  },
+  keyboardPanelIconGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
   },
   keyboardPanelTitle: {
     color: "#ffffff",
@@ -2995,11 +3191,30 @@ const styles = StyleSheet.create({
   },
   keyboardPanelClose: {
     alignItems: "center",
-    backgroundColor: "#3d2020",
-    borderRadius: 8,
-    height: 34,
+    backgroundColor: "#211811",
+    borderColor: "rgba(255, 138, 114, 0.34)",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 4,
+    height: 36,
     justifyContent: "center",
-    width: 34,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    width: 36,
+  },
+  keyboardPanelCloseGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
+  },
+  keyboardPanelClosePressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
   keyboardPreview: {
     alignItems: "flex-start",
@@ -3028,14 +3243,32 @@ const styles = StyleSheet.create({
   },
   keyboardShortcutButton: {
     alignItems: "center",
-    backgroundColor: "#211811",
-    borderColor: "#34261a",
-    borderRadius: 8,
+    backgroundColor: "rgba(18, 17, 15, 0.78)",
+    borderColor: "rgba(240, 169, 66, 0.24)",
+    borderRadius: 12,
     borderWidth: 1,
+    elevation: 4,
     gap: 5,
     justifyContent: "center",
     minHeight: 46,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+  },
+  keyboardShortcutGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    gap: 5,
+    justifyContent: "center",
     paddingHorizontal: 4,
+    width: "100%",
+  },
+  keyboardShortcutButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
   },
   keyboardShortcutText: {
     color: "#ffffff",
