@@ -178,6 +178,7 @@ export function RemoteControlMaster() {
     volumeStep,
   } = useHostMedia(socket, controlsAvailability);
   const {
+    authError,
     cancelConnection,
     connectionHydrated,
     connectToHost,
@@ -254,7 +255,11 @@ export function RemoteControlMaster() {
   const showConnectionPrompt = status !== "connected";
   const appSplashReadyToDismiss =
     connectionHydrated &&
-    (!host.trim() || (status === "connected" && hostPlatform !== null));
+    (!host.trim() ||
+      status === "idle" ||
+      status === "disconnected" ||
+      status === "error" ||
+      (status === "connected" && hostPlatform !== null));
 
   useEffect(() => {
     if (appSplashReadyToDismiss) {
@@ -806,7 +811,7 @@ export function RemoteControlMaster() {
       return;
     }
 
-    connectToHost(pairing.url, pairing.hostName);
+    connectToHost(pairing.url, pairing.hostName, pairing.pairingToken);
   }
 
   function focusKeyboard() {
@@ -1979,6 +1984,9 @@ export function RemoteControlMaster() {
                 </Text>
               </ScanButtonGradient>
             </Pressable>
+            {authError ? (
+              <Text style={styles.connectionPromptError}>{authError}</Text>
+            ) : null}
           </View>
         ) : (
           <>
@@ -2659,6 +2667,16 @@ const styles = StyleSheet.create({
     color: "#f0a942",
     fontSize: 15,
     fontWeight: "900",
+  },
+  connectionPromptError: {
+    color: "#ff8a72",
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 14,
+    maxWidth: 310,
+    textAlign: "center",
+    zIndex: 1,
   },
   desktopSwitchButton: {
     alignItems: "center",

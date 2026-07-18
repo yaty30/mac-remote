@@ -55,6 +55,10 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
         "platform" in item && isHostPlatform(item.platform)
           ? item.platform
           : undefined;
+      const deviceToken =
+        "deviceToken" in item && typeof item.deviceToken === "string"
+          ? item.deviceToken.trim().slice(0, 256)
+          : undefined;
 
       return [
         {
@@ -62,6 +66,7 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
           name: name || getDeviceNameFromHost(host),
           host,
           platform,
+          deviceToken,
           lastConnectedAt,
         },
       ];
@@ -83,6 +88,7 @@ export function upsertDevice(
   const deviceWithPlatform = {
     ...nextDevice,
     platform: nextDevice.platform ?? existing?.platform,
+    deviceToken: nextDevice.deviceToken ?? existing?.deviceToken,
   };
   const withoutCurrent = devices.filter(
     (device) => device.host !== nextDevice.host,

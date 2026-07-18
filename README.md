@@ -135,6 +135,9 @@ This prototype is unsigned. On your own Mac, open it with right-click > **Open**
 The mobile app sends JSON over WebSocket:
 
 ```ts
+{ type: "authRequest", clientId: string, clientName: string, pairingToken?: string, deviceToken?: string }
+{ type: "authAccepted", deviceToken?: string, paired: boolean }
+{ type: "authRejected", reason: "missingCredentials" | "pairingTokenExpired" | "pairingTokenInvalid" | "pairingTokenUsed" | "deviceNotTrusted" }
 { type: "moveMouse", dx: number, dy: number }
 { type: "leftClick" }
 { type: "shortcut", shortcut: "netflix" | "disney" | "amazon" | "youtube" | "spotify" }
@@ -176,6 +179,7 @@ LaunchAgent logs are written to `~/Library/Logs/local.remote-control.dev.out.log
 ## Notes
 
 - This is intended only for trusted home Wi-Fi.
-- There is no authentication in this MVP.
+- Pairing QR codes include a short-lived single-use token. After first pairing,
+  the phone reconnects with a saved device token.
 - The shortcut commands are macOS-specific.
 - The mobile app is pinned to Expo SDK 54 so it works with Expo Go `54.x`.

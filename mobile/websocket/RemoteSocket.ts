@@ -1,4 +1,5 @@
 import type {
+  AuthRejectedReason,
   ConnectionStatus,
   HostMessage,
   RemoteMessage,
@@ -9,8 +10,17 @@ import type {
 type StatusListener = (status: ConnectionStatus) => void;
 type MessageListener = (message: HostMessage) => void;
 type LatencyListener = (latencyMs: number | null) => void;
+type AuthOptions = {
+  clientId: string;
+  clientName: string;
+  pairingToken?: string;
+  deviceToken?: string;
+  onAccepted?: (deviceToken?: string) => void;
+  onRejected?: (reason: AuthRejectedReason) => void;
+};
 
 const MAX_BUFFERED_BYTES = 16 * 1024;
+const AUTH_TIMEOUT_MS = 5000;
 
 export class RemoteSocket {
   private socket: WebSocket | null = null;
@@ -23,12 +33,15 @@ export class RemoteSocket {
   private pendingPings = new Map<string, number>();
   private pingSequence = 0;
   private shouldReconnect = false;
+  private currentAuth: AuthOptions | null = null;
+  private authTimer: ReturnType<typeof setTimeout> | null = null;
 
-  connect(host: string, port = 8787): void {
+  connect(host: string, auth?: AuthOptions, port = 8787): void {
     this.closeSocket();
     this.clearReconnectTimer();
     this.emit("connecting");
     this.currentHost = host;
+    this.currentAuth = auth ?? null;
     this.shouldReconnect = true;
 
     const normalizedHost = host
@@ -39,6 +52,12 @@ export class RemoteSocket {
     const socket = new WebSocket(url);
 
     socket.onopen = () => {
+      if (this.currentAuth) {
+        this.sendAuthRequest();
+        this.startAuthTimeout();
+        return;
+      }
+
       this.emit("connected");
       this.startLatencyChecks();
     };
@@ -61,16 +80,18 @@ export class RemoteSocket {
       return;
     }
 
-    this.connect(this.currentHost);
+    this.connect(this.currentHost, this.currentAuth ?? undefined);
   }
 
   disconnect(): void {
     this.shouldReconnect = false;
+    this.currentAuth = null;
     this.clearReconnectTimer();
     this.closeSocket();
   }
 
   private closeSocket(): void {
+    this.clearAuthTimeout();
     this.stopLatencyChecks();
 
     if (this.socket) {
@@ -208,6 +229,50 @@ export class RemoteSocket {
     this.socket.send(JSON.stringify(message));
   }
 
+  private sendAuthRequest(): void {
+    const auth = this.currentAuth;
+
+    if (!auth) {
+      return;
+    }
+
+    this.send(
+      {
+        type: "authRequest",
+        clientId: auth.clientId,
+        clientName: auth.clientName,
+        pairingToken: auth.pairingToken,
+        deviceToken: auth.deviceToken,
+      },
+      true,
+    );
+  }
+
+  private startAuthTimeout(): void {
+    this.clearAuthTimeout();
+    this.authTimer = setTimeout(() => {
+      this.authTimer = null;
+
+      if (!this.currentAuth || this.socket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      this.currentAuth.onRejected?.("missingCredentials");
+      this.shouldReconnect = false;
+      this.emit("error");
+      this.closeSocket();
+    }, AUTH_TIMEOUT_MS);
+  }
+
+  private clearAuthTimeout(): void {
+    if (!this.authTimer) {
+      return;
+    }
+
+    clearTimeout(this.authTimer);
+    this.authTimer = null;
+  }
+
   private emit(status: ConnectionStatus): void {
     for (const listener of this.listeners) {
       listener(status);
@@ -301,6 +366,23 @@ export class RemoteSocket {
           this.emitLatency(Math.max(0, Date.now() - startedAt));
         }
 
+        return;
+      }
+
+      if (message.type === "authAccepted") {
+        this.clearAuthTimeout();
+        this.currentAuth?.onAccepted?.(message.deviceToken);
+        this.emit("connected");
+        this.startLatencyChecks();
+        return;
+      }
+
+      if (message.type === "authRejected") {
+        this.clearAuthTimeout();
+        this.currentAuth?.onRejected?.(message.reason);
+        this.shouldReconnect = false;
+        this.emit("error");
+        this.closeSocket();
         return;
       }
 

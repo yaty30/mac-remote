@@ -23,10 +23,15 @@ export function parsePairingPayload(raw: string): PairingPayload | null {
         ("hostName" in parsed && sanitizeHostName(parsed.hostName)) ||
         ("name" in parsed && sanitizeHostName(parsed.name)) ||
         undefined;
+      const pairingToken =
+        "pairingToken" in parsed && typeof parsed.pairingToken === "string"
+          ? parsed.pairingToken.trim().slice(0, 256)
+          : undefined;
 
       return {
         url: parsed.url,
         hostName,
+        pairingToken,
       };
     }
   } catch {

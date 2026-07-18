@@ -21,6 +21,7 @@ import {
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
+import { PairingAuthManager } from "../auth/pairingAuth";
 import { createHostAdapter } from "../host/createHostAdapter";
 import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
@@ -43,6 +44,8 @@ const mobileServerDefaultCommand = "npm run start -- --clear";
 let mainWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
 let mobileServerProcess: ReturnType<typeof spawn> | null = null;
+let pairingAuth: PairingAuthManager | null = null;
+let pairingQrRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
   hostName,
@@ -436,6 +439,8 @@ async function handleRemoteMessage(
   message: RemoteMessage,
 ): Promise<HostMessage | void> {
   switch (message.type) {
+    case "authRequest":
+      break;
     case "moveMouse":
       await mouseController.moveRelative(message.dx, message.dy);
       break;
@@ -611,10 +616,13 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
 
   const pairingUrl = `ws://${address}:${status.port}`;
   const expoUrl = await resolveExpoUrl(status.addresses);
+  const pairingToken = pairingAuth?.getPairingToken();
+  schedulePairingQrRefresh(pairingToken?.expiresAt);
 
   if (
     latestStatus.pairingUrl === pairingUrl &&
     latestStatus.expoUrl === expoUrl &&
+    latestStatus.pairingTokenExpiresAt === pairingToken?.expiresAt &&
     latestStatus.pairingQrDataUrl &&
     latestStatus.expoQrDataUrl
   ) {
@@ -623,6 +631,7 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
       hostName,
       pairingUrl,
       expoUrl,
+      pairingTokenExpiresAt: pairingToken?.expiresAt,
       pairingQrDataUrl: latestStatus.pairingQrDataUrl,
       expoQrDataUrl: latestStatus.expoQrDataUrl,
     };
@@ -632,6 +641,7 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
     type: "remote-control",
     name: hostName,
     url: pairingUrl,
+    pairingToken: pairingToken?.token,
   });
 
   return {
@@ -639,6 +649,7 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
     hostName,
     pairingUrl,
     expoUrl,
+    pairingTokenExpiresAt: pairingToken?.expiresAt,
     pairingQrDataUrl: await QRCode.toDataURL(payload, {
       margin: 1,
       scale: 7,
@@ -656,6 +667,31 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
       },
     }),
   };
+}
+
+function schedulePairingQrRefresh(expiresAt: number | undefined): void {
+  if (pairingQrRefreshTimer) {
+    clearTimeout(pairingQrRefreshTimer);
+    pairingQrRefreshTimer = null;
+  }
+
+  if (!expiresAt) {
+    return;
+  }
+
+  const delayMs = Math.max(1000, expiresAt - Date.now() + 250);
+
+  pairingQrRefreshTimer = setTimeout(() => {
+    pairingQrRefreshTimer = null;
+
+    if (!remoteServer) {
+      return;
+    }
+
+    publishStatus(remoteServer.getStatus()).catch((error) => {
+      console.error("[desktop] failed to refresh expired pairing QR", error);
+    });
+  }, delayMs);
 }
 
 async function resolveExpoUrl(addresses: string[]): Promise<string> {
@@ -828,6 +864,9 @@ app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
   checkAccessibilityPermission();
   startMobileServer();
+  pairingAuth = new PairingAuthManager(
+    path.join(app.getPath("userData"), "paired-devices.json"),
+  );
   ipcMain.handle("status:get", () => withDesktopContext(latestStatus));
   ipcMain.handle("clipboard:write", (_event, text: unknown) => {
     if (typeof text !== "string") {
@@ -890,7 +929,23 @@ app.whenReady().then(() => {
   remoteServer = new RemoteWebSocketServer(
     port,
     handleRemoteMessage,
+    (message) => {
+      if (!pairingAuth) {
+        return { type: "authRejected", reason: "pairingTokenExpired" };
+      }
+
+      return pairingAuth.authenticate(message);
+    },
     getHostState,
+    () => {
+      setTimeout(() => {
+        if (remoteServer) {
+          publishStatus(remoteServer.getStatus()).catch((error) => {
+            console.error("[desktop] failed to refresh pairing QR", error);
+          });
+        }
+      }, 0);
+    },
   );
   publishStatus(remoteServer.getStatus()).catch((error) => {
     console.error("[desktop] failed to publish initial status", error);
@@ -920,6 +975,11 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", async () => {
+  if (pairingQrRefreshTimer) {
+    clearTimeout(pairingQrRefreshTimer);
+    pairingQrRefreshTimer = null;
+  }
+
   await stopMobileServer();
 
   if (remoteServer) {

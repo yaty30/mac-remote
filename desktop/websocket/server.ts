@@ -2,9 +2,19 @@ import { EventEmitter } from "node:events";
 import { networkInterfaces } from "node:os";
 import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
-import type { DesktopStatus, HostMessage, RemoteMessage } from "../types/protocol";
+import type {
+  AuthAcceptedMessage,
+  AuthRequestMessage,
+  DesktopStatus,
+  HostMessage,
+  RemoteMessage,
+} from "../types/protocol";
 
 type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
+type AuthHandler = (
+  message: AuthRequestMessage,
+) => Promise<HostMessage> | HostMessage;
+type AuthChangeHandler = (message: AuthAcceptedMessage) => void;
 type HostStateProvider = () => Promise<HostMessage>;
 type ClientLatencyState = {
   latencyMs?: number;
@@ -23,11 +33,14 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   private connectedClients = 0;
   private currentStatus: DesktopStatus;
   private readonly clientLatency = new Map<WebSocket, ClientLatencyState>();
+  private readonly authenticatedSockets = new Set<WebSocket>();
 
   constructor(
     private readonly port: number,
     private readonly onMessage: MessageHandler,
+    private readonly onAuth: AuthHandler,
     private readonly getHostState?: HostStateProvider,
+    private readonly onAuthChange?: AuthChangeHandler,
   ) {
     super();
 
@@ -62,15 +75,8 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     this.server.on("listening", () => this.publishStatus());
 
     this.server.on("connection", (socket) => {
-      this.connectedClients += 1;
       this.startLatencyMonitoring(socket);
       this.publishStatus();
-      this.sendHostState(socket).catch((error) => {
-        this.emit(
-          "error",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      });
 
       socket.on("message", async (raw) => {
         try {
@@ -83,6 +89,33 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
           if (message.type === "pong") {
             this.recordLatency(socket, message.id);
+            return;
+          }
+
+          if (message.type === "authRequest") {
+            const response = await this.onAuth(message);
+            sendJson(socket, response);
+
+            if (response.type === "authAccepted") {
+              this.authenticatedSockets.add(socket);
+              this.publishStatus();
+              this.onAuthChange?.(response);
+              this.sendHostState(socket).catch((error) => {
+                this.emit(
+                  "error",
+                  error instanceof Error ? error : new Error(String(error)),
+                );
+              });
+            }
+
+            return;
+          }
+
+          if (!this.authenticatedSockets.has(socket)) {
+            sendJson(socket, {
+              type: "authRejected",
+              reason: "missingCredentials",
+            });
             return;
           }
 
@@ -100,7 +133,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       });
 
       socket.on("close", () => {
-        this.connectedClients = Math.max(0, this.connectedClients - 1);
+        this.authenticatedSockets.delete(socket);
         this.stopLatencyMonitoring(socket);
         this.publishStatus();
       });
@@ -118,6 +151,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   }
 
   private publishStatus(): void {
+    this.connectedClients = this.authenticatedSockets.size;
     this.currentStatus = this.buildStatus(
       this.connectedClients > 0 ? "connected" : "waiting",
     );
@@ -202,6 +236,32 @@ function parseRemoteMessage(raw: string): RemoteMessage {
 
   if (!isRecord(data) || typeof data.type !== "string") {
     throw new Error("Invalid remote message");
+  }
+
+  if (data.type === "authRequest") {
+    if (
+      typeof data.clientId !== "string" ||
+      typeof data.clientName !== "string"
+    ) {
+      throw new Error("Invalid authRequest payload");
+    }
+
+    const pairingToken =
+      typeof data.pairingToken === "string"
+        ? data.pairingToken.trim().slice(0, 256)
+        : undefined;
+    const deviceToken =
+      typeof data.deviceToken === "string"
+        ? data.deviceToken.trim().slice(0, 256)
+        : undefined;
+
+    return {
+      type: "authRequest",
+      clientId: data.clientId.trim().slice(0, 128),
+      clientName: data.clientName.trim().slice(0, 80),
+      pairingToken,
+      deviceToken,
+    };
   }
 
   if (data.type === "moveMouse") {

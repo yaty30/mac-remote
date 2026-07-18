@@ -51,6 +51,7 @@ interface DesktopStatus {
   latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
+  pairingTokenExpiresAt?: number;
   expoUrl?: string;
   expoQrDataUrl?: string;
   errorMessage?: string;

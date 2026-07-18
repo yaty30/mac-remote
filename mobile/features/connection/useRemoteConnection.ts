@@ -1,7 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
-import { AppState, Keyboard, type AppStateStatus } from "react-native";
-import type { ConnectionStatus, HostPlatform } from "../../types/protocol";
+import { AppState, Keyboard, Platform, type AppStateStatus } from "react-native";
+import type {
+  AuthRejectedReason,
+  ConnectionStatus,
+  HostPlatform,
+} from "../../types/protocol";
 import type { RemoteSocket } from "../../websocket/RemoteSocket";
 import {
   getDeviceId,
@@ -12,6 +16,7 @@ import {
   upsertDevice,
 } from "./deviceUtils";
 import {
+  CLIENT_ID_STORAGE_KEY,
   DEVICES_STORAGE_KEY,
   HOST_NAME_STORAGE_KEY,
   HOST_STORAGE_KEY,
@@ -29,6 +34,7 @@ export function useRemoteConnection(
 ) {
   const onResetHostStateRef = useRef(onResetHostState);
   const onUnmountRef = useRef(onUnmount);
+  const clientIdRef = useRef("");
   const hostRef = useRef("");
   const statusRef = useRef<ConnectionStatus>("idle");
   const [host, setHost] = useState("");
@@ -37,6 +43,7 @@ export function useRemoteConnection(
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [connectionHydrated, setConnectionHydrated] = useState(false);
 
   useEffect(() => {
@@ -107,15 +114,17 @@ export function useRemoteConnection(
     let cancelled = false;
 
     Promise.all([
+      AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY),
       AsyncStorage.getItem(HOST_STORAGE_KEY),
       AsyncStorage.getItem(HOST_NAME_STORAGE_KEY),
       AsyncStorage.getItem(DEVICES_STORAGE_KEY),
     ])
-      .then(([savedHost, savedHostName, savedDevicesRaw]) => {
+      .then(([savedClientId, savedHost, savedHostName, savedDevicesRaw]) => {
         if (cancelled) {
           return;
         }
 
+        const clientId = savedClientId?.trim() || createClientId();
         const devices = parseSavedDevices(savedDevicesRaw);
         const legacyHost = savedHost?.trim();
         const legacyName = sanitizeHostName(savedHostName);
@@ -131,7 +140,13 @@ export function useRemoteConnection(
             : devices;
 
         setSavedDevices(nextDevices);
+        clientIdRef.current = clientId;
 
+        if (!savedClientId) {
+          AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId).catch(() => {
+            // Ignore storage errors.
+          });
+        }
         if (legacyHost && nextDevices.length !== devices.length) {
           persistSavedDevices(nextDevices);
         }
@@ -142,7 +157,20 @@ export function useRemoteConnection(
           hostRef.current = legacyHost;
           setHost(legacyHost);
           setHostName(device?.name ?? legacyName ?? "");
-          socket.connect(legacyHost);
+
+          if (!device?.deviceToken) {
+            setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
+            statusRef.current = "idle";
+            setStatus("idle");
+            return;
+          }
+
+          connectSocket(
+            legacyHost,
+            device?.name ?? legacyName ?? undefined,
+            undefined,
+            device,
+          );
         }
       })
       .catch(() => {
@@ -198,16 +226,22 @@ export function useRemoteConnection(
     });
   }
 
-  function connectToHost(nextHost: string, nextHostName?: string) {
+  function connectToHost(
+    nextHost: string,
+    nextHostName?: string,
+    pairingToken?: string,
+  ) {
     const cleanHost = nextHost.trim();
 
     if (cleanHost.length === 0) {
+      setAuthError(null);
       setStatus("error");
       return;
     }
 
     Keyboard.dismiss();
     setDeviceDropdownOpen(false);
+    setAuthError(null);
     hostRef.current = cleanHost;
     setHost(cleanHost);
     onResetHostStateRef.current();
@@ -230,10 +264,48 @@ export function useRemoteConnection(
       host: cleanHost,
       name: displayName,
     });
-    socket.connect(cleanHost);
+    connectSocket(cleanHost, displayName, pairingToken, matchingDevice);
   }
 
-  function persistDevice(input: { host: string; name?: string }) {
+  function connectSocket(
+    cleanHost: string,
+    displayName?: string,
+    pairingToken?: string,
+    device?: SavedDevice,
+  ) {
+    const clientId = ensureStoredClientId(clientIdRef);
+    const deviceToken = pairingToken ? undefined : device?.deviceToken;
+
+    if (!pairingToken && !deviceToken) {
+      setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
+      statusRef.current = "idle";
+      setStatus("idle");
+      return;
+    }
+
+    socket.connect(cleanHost, {
+      clientId,
+      clientName: getClientName(),
+      pairingToken,
+      deviceToken,
+      onAccepted: (nextDeviceToken) => {
+        persistDevice({
+          host: cleanHost,
+          name: displayName,
+          deviceToken: nextDeviceToken,
+        });
+      },
+      onRejected: (reason) => {
+        handleAuthRejected(cleanHost, reason);
+      },
+    });
+  }
+
+  function persistDevice(input: {
+    host: string;
+    name?: string;
+    deviceToken?: string;
+  }) {
     const cleanHost = input.host.trim();
 
     if (!cleanHost) {
@@ -246,6 +318,7 @@ export function useRemoteConnection(
       host: cleanHost,
       platform: savedDevices.find((device) => device.host === cleanHost)
         ?.platform,
+      deviceToken: input.deviceToken,
       lastConnectedAt: Date.now(),
     };
 
@@ -260,11 +333,29 @@ export function useRemoteConnection(
     connectToHost(device.host, device.name);
   }
 
+  function handleAuthRejected(hostToUpdate: string, reason: AuthRejectedReason) {
+    setAuthError(getAuthRejectedMessage(reason));
+
+    if (reason === "deviceNotTrusted") {
+      setSavedDevices((currentDevices) => {
+        const nextDevices = currentDevices.map((device) =>
+          device.host === hostToUpdate
+            ? { ...device, deviceToken: undefined }
+            : device,
+        );
+
+        persistSavedDevices(nextDevices);
+        return nextDevices;
+      });
+    }
+  }
+
   function cancelConnection() {
     socket.disconnect();
     statusRef.current = "idle";
     hostRef.current = "";
     setStatus("idle");
+    setAuthError(null);
     setLatencyMs(null);
     setHost("");
     setHostName("");
@@ -324,11 +415,13 @@ export function useRemoteConnection(
   }
 
   function setConnectionError() {
+    setAuthError(null);
     statusRef.current = "error";
     setStatus("error");
   }
 
   return {
+    authError,
     cancelConnection,
     connectionHydrated,
     connectToHost,
@@ -346,4 +439,57 @@ export function useRemoteConnection(
     status,
     latencyMs,
   };
+}
+
+function ensureStoredClientId(clientIdRef: { current: string }): string {
+  if (clientIdRef.current) {
+    return clientIdRef.current;
+  }
+
+  const clientId = createClientId();
+  clientIdRef.current = clientId;
+  AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId).catch(() => {
+    // Ignore storage errors.
+  });
+  return clientId;
+}
+
+function createClientId(): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+
+  if (randomUuid) {
+    return randomUuid;
+  }
+
+  return `${Platform.OS}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+function getClientName(): string {
+  if (Platform.OS === "ios") {
+    return "iPhone";
+  }
+
+  if (Platform.OS === "android") {
+    return "Android phone";
+  }
+
+  return "Phone";
+}
+
+function getAuthRejectedMessage(reason: AuthRejectedReason): string {
+  if (reason === "pairingTokenUsed") {
+    return "That QR code was already used. Scan the refreshed QR code on the desktop.";
+  }
+
+  if (reason === "pairingTokenExpired") {
+    return "That QR code expired. Scan the refreshed QR code on the desktop.";
+  }
+
+  if (reason === "deviceNotTrusted") {
+    return "This phone is not trusted anymore. Scan the desktop QR code again.";
+  }
+
+  return "Pairing failed. Scan the desktop QR code again.";
 }

@@ -12,6 +12,7 @@ export interface HostCapabilities {
 }
 
 export type RemoteMessage =
+  | AuthRequestMessage
   | MoveMouseMessage
   | LeftClickMessage
   | DoubleClickMessage
@@ -39,7 +40,19 @@ export type RemoteMessage =
   | PingMessage
   | PongMessage;
 
-export type HostMessage = HostStateMessage | PingMessage | PongMessage;
+export type HostMessage =
+  | AuthAcceptedMessage
+  | AuthRejectedMessage
+  | HostStateMessage
+  | PingMessage
+  | PongMessage;
+
+export type AuthRejectedReason =
+  | "missingCredentials"
+  | "pairingTokenExpired"
+  | "pairingTokenInvalid"
+  | "pairingTokenUsed"
+  | "deviceNotTrusted";
 
 export interface HostDisplayInfo {
   id: number;
@@ -47,6 +60,25 @@ export interface HostDisplayInfo {
   isTv: boolean;
   brightnessAdjustable: boolean;
   volumeAdjustable: boolean;
+}
+
+export interface AuthRequestMessage {
+  type: "authRequest";
+  clientId: string;
+  clientName: string;
+  pairingToken?: string;
+  deviceToken?: string;
+}
+
+export interface AuthAcceptedMessage {
+  type: "authAccepted";
+  deviceToken?: string;
+  paired: boolean;
+}
+
+export interface AuthRejectedMessage {
+  type: "authRejected";
+  reason: AuthRejectedReason;
 }
 
 export interface MoveMouseMessage {
@@ -221,6 +253,7 @@ export interface DesktopStatus {
   latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
+  pairingTokenExpiresAt?: number;
   expoUrl?: string;
   expoQrDataUrl?: string;
   errorMessage?: string;

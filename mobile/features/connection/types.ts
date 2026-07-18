@@ -3,6 +3,7 @@ import type { HostPlatform } from "../../types/protocol";
 export interface PairingPayload {
   url: string;
   hostName?: string;
+  pairingToken?: string;
 }
 
 export interface SavedDevice {
@@ -10,5 +11,6 @@ export interface SavedDevice {
   name: string;
   host: string;
   platform?: HostPlatform;
+  deviceToken?: string;
   lastConnectedAt: number;
 }
