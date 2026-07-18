@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
@@ -13,6 +14,7 @@ import type {
 type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
 type AuthHandler = (
   message: AuthRequestMessage,
+  challengeNonce: string | undefined,
 ) => Promise<HostMessage> | HostMessage;
 type AuthChangeHandler = (
   message: AuthAcceptedMessage,
@@ -38,6 +40,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   private readonly clientLatency = new Map<WebSocket, ClientLatencyState>();
   private readonly authenticatedSockets = new Set<WebSocket>();
   private readonly authenticatedClients = new Map<WebSocket, string>();
+  private readonly authChallenges = new Map<WebSocket, string>();
 
   constructor(
     private readonly port: number,
@@ -72,6 +75,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       disconnected += 1;
       this.authenticatedSockets.delete(socket);
       this.authenticatedClients.delete(socket);
+      this.authChallenges.delete(socket);
       socket.close(1000, "Device disconnected");
     }
 
@@ -87,6 +91,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       clearInterval(state.timer);
     }
     this.clientLatency.clear();
+    this.authChallenges.clear();
 
     return new Promise((resolve, reject) => {
       this.server.close((error) => {
@@ -104,6 +109,9 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     this.server.on("listening", () => this.publishStatus());
 
     this.server.on("connection", (socket) => {
+      const authNonce = randomBytes(32).toString("base64url");
+      this.authChallenges.set(socket, authNonce);
+      sendJson(socket, { type: "authChallenge", nonce: authNonce });
       this.startLatencyMonitoring(socket);
       this.publishStatus();
 
@@ -122,12 +130,16 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
           }
 
           if (message.type === "authRequest") {
-            const response = await this.onAuth(message);
+            const response = await this.onAuth(
+              message,
+              this.authChallenges.get(socket),
+            );
             sendJson(socket, response);
 
             if (response.type === "authAccepted") {
               this.authenticatedSockets.add(socket);
               this.authenticatedClients.set(socket, message.clientId);
+              this.authChallenges.delete(socket);
               this.publishStatus();
               this.onAuthChange?.(response, message.clientId);
               this.sendHostState(socket).catch((error) => {
@@ -165,6 +177,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       socket.on("close", () => {
         this.authenticatedSockets.delete(socket);
         this.authenticatedClients.delete(socket);
+        this.authChallenges.delete(socket);
         this.stopLatencyMonitoring(socket);
         this.publishStatus();
       });
@@ -281,9 +294,21 @@ function parseRemoteMessage(raw: string): RemoteMessage {
       typeof data.pairingToken === "string"
         ? data.pairingToken.trim().slice(0, 256)
         : undefined;
+    const pairingTokenId =
+      typeof data.pairingTokenId === "string"
+        ? data.pairingTokenId.trim().slice(0, 32)
+        : undefined;
+    const pairingTokenProof =
+      typeof data.pairingTokenProof === "string"
+        ? data.pairingTokenProof.trim().slice(0, 128)
+        : undefined;
     const deviceToken =
       typeof data.deviceToken === "string"
         ? data.deviceToken.trim().slice(0, 256)
+        : undefined;
+    const deviceTokenProof =
+      typeof data.deviceTokenProof === "string"
+        ? data.deviceTokenProof.trim().slice(0, 128)
         : undefined;
 
     return {
@@ -291,7 +316,10 @@ function parseRemoteMessage(raw: string): RemoteMessage {
       clientId: data.clientId.trim().slice(0, 128),
       clientName: data.clientName.trim().slice(0, 80),
       pairingToken,
+      pairingTokenId,
+      pairingTokenProof,
       deviceToken,
+      deviceTokenProof,
     };
   }
 

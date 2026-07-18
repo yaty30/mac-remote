@@ -19,6 +19,7 @@
     "desktop:dist:mac": "npm run dist:mac --workspace desktop",
     "mobile:install": "npm install --workspace mobile",
     "mobile:start": "npm run start --workspace mobile",
+    "test": "npm test --workspace desktop",
     "autostart:install": "node scripts/install-launch-agent.mjs",
     "autostart:uninstall": "node scripts/uninstall-launch-agent.mjs"
   },

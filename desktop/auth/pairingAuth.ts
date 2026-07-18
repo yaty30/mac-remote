@@ -11,6 +11,11 @@ import type {
   AuthRequestMessage,
   PairedDeviceInfo,
 } from "../types/protocol";
+import {
+  buildTokenProof,
+  deriveDeviceToken,
+  getTokenId,
+} from "./tokenProof";
 
 const PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;
 const CONSUMED_TOKEN_RETENTION_MS = 30 * 60 * 1000;
@@ -103,7 +108,10 @@ export class PairingAuthManager {
     return true;
   }
 
-  authenticate(message: AuthRequestMessage): AuthResult {
+  authenticate(
+    message: AuthRequestMessage,
+    challengeNonce?: string,
+  ): AuthResult {
     const clientId = normalizeClientId(message.clientId);
     const clientName = normalizeClientName(message.clientName);
 
@@ -113,8 +121,30 @@ export class PairingAuthManager {
 
     this.purgeConsumedPairingTokens();
 
+    if (message.deviceTokenProof && challengeNonce) {
+      return this.authenticateDeviceTokenProof(
+        clientId,
+        message.deviceTokenProof,
+        challengeNonce,
+      );
+    }
+
     if (message.deviceToken) {
       return this.authenticateDeviceToken(clientId, message.deviceToken);
+    }
+
+    if (
+      message.pairingTokenId &&
+      message.pairingTokenProof &&
+      challengeNonce
+    ) {
+      return this.authenticatePairingTokenProof(
+        clientId,
+        clientName,
+        message.pairingTokenId,
+        message.pairingTokenProof,
+        challengeNonce,
+      );
     }
 
     if (message.pairingToken) {
@@ -126,6 +156,29 @@ export class PairingAuthManager {
     }
 
     return { type: "authRejected", reason: "missingCredentials" };
+  }
+
+  private authenticateDeviceTokenProof(
+    clientId: string,
+    deviceTokenProof: string,
+    challengeNonce: string,
+  ): AuthResult {
+    const device = this.state.devices.find((item) => item.clientId === clientId);
+
+    if (
+      !device ||
+      !safeTextEqual(
+        deviceTokenProof,
+        buildTokenProof(device.deviceTokenHash, clientId, challengeNonce),
+      )
+    ) {
+      return { type: "authRejected", reason: "deviceNotTrusted" };
+    }
+
+    device.lastSeenAt = Date.now();
+    this.writeState();
+
+    return { type: "authAccepted", paired: false };
   }
 
   private authenticateDeviceToken(
@@ -142,6 +195,70 @@ export class PairingAuthManager {
     this.writeState();
 
     return { type: "authAccepted", paired: false };
+  }
+
+  private authenticatePairingTokenProof(
+    clientId: string,
+    clientName: string,
+    pairingTokenId: string,
+    pairingTokenProof: string,
+    challengeNonce: string,
+  ): AuthResult {
+    const normalizedPairingTokenId = normalizeTokenId(pairingTokenId);
+
+    if (
+      this.state.consumedPairingTokens.some(
+        (item) => getTokenId(item.tokenHash) === normalizedPairingTokenId,
+      )
+    ) {
+      return { type: "authRejected", reason: "pairingTokenUsed" };
+    }
+
+    const activeToken = this.activePairingToken;
+
+    if (!activeToken || activeToken.expiresAt <= Date.now()) {
+      this.activePairingToken = null;
+      return { type: "authRejected", reason: "pairingTokenExpired" };
+    }
+
+    const pairingTokenHash = hashToken(activeToken.token);
+
+    if (
+      getTokenId(pairingTokenHash) !== normalizedPairingTokenId ||
+      !safeTextEqual(
+        pairingTokenProof,
+        buildTokenProof(pairingTokenHash, clientId, challengeNonce),
+      )
+    ) {
+      return { type: "authRejected", reason: "pairingTokenInvalid" };
+    }
+
+    const now = Date.now();
+    const deviceToken = deriveDeviceToken(
+      pairingTokenHash,
+      clientId,
+      challengeNonce,
+    );
+    const nextDevice: StoredPairedDevice = {
+      clientId,
+      clientName,
+      deviceTokenHash: hashToken(deviceToken),
+      pairedAt: now,
+      lastSeenAt: now,
+    };
+
+    this.state.devices = [
+      nextDevice,
+      ...this.state.devices.filter((item) => item.clientId !== clientId),
+    ].slice(0, 50);
+    this.state.consumedPairingTokens.push({
+      tokenHash: pairingTokenHash,
+      expiresAt: now + CONSUMED_TOKEN_RETENTION_MS,
+    });
+    this.activePairingToken = null;
+    this.writeState();
+
+    return { type: "authAccepted", paired: true };
   }
 
   private authenticatePairingToken(
@@ -290,6 +407,10 @@ function normalizeClientName(value: unknown): string {
   return name || "Phone";
 }
 
+function normalizeTokenId(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 32) : "";
+}
+
 function parseTimestamp(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -305,6 +426,17 @@ function hashToken(token: string): string {
 function safeHashEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left, "hex");
   const rightBuffer = Buffer.from(right, "hex");
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function safeTextEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
 
   if (leftBuffer.length !== rightBuffer.length) {
     return false;

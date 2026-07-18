@@ -6,6 +6,12 @@ import type {
   ShortcutId,
   TextCommand,
 } from "../types/protocol";
+import {
+  buildTokenProof,
+  deriveDeviceToken,
+  getTokenId,
+  hashToken,
+} from "../features/security/tokenProof";
 
 type StatusListener = (status: ConnectionStatus) => void;
 type MessageListener = (message: HostMessage) => void;
@@ -35,6 +41,7 @@ export class RemoteSocket {
   private shouldReconnect = false;
   private currentAuth: AuthOptions | null = null;
   private authTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPairingDeviceToken: string | null = null;
 
   connect(host: string, auth?: AuthOptions, port = 8787): void {
     this.closeSocket();
@@ -42,6 +49,7 @@ export class RemoteSocket {
     this.emit("connecting");
     this.currentHost = host;
     this.currentAuth = auth ?? null;
+    this.pendingPairingDeviceToken = null;
     this.shouldReconnect = true;
 
     const normalizedHost = host
@@ -53,7 +61,6 @@ export class RemoteSocket {
 
     socket.onopen = () => {
       if (this.currentAuth) {
-        this.sendAuthRequest();
         this.startAuthTimeout();
         return;
       }
@@ -86,6 +93,7 @@ export class RemoteSocket {
   disconnect(): void {
     this.shouldReconnect = false;
     this.currentAuth = null;
+    this.pendingPairingDeviceToken = null;
     this.clearReconnectTimer();
     this.closeSocket();
   }
@@ -229,21 +237,43 @@ export class RemoteSocket {
     this.socket.send(JSON.stringify(message));
   }
 
-  private sendAuthRequest(): void {
+  private sendAuthRequest(challengeNonce: string): void {
     const auth = this.currentAuth;
 
     if (!auth) {
       return;
     }
 
+    const authRequest: RemoteMessage = {
+      type: "authRequest",
+      clientId: auth.clientId,
+      clientName: auth.clientName,
+    };
+
+    if (auth.deviceToken) {
+      const deviceTokenHash = hashToken(auth.deviceToken);
+      authRequest.deviceTokenProof = buildTokenProof(
+        deviceTokenHash,
+        auth.clientId,
+        challengeNonce,
+      );
+    } else if (auth.pairingToken) {
+      const pairingTokenHash = hashToken(auth.pairingToken);
+      authRequest.pairingTokenId = getTokenId(pairingTokenHash);
+      authRequest.pairingTokenProof = buildTokenProof(
+        pairingTokenHash,
+        auth.clientId,
+        challengeNonce,
+      );
+      this.pendingPairingDeviceToken = deriveDeviceToken(
+        pairingTokenHash,
+        auth.clientId,
+        challengeNonce,
+      );
+    }
+
     this.send(
-      {
-        type: "authRequest",
-        clientId: auth.clientId,
-        clientName: auth.clientName,
-        pairingToken: auth.pairingToken,
-        deviceToken: auth.deviceToken,
-      },
+      authRequest,
       true,
     );
   }
@@ -354,6 +384,15 @@ export class RemoteSocket {
         return;
       }
 
+      if (message.type === "authChallenge") {
+        if (typeof message.nonce !== "string") {
+          return;
+        }
+
+        this.sendAuthRequest(message.nonce);
+        return;
+      }
+
       if (message.type === "pong") {
         if (typeof message.id !== "string") {
           return;
@@ -371,7 +410,10 @@ export class RemoteSocket {
 
       if (message.type === "authAccepted") {
         this.clearAuthTimeout();
-        this.currentAuth?.onAccepted?.(message.deviceToken);
+        this.currentAuth?.onAccepted?.(
+          message.deviceToken ?? this.pendingPairingDeviceToken ?? undefined,
+        );
+        this.pendingPairingDeviceToken = null;
         this.emit("connected");
         this.startLatencyChecks();
         return;
@@ -380,6 +422,7 @@ export class RemoteSocket {
       if (message.type === "authRejected") {
         this.clearAuthTimeout();
         this.currentAuth?.onRejected?.(message.reason);
+        this.pendingPairingDeviceToken = null;
         this.shouldReconnect = false;
         this.emit("error");
         this.closeSocket();

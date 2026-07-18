@@ -15,6 +15,7 @@
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
     "start": "node scripts/start-electron.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "build": {

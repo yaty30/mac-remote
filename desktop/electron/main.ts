@@ -946,12 +946,12 @@ app.whenReady().then(() => {
   remoteServer = new RemoteWebSocketServer(
     port,
     handleRemoteMessage,
-    (message) => {
+    (message, challengeNonce) => {
       if (!pairingAuth) {
         return { type: "authRejected", reason: "pairingTokenExpired" };
       }
 
-      return pairingAuth.authenticate(message);
+      return pairingAuth.authenticate(message, challengeNonce);
     },
     getHostState,
     () => {

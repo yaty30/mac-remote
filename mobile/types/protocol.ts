@@ -53,6 +53,7 @@ export type RemoteMessage =
   | PongMessage;
 
 export type HostMessage =
+  | AuthChallengeMessage
   | AuthAcceptedMessage
   | AuthRejectedMessage
   | HostStateMessage
@@ -79,7 +80,15 @@ export interface AuthRequestMessage {
   clientId: string;
   clientName: string;
   pairingToken?: string;
+  pairingTokenId?: string;
+  pairingTokenProof?: string;
   deviceToken?: string;
+  deviceTokenProof?: string;
+}
+
+export interface AuthChallengeMessage {
+  type: "authChallenge";
+  nonce: string;
 }
 
 export interface AuthAcceptedMessage {
