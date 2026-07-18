@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("remoteDesktop", {
     ipcRenderer.invoke("settings:accessibility"),
   controlWindow: (action: "minimize" | "maximize" | "close"): Promise<boolean> =>
     ipcRenderer.invoke("window:control", action),
+  revokeDevice: (clientId: string): Promise<boolean> =>
+    ipcRenderer.invoke("devices:revoke", clientId),
   onStatus: (callback: (status: DesktopStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: DesktopStatus) =>
       callback(status);

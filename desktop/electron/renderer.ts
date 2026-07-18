@@ -35,6 +35,14 @@ interface HostCapabilities {
   restart: boolean;
 }
 
+interface PairedDeviceInfo {
+  clientId: string;
+  clientName: string;
+  pairedAt: number;
+  lastSeenAt: number;
+  connected: boolean;
+}
+
 interface DesktopStatus {
   status: ConnectionStatus;
   hostName?: string;
@@ -48,6 +56,7 @@ interface DesktopStatus {
   port: number;
   addresses: string[];
   connectedClients: number;
+  pairedDevices?: PairedDeviceInfo[];
   latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;
@@ -64,6 +73,7 @@ interface RemoteDesktopApi {
   copyText: (text: string) => Promise<boolean>;
   openAccessibilitySettings: () => Promise<boolean>;
   controlWindow: (action: WindowAction) => Promise<boolean>;
+  revokeDevice: (clientId: string) => Promise<boolean>;
   onStatus: (callback: (status: DesktopStatus) => void) => () => void;
 }
 
@@ -75,6 +85,8 @@ const deviceName = query<HTMLHeadingElement>("#deviceName");
 const clientCount = query<HTMLElement>("#clientCount");
 const clientMeta = query<HTMLElement>("#clientMeta");
 const networkMeta = query<HTMLElement>("#networkMeta");
+const deviceList = query<HTMLDivElement>("#deviceList");
+const deviceEmptyState = query<HTMLDivElement>("#deviceEmptyState");
 const displayMeta = query<HTMLElement>("#displayMeta");
 const addressList = query<HTMLDivElement>("#addressList");
 const healthList = query<HTMLDivElement>("#healthList");
@@ -108,6 +120,8 @@ let startupSettings: StartupSettings = {
   available: false,
   enabled: false,
 };
+let activeTooltipAnchor: HTMLButtonElement | null = null;
+let deviceActionTooltip: HTMLDivElement | null = null;
 
 const LUCIDE_ICON_NODES: Record<string, readonly LucideNode[]> = {
   check: [["path", { d: "M20 6 9 17l-5-5" }]],
@@ -140,6 +154,19 @@ const LUCIDE_ICON_NODES: Record<string, readonly LucideNode[]> = {
     ["path", { d: "M2 8.82a15 15 0 0 1 20 0" }],
     ["path", { d: "M5 12.86a10 10 0 0 1 14 0" }],
     ["path", { d: "M8.5 16.43a5 5 0 0 1 7 0" }],
+  ],
+  "trash-2": [
+    ["path", { d: "M3 6h18" }],
+    ["path", { d: "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" }],
+    ["path", { d: "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" }],
+    ["path", { d: "M10 11v6" }],
+    ["path", { d: "M14 11v6" }],
+  ],
+  unlink: [
+    ["path", { d: "m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71" }],
+    ["path", { d: "m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71" }],
+    ["path", { d: "m8 8 8 8" }],
+    ["path", { d: "m2 2 20 20" }],
   ],
   x: [
     ["path", { d: "M18 6 6 18" }],
@@ -247,6 +274,7 @@ function renderStatus(status: DesktopStatus): void {
   renderQr(expoQrImage, expoFallback, status.expoQrDataUrl, "Expo QR unavailable");
   renderAddresses(status);
   renderHealth(status);
+  renderDevices(status);
   updateButtons(status);
 }
 
@@ -374,6 +402,159 @@ function renderHealth(status: DesktopStatus): void {
   );
 }
 
+function renderDevices(status: DesktopStatus): void {
+  if (!deviceList || !deviceEmptyState) {
+    return;
+  }
+
+  hideDeviceActionTooltip();
+  const devices = status.pairedDevices ?? [];
+  deviceList.replaceChildren(...devices.map((device) => createDeviceRow(device)));
+  deviceList.classList.toggle("hidden", devices.length === 0);
+  deviceEmptyState.classList.toggle("hidden", devices.length > 0);
+}
+
+function createDeviceRow(device: PairedDeviceInfo): HTMLElement {
+  const item = document.createElement("article");
+  const iconShell = document.createElement("div");
+  const icon = createLucideIcon("smartphone");
+  const copy = document.createElement("div");
+  const name = document.createElement("strong");
+  const meta = document.createElement("div");
+  const statusDot = document.createElement("span");
+  const statusText = document.createElement("span");
+  const separator = document.createElement("span");
+  const lastActive = document.createElement("span");
+  const action = document.createElement("button");
+  const actionLabel = device.connected ? "Disconnect device" : "Forget device";
+  const actionIcon = createLucideIcon(device.connected ? "unlink" : "trash-2");
+
+  item.className = `deviceRow ${device.connected ? "connected" : ""}`;
+  iconShell.className = "deviceRowIcon";
+  if (icon) {
+    iconShell.append(icon);
+  }
+
+  copy.className = "deviceRowCopy";
+  name.className = "deviceRowName";
+  name.textContent = device.clientName;
+  meta.className = "deviceRowMeta";
+  statusDot.className = "deviceStatusDot";
+  statusText.textContent = device.connected ? "Connected" : "Disconnected";
+  separator.className = "deviceMetaSeparator";
+  separator.textContent = ".";
+  lastActive.textContent = `Last active ${formatRelativeTime(device.lastSeenAt)}`;
+  meta.append(statusDot, statusText, separator, lastActive);
+  copy.append(name, meta);
+
+  action.className = "deviceAction";
+  action.type = "button";
+  action.setAttribute("aria-label", actionLabel);
+  action.dataset.tooltip = actionLabel;
+  if (actionIcon) {
+    action.append(actionIcon);
+  }
+  attachDeviceActionTooltip(action);
+  action.addEventListener("click", async () => {
+    if (!desktopApi) {
+      return;
+    }
+
+    hideDeviceActionTooltip();
+    action.disabled = true;
+
+    try {
+      await desktopApi.revokeDevice(device.clientId);
+    } catch (error) {
+      action.disabled = false;
+      console.error("[desktop] failed to revoke device", error);
+    }
+  });
+
+  item.append(iconShell, copy, action);
+  return item;
+}
+
+function attachDeviceActionTooltip(button: HTMLButtonElement): void {
+  button.addEventListener("mouseenter", () => showDeviceActionTooltip(button));
+  button.addEventListener("focus", () => showDeviceActionTooltip(button));
+  button.addEventListener("mouseleave", hideDeviceActionTooltip);
+  button.addEventListener("blur", hideDeviceActionTooltip);
+}
+
+function showDeviceActionTooltip(button: HTMLButtonElement): void {
+  const label = button.dataset.tooltip;
+
+  if (!label || button.disabled) {
+    return;
+  }
+
+  const tooltip = getDeviceActionTooltip();
+  const content = tooltip.querySelector<HTMLSpanElement>(".desktopTooltipLabel");
+
+  if (content) {
+    content.textContent = label;
+  }
+
+  activeTooltipAnchor = button;
+  tooltip.classList.add("visible");
+  positionDeviceActionTooltip();
+}
+
+function hideDeviceActionTooltip(): void {
+  activeTooltipAnchor = null;
+  deviceActionTooltip?.classList.remove("visible");
+}
+
+function getDeviceActionTooltip(): HTMLDivElement {
+  if (deviceActionTooltip) {
+    return deviceActionTooltip;
+  }
+
+  const tooltip = document.createElement("div");
+  const label = document.createElement("span");
+  const arrow = document.createElement("span");
+
+  tooltip.className = "desktopTooltip";
+  tooltip.setAttribute("role", "tooltip");
+  label.className = "desktopTooltipLabel";
+  arrow.className = "desktopTooltipArrow";
+  tooltip.append(label, arrow);
+  document.body.append(tooltip);
+  deviceActionTooltip = tooltip;
+
+  return tooltip;
+}
+
+function positionDeviceActionTooltip(): void {
+  if (!activeTooltipAnchor || !deviceActionTooltip) {
+    return;
+  }
+
+  const anchorRect = activeTooltipAnchor.getBoundingClientRect();
+  const tooltipRect = deviceActionTooltip.getBoundingClientRect();
+  const anchorCenter = anchorRect.left + anchorRect.width / 2;
+  const left = clamp(
+    anchorCenter - tooltipRect.width / 2,
+    8,
+    window.innerWidth - tooltipRect.width - 8,
+  );
+  const top = Math.max(8, anchorRect.top - tooltipRect.height - 10);
+  const arrowLeft = clamp(anchorCenter - left, 10, tooltipRect.width - 10);
+
+  deviceActionTooltip.style.left = `${left}px`;
+  deviceActionTooltip.style.top = `${top}px`;
+  deviceActionTooltip.style.setProperty("--tooltip-arrow-left", `${arrowLeft}px`);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+}
+
 function updateButtons(status: DesktopStatus): void {
   setButtonDisabled(copyPairingUrl, !status.pairingUrl);
   setButtonDisabled(copyServerUrl, !status.pairingUrl && status.addresses.length === 0);
@@ -383,6 +564,39 @@ function updateButtons(status: DesktopStatus): void {
     status.platform !== "darwin" || status.accessibilityTrusted === true,
   );
   renderStartupSettings(startupSettings);
+}
+
+function formatRelativeTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "unknown";
+  }
+
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+  const elapsedSeconds = Math.round(elapsedMs / 1000);
+
+  if (elapsedSeconds < 45) {
+    return "just now";
+  }
+
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes} min ago`;
+  }
+
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+
+  if (elapsedHours < 24) {
+    return `${elapsedHours} hr ago`;
+  }
+
+  const elapsedDays = Math.round(elapsedHours / 24);
+
+  if (elapsedDays < 30) {
+    return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
+  }
+
+  return new Date(timestamp).toLocaleDateString();
 }
 
 function setButtonDisabled(button: HTMLButtonElement | null, disabled: boolean): void {
@@ -622,6 +836,8 @@ hydrateLucideIcons();
 applyPlatform(getRendererPlatform());
 setTheme(resolveInitialTheme());
 attachActions();
+window.addEventListener("resize", positionDeviceActionTooltip);
+window.addEventListener("scroll", positionDeviceActionTooltip, true);
 
 if (desktopApi) {
   desktopApi.getStatus().then(renderStatus).catch((error) => {

@@ -187,15 +187,18 @@
                 <span class="lucideIcon" data-lucide="smartphone" aria-hidden="true"></span>
                 <h2>Devices</h2>
               </div>
-              <div class="deviceIllustration" aria-hidden="true">
-                <span class="lucideIcon" data-lucide="monitor-smartphone"></span>
+              <div id="deviceList" class="deviceList"></div>
+              <div id="deviceEmptyState" class="deviceEmptyState">
+                <div class="deviceIllustration" aria-hidden="true">
+                  <span class="lucideIcon" data-lucide="monitor-smartphone"></span>
+                </div>
+                <strong id="clientCount" class="deviceCount"
+                  >0 phones connected</strong
+                >
+                <span id="networkMeta" class="deviceMeta"
+                  >Pair an iPhone to get started.</span
+                >
               </div>
-              <strong id="clientCount" class="deviceCount"
-                >0 phones connected</strong
-              >
-              <span id="networkMeta" class="deviceMeta"
-                >Pair an iPhone to get started.</span
-              >
             </section>
           </aside>
         </section>

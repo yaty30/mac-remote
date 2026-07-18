@@ -14,7 +14,10 @@ type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
 type AuthHandler = (
   message: AuthRequestMessage,
 ) => Promise<HostMessage> | HostMessage;
-type AuthChangeHandler = (message: AuthAcceptedMessage) => void;
+type AuthChangeHandler = (
+  message: AuthAcceptedMessage,
+  clientId: string,
+) => void;
 type HostStateProvider = () => Promise<HostMessage>;
 type ClientLatencyState = {
   latencyMs?: number;
@@ -34,6 +37,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   private currentStatus: DesktopStatus;
   private readonly clientLatency = new Map<WebSocket, ClientLatencyState>();
   private readonly authenticatedSockets = new Set<WebSocket>();
+  private readonly authenticatedClients = new Map<WebSocket, string>();
 
   constructor(
     private readonly port: number,
@@ -51,6 +55,31 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
   getStatus(): DesktopStatus {
     return this.currentStatus;
+  }
+
+  getAuthenticatedClientIds(): Set<string> {
+    return new Set(this.authenticatedClients.values());
+  }
+
+  disconnectClient(clientId: string): number {
+    let disconnected = 0;
+
+    for (const [socket, authenticatedClientId] of this.authenticatedClients) {
+      if (authenticatedClientId !== clientId) {
+        continue;
+      }
+
+      disconnected += 1;
+      this.authenticatedSockets.delete(socket);
+      this.authenticatedClients.delete(socket);
+      socket.close(1000, "Device disconnected");
+    }
+
+    if (disconnected > 0) {
+      this.publishStatus();
+    }
+
+    return disconnected;
   }
 
   close(): Promise<void> {
@@ -98,8 +127,9 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
             if (response.type === "authAccepted") {
               this.authenticatedSockets.add(socket);
+              this.authenticatedClients.set(socket, message.clientId);
               this.publishStatus();
-              this.onAuthChange?.(response);
+              this.onAuthChange?.(response, message.clientId);
               this.sendHostState(socket).catch((error) => {
                 this.emit(
                   "error",
@@ -134,6 +164,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
       socket.on("close", () => {
         this.authenticatedSockets.delete(socket);
+        this.authenticatedClients.delete(socket);
         this.stopLatencyMonitoring(socket);
         this.publishStatus();
       });

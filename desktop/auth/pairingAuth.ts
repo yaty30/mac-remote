@@ -9,6 +9,7 @@ import type {
   AuthAcceptedMessage,
   AuthRejectedMessage,
   AuthRequestMessage,
+  PairedDeviceInfo,
 } from "../types/protocol";
 
 const PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -63,6 +64,43 @@ export class PairingAuthManager {
     }
 
     return this.activePairingToken;
+  }
+
+  listDevices(activeClientIds: ReadonlySet<string>): PairedDeviceInfo[] {
+    return this.state.devices
+      .map((device) => ({
+        clientId: device.clientId,
+        clientName: device.clientName,
+        pairedAt: device.pairedAt,
+        lastSeenAt: device.lastSeenAt,
+        connected: activeClientIds.has(device.clientId),
+      }))
+      .sort(
+        (left, right) =>
+          Number(right.connected) - Number(left.connected) ||
+          right.lastSeenAt - left.lastSeenAt ||
+          right.pairedAt - left.pairedAt,
+      );
+  }
+
+  revokeDevice(clientId: unknown): boolean {
+    const normalizedClientId = normalizeClientId(clientId);
+
+    if (!normalizedClientId) {
+      return false;
+    }
+
+    const previousLength = this.state.devices.length;
+    this.state.devices = this.state.devices.filter(
+      (device) => device.clientId !== normalizedClientId,
+    );
+
+    if (this.state.devices.length === previousLength) {
+      return false;
+    }
+
+    this.writeState();
+    return true;
   }
 
   authenticate(message: AuthRequestMessage): AuthResult {

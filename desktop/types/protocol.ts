@@ -62,6 +62,14 @@ export interface HostDisplayInfo {
   volumeAdjustable: boolean;
 }
 
+export interface PairedDeviceInfo {
+  clientId: string;
+  clientName: string;
+  pairedAt: number;
+  lastSeenAt: number;
+  connected: boolean;
+}
+
 export interface AuthRequestMessage {
   type: "authRequest";
   clientId: string;
@@ -250,6 +258,7 @@ export interface DesktopStatus {
   port: number;
   addresses: string[];
   connectedClients: number;
+  pairedDevices?: PairedDeviceInfo[];
   latencyMs?: number;
   pairingUrl?: string;
   pairingQrDataUrl?: string;

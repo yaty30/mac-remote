@@ -593,6 +593,8 @@ async function publishStatus(status: DesktopStatus): Promise<void> {
 function withDesktopContext(status: DesktopStatus): DesktopStatus {
   const accessibilityTarget = getAccessibilityTarget();
   const display = getCurrentDisplayInfo();
+  const activeClientIds =
+    remoteServer?.getAuthenticatedClientIds() ?? new Set<string>();
 
   return {
     ...status,
@@ -604,6 +606,7 @@ function withDesktopContext(status: DesktopStatus): DesktopStatus {
     accessibilityTargetName: accessibilityTarget?.name,
     accessibilityTargetPath: accessibilityTarget?.path,
     display,
+    pairedDevices: pairingAuth?.listDevices(activeClientIds) ?? [],
   };
 }
 
@@ -924,6 +927,20 @@ app.whenReady().then(() => {
     }
 
     return false;
+  });
+  ipcMain.handle("devices:revoke", async (_event, clientId: unknown) => {
+    if (typeof clientId !== "string" || !pairingAuth) {
+      return false;
+    }
+
+    const revoked = pairingAuth.revokeDevice(clientId);
+    remoteServer?.disconnectClient(clientId);
+
+    if (remoteServer) {
+      await publishStatus(remoteServer.getStatus());
+    }
+
+    return revoked;
   });
 
   remoteServer = new RemoteWebSocketServer(
