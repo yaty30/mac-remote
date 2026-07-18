@@ -130,12 +130,50 @@ Those files are created in `desktop/release/`.
 
 This prototype is unsigned. On your own Mac, open it with right-click > **Open** the first time, then grant Accessibility permission in **System Settings > Privacy & Security > Accessibility**.
 
+## Package Desktop App For Windows
+
+Build the Windows app on Windows so Electron and nut.js use Windows native binaries.
+
+```bash
+cd remote-control
+npm install
+npm run desktop:pack:win
+```
+
+The unpacked app is created under:
+
+```text
+desktop/release/win-unpacked/
+```
+
+For an NSIS installer and ZIP:
+
+```bash
+npm run desktop:dist:win
+```
+
+Those files are created in `desktop/release/`.
+
+This prototype is unsigned. Windows SmartScreen may warn until the installer is code-signed with a trusted certificate.
+
+## Mobile Release Builds
+
+The mobile app can still run through Expo Go for development. Release metadata is defined in `mobile/app.json` and `eas.json`:
+
+- iOS bundle identifier: `local.remote-control.mobile`
+- Android package: `local.remotecontrol.mobile`
+- Android release build profile: `eas build --platform android --profile production`
+- Android internal APK build profile: `eas build --platform android --profile preview`
+
+For a real public release, replace the `local.*` identifiers with bundle IDs/package names that you control before submitting to the stores. iOS App Store and TestFlight distribution require an Apple Developer account.
+
 ## Message Protocol
 
 The mobile app sends JSON over WebSocket:
 
 ```ts
-{ type: "authRequest", clientId: string, clientName: string, pairingToken?: string, deviceToken?: string }
+{ type: "authChallenge", nonce: string }
+{ type: "authRequest", clientId: string, clientName: string, pairingTokenId?: string, pairingTokenProof?: string, deviceTokenProof?: string }
 { type: "authAccepted", deviceToken?: string, paired: boolean }
 { type: "authRejected", reason: "missingCredentials" | "pairingTokenExpired" | "pairingTokenInvalid" | "pairingTokenUsed" | "deviceNotTrusted" }
 { type: "moveMouse", dx: number, dy: number }
@@ -180,6 +218,16 @@ LaunchAgent logs are written to `~/Library/Logs/local.remote-control.dev.out.log
 
 - This is intended only for trusted home Wi-Fi.
 - Pairing QR codes include a short-lived single-use token. After first pairing,
-  the phone reconnects with a saved device token.
+  the phone reconnects by proving it has a saved device token without sending
+  the raw token over the socket.
 - The shortcut commands are macOS-specific.
 - The mobile app is pinned to Expo SDK 54 so it works with Expo Go `54.x`.
+
+## Release Checklist
+
+- Replace `local.*` app identifiers with owned production identifiers.
+- Sign and notarize the macOS app before distributing outside your own Mac.
+- Sign the Windows installer to reduce SmartScreen warnings.
+- Build mobile release artifacts through EAS or native IDE tooling.
+- Keep the Expo QR/mobile dev server enabled only for development builds when moving to a production desktop app.
+- Run `npm test`, desktop and mobile typechecks, and a manual macOS/Windows/iOS/Android smoke test before release.

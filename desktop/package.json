@@ -14,6 +14,8 @@
     "pack:app": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
+    "pack:win": "node scripts/assert-windows.mjs && npm run build && electron-builder --win dir",
+    "dist:win": "node scripts/assert-windows.mjs && npm run build && electron-builder --win nsis zip",
     "start": "node scripts/start-electron.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
@@ -53,6 +55,19 @@
         "zip"
       ],
       "identity": null
+    },
+    "win": {
+      "target": [
+        "dir",
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
     }
   },
   "dependencies": {

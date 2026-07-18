@@ -2,10 +2,13 @@ const { execFileSync } = require("node:child_process");
 const { hostname } = require("node:os");
 
 module.exports = ({ config }) => {
+  const isReleaseBuild =
+    process.env.EAS_BUILD === "1" || process.env.REMOTE_RELEASE_BUILD === "1";
   const displayName =
     process.env.REMOTE_APP_NAME?.trim() ||
-    process.env.REMOTE_DEVICE_NAME?.trim() ||
-    getDeviceName() ||
+    (!isReleaseBuild
+      ? process.env.REMOTE_DEVICE_NAME?.trim() || getDeviceName()
+      : "") ||
     config.name;
 
   return {
