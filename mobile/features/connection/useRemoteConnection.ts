@@ -6,7 +6,7 @@ import type {
   ConnectionStatus,
   HostPlatform,
 } from "../../types/protocol";
-import type { RemoteSocket } from "../../websocket/RemoteSocket";
+import type { AuthOptions, RemoteSocket } from "../../websocket/RemoteSocket";
 import {
   getDeviceId,
   getDeviceNameFromHost,
@@ -27,6 +27,8 @@ interface UseRemoteConnectionOptions {
   onResetHostState: () => void;
   onUnmount: () => void;
 }
+
+type ConnectionMode = "active" | "pending";
 
 export function useRemoteConnection(
   socket: RemoteSocket,
@@ -242,29 +244,43 @@ export function useRemoteConnection(
     Keyboard.dismiss();
     setDeviceDropdownOpen(false);
     setAuthError(null);
-    hostRef.current = cleanHost;
-    setHost(cleanHost);
-    onResetHostStateRef.current();
     const matchingDevice = savedDevices.find(
       (device) => device.host === cleanHost,
     );
     const displayName =
       nextHostName ?? matchingDevice?.name ?? getDeviceNameFromHost(cleanHost);
+    const usePendingConnection =
+      statusRef.current === "connected" &&
+      hostRef.current.trim().length > 0 &&
+      hostRef.current !== cleanHost;
 
-    if (displayName) {
-      setHostName(displayName);
-      AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, displayName).catch(() => {
+    if (!usePendingConnection) {
+      hostRef.current = cleanHost;
+      setHost(cleanHost);
+      onResetHostStateRef.current();
+
+      if (displayName) {
+        setHostName(displayName);
+        AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, displayName).catch(() => {
+          // Ignore storage errors.
+        });
+      }
+      AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
         // Ignore storage errors.
       });
+      persistDevice({
+        host: cleanHost,
+        name: displayName,
+      });
     }
-    AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
-      // Ignore storage errors.
-    });
-    persistDevice({
-      host: cleanHost,
-      name: displayName,
-    });
-    connectSocket(cleanHost, displayName, pairingToken, matchingDevice);
+
+    connectSocket(
+      cleanHost,
+      displayName,
+      pairingToken,
+      matchingDevice,
+      usePendingConnection ? "pending" : "active",
+    );
   }
 
   function connectSocket(
@@ -272,18 +288,21 @@ export function useRemoteConnection(
     displayName?: string,
     pairingToken?: string,
     device?: SavedDevice,
+    mode: ConnectionMode = "active",
   ) {
     const clientId = ensureStoredClientId(clientIdRef);
     const deviceToken = pairingToken ? undefined : device?.deviceToken;
 
     if (!pairingToken && !deviceToken) {
       setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
-      statusRef.current = "idle";
-      setStatus("idle");
+      if (mode === "active") {
+        statusRef.current = "idle";
+        setStatus("idle");
+      }
       return;
     }
 
-    socket.connect(cleanHost, {
+    const auth: AuthOptions = {
       clientId,
       clientName: getClientName(),
       pairingToken,
@@ -292,13 +311,40 @@ export function useRemoteConnection(
         persistDevice({
           host: cleanHost,
           name: displayName,
-          deviceToken: nextDeviceToken,
+          deviceToken: nextDeviceToken ?? deviceToken,
         });
       },
       onRejected: (reason) => {
         handleAuthRejected(cleanHost, reason);
       },
-    });
+      onConnected: () => {
+        if (mode !== "pending") {
+          return;
+        }
+
+        hostRef.current = cleanHost;
+        setHost(cleanHost);
+        onResetHostStateRef.current();
+
+        if (displayName) {
+          setHostName(displayName);
+          AsyncStorage.setItem(HOST_NAME_STORAGE_KEY, displayName).catch(() => {
+            // Ignore storage errors.
+          });
+        }
+        AsyncStorage.setItem(HOST_STORAGE_KEY, cleanHost).catch(() => {
+          // Ignore storage errors.
+        });
+        socket.requestHostState();
+      },
+    };
+
+    if (mode === "pending") {
+      socket.connectPending(cleanHost, auth);
+      return;
+    }
+
+    socket.connect(cleanHost, auth);
   }
 
   function persistDevice(input: {
@@ -368,6 +414,12 @@ export function useRemoteConnection(
     );
   }
 
+  function cancelPendingConnection() {
+    socket.cancelPendingConnection();
+    setAuthError(null);
+    setDeviceDropdownOpen(false);
+  }
+
   function deleteSavedDevice(device: SavedDevice) {
     setSavedDevices((currentDevices) => {
       const nextDevices = currentDevices.filter((item) => item.id !== device.id);
@@ -423,6 +475,7 @@ export function useRemoteConnection(
   return {
     authError,
     cancelConnection,
+    cancelPendingConnection,
     connectionHydrated,
     connectToHost,
     deleteSavedDevice,

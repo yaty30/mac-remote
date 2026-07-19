@@ -16,13 +16,14 @@ import {
 type StatusListener = (status: ConnectionStatus) => void;
 type MessageListener = (message: HostMessage) => void;
 type LatencyListener = (latencyMs: number | null) => void;
-type AuthOptions = {
+export type AuthOptions = {
   clientId: string;
   clientName: string;
   pairingToken?: string;
   deviceToken?: string;
   onAccepted?: (deviceToken?: string) => void;
   onRejected?: (reason: AuthRejectedReason) => void;
+  onConnected?: () => void;
 };
 
 const MAX_BUFFERED_BYTES = 16 * 1024;
@@ -30,21 +31,27 @@ const AUTH_TIMEOUT_MS = 5000;
 
 export class RemoteSocket {
   private socket: WebSocket | null = null;
+  private pendingSocket: WebSocket | null = null;
   private listeners = new Set<StatusListener>();
   private messageListeners = new Set<MessageListener>();
   private latencyListeners = new Set<LatencyListener>();
   private currentHost: string | null = null;
+  private pendingHost: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private latencyTimer: ReturnType<typeof setInterval> | null = null;
   private pendingPings = new Map<string, number>();
   private pingSequence = 0;
   private shouldReconnect = false;
   private currentAuth: AuthOptions | null = null;
+  private pendingAuth: AuthOptions | null = null;
   private authTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingAuthTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingPairingDeviceToken: string | null = null;
+  private pendingConnectionDeviceToken: string | null = null;
 
   connect(host: string, auth?: AuthOptions, port = 8787): void {
     this.closeSocket();
+    this.closePendingSocket();
     this.clearReconnectTimer();
     this.emit("connecting");
     this.currentHost = host;
@@ -59,6 +66,32 @@ export class RemoteSocket {
     const url = `ws://${normalizedHost.includes(":") ? normalizedHost : `${normalizedHost}:${port}`}`;
     const socket = new WebSocket(url);
 
+    this.attachActiveSocketHandlers(socket);
+    this.socket = socket;
+  }
+
+  connectPending(host: string, auth: AuthOptions, port = 8787): void {
+    this.closePendingSocket();
+    this.pendingHost = host;
+    this.pendingAuth = auth;
+    this.pendingConnectionDeviceToken = null;
+
+    const normalizedHost = host
+      .trim()
+      .replace(/^wss?:\/\//, "")
+      .replace(/\/$/, "");
+    const url = `ws://${normalizedHost.includes(":") ? normalizedHost : `${normalizedHost}:${port}`}`;
+    const socket = new WebSocket(url);
+
+    this.attachPendingSocketHandlers(socket);
+    this.pendingSocket = socket;
+  }
+
+  cancelPendingConnection(): void {
+    this.closePendingSocket();
+  }
+
+  private attachActiveSocketHandlers(socket: WebSocket): void {
     socket.onopen = () => {
       if (this.currentAuth) {
         this.startAuthTimeout();
@@ -78,8 +111,27 @@ export class RemoteSocket {
         this.emit("connecting");
       }
     };
-    socket.onmessage = (event) => this.handleMessage(event.data);
-    this.socket = socket;
+    socket.onmessage = (event) => this.handleMessage(event.data, false);
+  }
+
+  private attachPendingSocketHandlers(socket: WebSocket): void {
+    socket.onopen = () => {
+      if (this.pendingAuth) {
+        this.startPendingAuthTimeout();
+        return;
+      }
+
+      this.promotePendingSocket();
+    };
+    socket.onclose = () => {
+      this.clearPendingAuthTimeout();
+      this.pendingAuth?.onRejected?.("missingCredentials");
+      this.closePendingSocket();
+    };
+    socket.onerror = () => {
+      // Keep the active socket/UI in place. The overlay owns cancellation.
+    };
+    socket.onmessage = (event) => this.handleMessage(event.data, true);
   }
 
   reconnect(): void {
@@ -94,6 +146,7 @@ export class RemoteSocket {
     this.shouldReconnect = false;
     this.currentAuth = null;
     this.pendingPairingDeviceToken = null;
+    this.closePendingSocket();
     this.clearReconnectTimer();
     this.closeSocket();
   }
@@ -109,6 +162,22 @@ export class RemoteSocket {
       this.socket.onmessage = null;
       this.socket.close();
       this.socket = null;
+    }
+  }
+
+  private closePendingSocket(): void {
+    this.clearPendingAuthTimeout();
+    this.pendingHost = null;
+    this.pendingAuth = null;
+    this.pendingConnectionDeviceToken = null;
+
+    if (this.pendingSocket) {
+      this.pendingSocket.onopen = null;
+      this.pendingSocket.onclose = null;
+      this.pendingSocket.onerror = null;
+      this.pendingSocket.onmessage = null;
+      this.pendingSocket.close();
+      this.pendingSocket = null;
     }
   }
 
@@ -226,19 +295,11 @@ export class RemoteSocket {
   }
 
   private send(message: RemoteMessage, lowLatency = false): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    if (lowLatency && this.socket.bufferedAmount > MAX_BUFFERED_BYTES) {
-      return;
-    }
-
-    this.socket.send(JSON.stringify(message));
+    this.sendToSocket(this.socket, message, lowLatency);
   }
 
-  private sendAuthRequest(challengeNonce: string): void {
-    const auth = this.currentAuth;
+  private sendAuthRequest(challengeNonce: string, pending: boolean): void {
+    const auth = pending ? this.pendingAuth : this.currentAuth;
 
     if (!auth) {
       return;
@@ -265,14 +326,20 @@ export class RemoteSocket {
         auth.clientId,
         challengeNonce,
       );
-      this.pendingPairingDeviceToken = deriveDeviceToken(
+      const nextDeviceToken = deriveDeviceToken(
         pairingTokenHash,
         auth.clientId,
         challengeNonce,
       );
+      if (pending) {
+        this.pendingConnectionDeviceToken = nextDeviceToken;
+      } else {
+        this.pendingPairingDeviceToken = nextDeviceToken;
+      }
     }
 
-    this.send(
+    this.sendToSocket(
+      pending ? this.pendingSocket : this.socket,
       authRequest,
       true,
     );
@@ -301,6 +368,32 @@ export class RemoteSocket {
 
     clearTimeout(this.authTimer);
     this.authTimer = null;
+  }
+
+  private startPendingAuthTimeout(): void {
+    this.clearPendingAuthTimeout();
+    this.pendingAuthTimer = setTimeout(() => {
+      this.pendingAuthTimer = null;
+
+      if (
+        !this.pendingAuth ||
+        this.pendingSocket?.readyState !== WebSocket.OPEN
+      ) {
+        return;
+      }
+
+      this.pendingAuth.onRejected?.("missingCredentials");
+      this.closePendingSocket();
+    }, AUTH_TIMEOUT_MS);
+  }
+
+  private clearPendingAuthTimeout(): void {
+    if (!this.pendingAuthTimer) {
+      return;
+    }
+
+    clearTimeout(this.pendingAuthTimer);
+    this.pendingAuthTimer = null;
   }
 
   private emit(status: ConnectionStatus): void {
@@ -367,7 +460,7 @@ export class RemoteSocket {
     this.reconnectTimer = null;
   }
 
-  private handleMessage(raw: unknown): void {
+  private handleMessage(raw: unknown, pending: boolean): void {
     if (typeof raw !== "string") {
       return;
     }
@@ -380,7 +473,11 @@ export class RemoteSocket {
           return;
         }
 
-        this.send({ type: "pong", id: message.id }, true);
+        this.sendToSocket(
+          pending ? this.pendingSocket : this.socket,
+          { type: "pong", id: message.id },
+          true,
+        );
         return;
       }
 
@@ -389,7 +486,7 @@ export class RemoteSocket {
           return;
         }
 
-        this.sendAuthRequest(message.nonce);
+        this.sendAuthRequest(message.nonce, pending);
         return;
       }
 
@@ -409,23 +506,40 @@ export class RemoteSocket {
       }
 
       if (message.type === "authAccepted") {
-        this.clearAuthTimeout();
-        this.currentAuth?.onAccepted?.(
-          message.deviceToken ?? this.pendingPairingDeviceToken ?? undefined,
-        );
-        this.pendingPairingDeviceToken = null;
-        this.emit("connected");
-        this.startLatencyChecks();
+        if (pending) {
+          this.clearPendingAuthTimeout();
+          this.pendingAuth?.onAccepted?.(
+            message.deviceToken ??
+              this.pendingConnectionDeviceToken ??
+              undefined,
+          );
+          this.pendingConnectionDeviceToken = null;
+          this.promotePendingSocket();
+        } else {
+          this.clearAuthTimeout();
+          this.currentAuth?.onAccepted?.(
+            message.deviceToken ?? this.pendingPairingDeviceToken ?? undefined,
+          );
+          this.pendingPairingDeviceToken = null;
+          this.emit("connected");
+          this.startLatencyChecks();
+        }
         return;
       }
 
       if (message.type === "authRejected") {
-        this.clearAuthTimeout();
-        this.currentAuth?.onRejected?.(message.reason);
-        this.pendingPairingDeviceToken = null;
-        this.shouldReconnect = false;
-        this.emit("error");
-        this.closeSocket();
+        if (pending) {
+          this.clearPendingAuthTimeout();
+          this.pendingAuth?.onRejected?.(message.reason);
+          this.closePendingSocket();
+        } else {
+          this.clearAuthTimeout();
+          this.currentAuth?.onRejected?.(message.reason);
+          this.pendingPairingDeviceToken = null;
+          this.shouldReconnect = false;
+          this.emit("error");
+          this.closeSocket();
+        }
         return;
       }
 
@@ -439,5 +553,46 @@ export class RemoteSocket {
     } catch {
       // Ignore malformed host messages.
     }
+  }
+
+  private promotePendingSocket(): void {
+    const socket = this.pendingSocket;
+    const host = this.pendingHost;
+    const auth = this.pendingAuth;
+
+    if (!socket || !host) {
+      return;
+    }
+
+    this.pendingSocket = null;
+    this.pendingHost = null;
+    this.pendingAuth = null;
+    this.pendingConnectionDeviceToken = null;
+    this.closeSocket();
+    this.clearReconnectTimer();
+    this.currentHost = host;
+    this.currentAuth = auth;
+    this.shouldReconnect = true;
+    this.socket = socket;
+    this.attachActiveSocketHandlers(socket);
+    auth?.onConnected?.();
+    this.emit("connected");
+    this.startLatencyChecks();
+  }
+
+  private sendToSocket(
+    socket: WebSocket | null,
+    message: RemoteMessage,
+    lowLatency = false,
+  ): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (lowLatency && socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      return;
+    }
+
+    socket.send(JSON.stringify(message));
   }
 }

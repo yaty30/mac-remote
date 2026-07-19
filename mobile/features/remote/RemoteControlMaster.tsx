@@ -65,6 +65,8 @@ import { Header } from "../../components/Header";
 import { ShortcutButton } from "../../components/ShortcutButton";
 import { Trackpad } from "../trackpad/Trackpad";
 import type {
+  HostCapabilities,
+  HostDisplayInfo,
   HostPlatform,
   ShortcutId,
   TextCommand,
@@ -105,6 +107,7 @@ const DEVICE_NAME_MAX_LENGTH = 20;
 const DEVICE_DROPDOWN_MAX_HEIGHT = 286;
 const DEVICE_SWITCH_MIN_OVERLAY_MS = 1000;
 const DEVICE_SWITCH_CANCEL_DELAY_MS = 3000;
+const CONNECTION_CANCEL_DELAY_MS = 3000;
 const BODY_HORIZONTAL_PADDING = 10;
 const SHORTCUT_GAP = 8;
 const SHORTCUT_VISIBLE_COUNT = 5;
@@ -113,6 +116,14 @@ const SHORTCUT_MAX_SIZE = 70;
 const KEYBOARD_PANEL_KEYBOARD_GAP = 12;
 const KEYBOARD_PANEL_TOP = 106;
 const KEYBOARD_PANEL_RESTING_BOTTOM = 112;
+
+interface DeviceSwitchUiSnapshot {
+  host: string;
+  name: string;
+  platform: HostPlatform | null;
+  capabilities: HostCapabilities | null;
+  display: HostDisplayInfo | null;
+}
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -131,6 +142,9 @@ export function RemoteControlMaster() {
     typeof setTimeout
   > | null>(null);
   const deviceSwitchCancelTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const connectionCancelTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
   const previousDeviceRef = useRef<{ host: string; name?: string } | null>(
@@ -180,6 +194,7 @@ export function RemoteControlMaster() {
   const {
     authError,
     cancelConnection,
+    cancelPendingConnection,
     connectionHydrated,
     connectToHost,
     deleteSavedDevice,
@@ -215,6 +230,9 @@ export function RemoteControlMaster() {
     useState(false);
   const [deviceSwitchCancelVisible, setDeviceSwitchCancelVisible] =
     useState(false);
+  const [deviceSwitchUiSnapshot, setDeviceSwitchUiSnapshot] =
+    useState<DeviceSwitchUiSnapshot | null>(null);
+  const [connectionCancelVisible, setConnectionCancelVisible] = useState(false);
   const [switchingDeviceName, setSwitchingDeviceName] = useState("");
   const [switchingDeviceHost, setSwitchingDeviceHost] = useState("");
   const [playbackPaused, setPlaybackPaused] = useState(false);
@@ -252,13 +270,17 @@ export function RemoteControlMaster() {
   const deviceSwitchOverlayAnim = useRef(new Animated.Value(0)).current;
   const deviceSwitchSpinnerAnim = useRef(new Animated.Value(0)).current;
   const deviceSwitchCancelAnim = useRef(new Animated.Value(0)).current;
-  const showConnectionPrompt = status !== "connected";
+  const connectionCancelAnim = useRef(new Animated.Value(0)).current;
+  const showConnectionPrompt =
+    status !== "connected" && !deviceSwitchOverlayMounted;
+  const connectionInProgress = status === "connecting";
   const appSplashReadyToDismiss =
     connectionHydrated &&
     (!host.trim() ||
       status === "idle" ||
       status === "disconnected" ||
       status === "error" ||
+      (status === "connecting" && connectionCancelVisible) ||
       (status === "connected" && hostPlatform !== null));
 
   useEffect(() => {
@@ -445,6 +467,7 @@ export function RemoteControlMaster() {
 
     deviceSwitchDismissTimerRef.current = setTimeout(() => {
       deviceSwitchDismissTimerRef.current = null;
+      setDeviceSwitchUiSnapshot(null);
       Animated.timing(deviceSwitchOverlayAnim, {
         toValue: 0,
         duration: 180,
@@ -504,12 +527,7 @@ export function RemoteControlMaster() {
       return;
     }
 
-    if (
-      !deviceSwitchOverlayMounted ||
-      !switchingDeviceHost ||
-      host !== switchingDeviceHost ||
-      (status !== "connecting" && (status !== "connected" || hostPlatform))
-    ) {
+    if (!deviceSwitchOverlayMounted || !switchingDeviceHost) {
       if (deviceSwitchCancelTimerRef.current !== null) {
         clearTimeout(deviceSwitchCancelTimerRef.current);
         deviceSwitchCancelTimerRef.current = null;
@@ -544,11 +562,38 @@ export function RemoteControlMaster() {
   }, [
     deviceSwitchCancelAnim,
     deviceSwitchOverlayMounted,
-    host,
-    hostPlatform,
-    status,
     switchingDeviceHost,
   ]);
+
+  useEffect(() => {
+    if (status !== "connecting" || deviceSwitchOverlayMounted) {
+      if (connectionCancelTimerRef.current !== null) {
+        clearTimeout(connectionCancelTimerRef.current);
+        connectionCancelTimerRef.current = null;
+      }
+      resetConnectionCancelButton();
+      return;
+    }
+
+    connectionCancelTimerRef.current = setTimeout(() => {
+      connectionCancelTimerRef.current = null;
+      setConnectionCancelVisible(true);
+      connectionCancelAnim.setValue(0);
+      Animated.timing(connectionCancelAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }, CONNECTION_CANCEL_DELAY_MS);
+
+    return () => {
+      if (connectionCancelTimerRef.current !== null) {
+        clearTimeout(connectionCancelTimerRef.current);
+        connectionCancelTimerRef.current = null;
+      }
+    };
+  }, [connectionCancelAnim, deviceSwitchOverlayMounted, status]);
 
   useEffect(
     () => () => {
@@ -559,6 +604,10 @@ export function RemoteControlMaster() {
       if (deviceSwitchCancelTimerRef.current !== null) {
         clearTimeout(deviceSwitchCancelTimerRef.current);
         deviceSwitchCancelTimerRef.current = null;
+      }
+      if (connectionCancelTimerRef.current !== null) {
+        clearTimeout(connectionCancelTimerRef.current);
+        connectionCancelTimerRef.current = null;
       }
     },
     [],
@@ -703,18 +752,27 @@ export function RemoteControlMaster() {
     closeRenameDevice();
   }
 
-  function getDevicePlatform(device: SavedDevice): HostPlatform | undefined {
-    if (device.host === host && hostPlatform) {
-      return hostPlatform;
+  function getDevicePlatform(
+    device: SavedDevice,
+    activeHost = host,
+    activePlatform: HostPlatform | null = hostPlatform,
+  ): HostPlatform | undefined {
+    if (device.host === activeHost && activePlatform) {
+      return activePlatform;
     }
 
     return device.platform;
   }
 
-  function getSelectedDevicePlatform(): HostPlatform | undefined {
-    const selectedDevice = savedDevices.find((device) => device.host === host);
+  function getSelectedDevicePlatform(
+    activeHost = host,
+    activePlatform: HostPlatform | null = hostPlatform,
+  ): HostPlatform | undefined {
+    const selectedDevice = savedDevices.find(
+      (device) => device.host === activeHost,
+    );
 
-    return hostPlatform ?? selectedDevice?.platform;
+    return activePlatform ?? selectedDevice?.platform;
   }
 
   function clearDeviceSwitchTimers() {
@@ -735,6 +793,12 @@ export function RemoteControlMaster() {
     deviceSwitchCancelAnim.setValue(0);
   }
 
+  function resetConnectionCancelButton() {
+    setConnectionCancelVisible(false);
+    connectionCancelAnim.stopAnimation();
+    connectionCancelAnim.setValue(0);
+  }
+
   function switchSavedDevice(device: SavedDevice) {
     if (device.host === host && status === "connected") {
       setDeviceDropdownOpen(false);
@@ -744,7 +808,21 @@ export function RemoteControlMaster() {
     clearDeviceSwitchTimers();
     resetDeviceSwitchCancelButton();
 
-    previousDeviceRef.current = host ? { host, name: hostName } : null;
+    const hasActiveDevice = status === "connected" && host.trim().length > 0;
+    previousDeviceRef.current = hasActiveDevice
+      ? { host, name: hostName }
+      : null;
+    setDeviceSwitchUiSnapshot(
+      hasActiveDevice
+        ? {
+            host,
+            name: hostName,
+            platform: hostPlatform ?? getSelectedDevicePlatform(host) ?? null,
+            capabilities: hostCapabilities,
+            display: hostDisplay,
+          }
+        : null,
+    );
     deviceSwitchStartedAtRef.current = Date.now();
     setSwitchingDeviceHost(device.host);
     setSwitchingDeviceName(device.name);
@@ -772,7 +850,7 @@ export function RemoteControlMaster() {
     previousDeviceRef.current = null;
 
     if (previousDevice?.host && previousDevice.host !== switchingDeviceHost) {
-      connectToHost(previousDevice.host, previousDevice.name);
+      cancelPendingConnection();
     } else {
       cancelConnection();
     }
@@ -788,6 +866,7 @@ export function RemoteControlMaster() {
         setSwitchingDeviceHost("");
         setSwitchingDeviceName("");
         deviceSwitchCancellingRef.current = false;
+        setDeviceSwitchUiSnapshot(null);
         resetDeviceSwitchCancelButton();
       }
     });
@@ -1202,9 +1281,40 @@ export function RemoteControlMaster() {
       },
     ],
   };
-  const monitorName = hostDisplay?.name ?? "Unknown monitor";
-  const monitorMeta = hostDisplay
-    ? hostDisplay.isTv
+  const connectionCancelAnimatedStyle = {
+    maxHeight: connectionCancelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 44],
+    }),
+    opacity: connectionCancelAnim,
+    transform: [
+      {
+        scale: connectionCancelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.88, 1],
+        }),
+      },
+      {
+        translateY: connectionCancelAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-6, 0],
+        }),
+      },
+    ],
+  };
+  const visibleHostPlatform = deviceSwitchUiSnapshot?.platform ?? hostPlatform;
+  const visibleHostCapabilities =
+    deviceSwitchUiSnapshot?.capabilities ?? hostCapabilities;
+  const visibleHostDisplay = deviceSwitchUiSnapshot?.display ?? hostDisplay;
+  const visibleStatus = deviceSwitchUiSnapshot ? "connected" : status;
+  const visibleControlsAvailability = useRemoteControlsAvailability({
+    capabilities: visibleHostCapabilities,
+    display: visibleHostDisplay,
+    platform: visibleHostPlatform,
+  });
+  const monitorName = visibleHostDisplay?.name ?? "Unknown monitor";
+  const monitorMeta = visibleHostDisplay
+    ? visibleHostDisplay.isTv
       ? "TV detected"
       : "Display detected"
     : "Connect to host for display details";
@@ -1214,8 +1324,8 @@ export function RemoteControlMaster() {
     sleepAvailable,
     switchWindowAvailable,
     switchWorkspaceAvailable,
-  } = controlsAvailability;
-  const isWindowsHost = hostPlatform === "win32";
+  } = visibleControlsAvailability;
+  const isWindowsHost = visibleHostPlatform === "win32";
   const primarySwitchAvailable = isWindowsHost
     ? switchWindowAvailable
     : switchWorkspaceAvailable;
@@ -1247,7 +1357,12 @@ export function RemoteControlMaster() {
   const shortcutsScrollerStyle = {
     height: shortcutButtonSize,
   };
-  const selectedDevicePlatform = getSelectedDevicePlatform();
+  const visibleDeviceHost = deviceSwitchUiSnapshot?.host ?? host;
+  const visibleDeviceName = deviceSwitchUiSnapshot?.name ?? hostName;
+  const selectedDevicePlatform = getSelectedDevicePlatform(
+    visibleDeviceHost,
+    visibleHostPlatform,
+  );
   const deviceDropdownHorizontalInset = BODY_HORIZONTAL_PADDING;
   const deviceDropdownAnimatedStyle = {
     marginLeft: 0,
@@ -1276,7 +1391,7 @@ export function RemoteControlMaster() {
       },
     ],
   };
-  const devicePickerTitle = hostName || "No device saved";
+  const devicePickerTitle = visibleDeviceName || "No device saved";
 
   return (
     <SafeAreaView style={styles.screen} onLayout={handleScreenLayout}>
@@ -1354,7 +1469,7 @@ export function RemoteControlMaster() {
 
       <Header
         latencyMs={latencyMs}
-        status={status}
+        status={visibleStatus}
         titleContent={
           <View style={styles.homeDevicePicker}>
             <Pressable
@@ -1392,7 +1507,7 @@ export function RemoteControlMaster() {
                     showsVerticalScrollIndicator={false}
                   >
                     {savedDevices.map((device) => {
-                      const selected = device.host === host;
+                      const selected = device.host === visibleDeviceHost;
 
                       return (
                         <View
@@ -1410,7 +1525,11 @@ export function RemoteControlMaster() {
                           >
                             <View style={styles.homeDeviceOptionIcon}>
                               <DevicePlatformIcon
-                                platform={getDevicePlatform(device)}
+                                platform={getDevicePlatform(
+                                  device,
+                                  visibleDeviceHost,
+                                  visibleHostPlatform,
+                                )}
                                 size={18}
                               />
                             </View>
@@ -1678,11 +1797,13 @@ export function RemoteControlMaster() {
               <View
                 style={[
                   styles.monitorIcon,
-                  hostDisplay?.isTv ? styles.monitorIconTv : null,
+                  visibleHostDisplay?.isTv ? styles.monitorIconTv : null,
                 ]}
               >
                 <Ionicons
-                  name={hostDisplay?.isTv ? "tv-outline" : "desktop-outline"}
+                  name={
+                    visibleHostDisplay?.isTv ? "tv-outline" : "desktop-outline"
+                  }
                   size={22}
                   color="#ffffff"
                 />
@@ -1753,7 +1874,7 @@ export function RemoteControlMaster() {
                 </View>
                 <Text style={styles.sensitivityLabel}>Brightness</Text>
               </View>
-              {hostDisplay?.brightnessAdjustable === false ? (
+              {visibleHostDisplay?.brightnessAdjustable === false ? (
                 <Text style={styles.settingUnavailable}>Unavailable on TV</Text>
               ) : null}
             </View>
@@ -1818,7 +1939,7 @@ export function RemoteControlMaster() {
                 <Text style={styles.sensitivityLabel}>Volume</Text>
               </View>
               <View style={styles.settingHeaderActions}>
-                {hostDisplay?.volumeAdjustable === false ? (
+                {visibleHostDisplay?.volumeAdjustable === false ? (
                   <Text style={styles.settingUnavailable}>
                     Unavailable on TV
                   </Text>
@@ -1960,12 +2081,22 @@ export function RemoteControlMaster() {
           <View style={styles.connectionPrompt}>
             <FloatingIconOverlay active={showConnectionPrompt} />
             <Pressable
-              accessibilityLabel="Scan to connect to host"
+              accessibilityLabel={
+                connectionInProgress
+                  ? "Connecting to host"
+                  : "Scan to connect to host"
+              }
               accessibilityRole="button"
+              disabled={connectionInProgress}
               onPress={withHaptic(openScanner)}
               style={({ pressed }) => [
                 styles.connectionPromptButton,
-                pressed ? styles.mouseButtonPressed : null,
+                connectionInProgress
+                  ? styles.connectionPromptButtonDisabled
+                  : null,
+                pressed && !connectionInProgress
+                  ? styles.mouseButtonPressed
+                  : null,
               ]}
             >
               <ScanButtonGradient
@@ -1978,12 +2109,37 @@ export function RemoteControlMaster() {
                 end={{ x: 0.9, y: 1 }}
                 style={styles.connectionPromptButtonGradient}
               >
-                <Ionicons name="scan-outline" size={23} color="#f0a942" />
+                <Ionicons
+                  name={connectionInProgress ? "sync" : "scan-outline"}
+                  size={23}
+                  color="#f0a942"
+                />
                 <Text style={styles.connectionPromptButtonText}>
-                  Scan to Connect
+                  {connectionInProgress ? "Connecting..." : "Scan to Connect"}
                 </Text>
               </ScanButtonGradient>
             </Pressable>
+            {connectionInProgress && connectionCancelVisible ? (
+              <Animated.View
+                style={[
+                  styles.connectionCancelSlot,
+                  connectionCancelAnimatedStyle,
+                ]}
+              >
+                <Pressable
+                  accessibilityLabel="Cancel connection"
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.connectionCancelButton,
+                    pressed ? styles.connectionCancelButtonPressed : null,
+                  ]}
+                  onPress={withHaptic(cancelConnection)}
+                >
+                  <Ionicons name="close" size={16} color="#f7f5f1" />
+                  <Text style={styles.connectionCancelText}>Cancel</Text>
+                </Pressable>
+              </Animated.View>
+            ) : null}
             {authError ? (
               <Text style={styles.connectionPromptError}>{authError}</Text>
             ) : null}
@@ -2175,7 +2331,7 @@ export function RemoteControlMaster() {
                     switchPrimaryHorizontal(direction);
                   }
                 }}
-                status={status}
+                status={visibleStatus}
               />
             </View>
 
@@ -2652,6 +2808,9 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     zIndex: 1,
   },
+  connectionPromptButtonDisabled: {
+    opacity: 0.84,
+  },
   connectionPromptButtonGradient: {
     alignItems: "center",
     alignSelf: "stretch",
@@ -2667,6 +2826,33 @@ const styles = StyleSheet.create({
     color: "#f0a942",
     fontSize: 15,
     fontWeight: "900",
+  },
+  connectionCancelSlot: {
+    marginTop: 12,
+    overflow: "hidden",
+    zIndex: 1,
+  },
+  connectionCancelButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    height: 38,
+    justifyContent: "center",
+    minWidth: 112,
+    paddingHorizontal: 16,
+  },
+  connectionCancelButtonPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    transform: [{ scale: 0.98 }],
+  },
+  connectionCancelText: {
+    color: "#f7f5f1",
+    fontSize: 13,
+    fontWeight: "800",
   },
   connectionPromptError: {
     color: "#ff8a72",
