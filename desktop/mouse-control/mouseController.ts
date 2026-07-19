@@ -16,9 +16,6 @@ const WINDOWS_POINTER_ACCELERATION_START = 3;
 const WINDOWS_POINTER_ACCELERATION_MAX = 2.25;
 const WINDOWS_POINTER_ACCELERATION_DISTANCE = 28;
 const WINDOWS_POINTER_FLUSH_TIMEOUT_MS = 80;
-const WINDOWS_POINTER_MIN_SMOOTH_MS = 4;
-const WINDOWS_POINTER_MAX_SMOOTH_MS = 14;
-const WINDOWS_POINTER_DEFAULT_SMOOTH_MS = 8;
 const SCREEN_SIZE_CACHE_MS = 1000;
 const SCROLL_AXIS_DEADZONE_RATIO = 0.35;
 
@@ -63,11 +60,6 @@ export class MouseController {
 
     if (this.platform === "win32") {
       const scaled = this.scaleWindowsPointerDelta(dx, dy);
-
-      if (this.windowsRelativePointer?.move(scaled.dx, scaled.dy)) {
-        this.windowsVirtualPosition = null;
-        return;
-      }
 
       this.queueWindowsPointerMove(scaled.dx, scaled.dy);
       return;
@@ -157,7 +149,7 @@ export class MouseController {
       return;
     }
 
-    await this.flushWindowsPointerMove();
+    await this.flushWindowsPointerMove(true);
   }
 
   private async flushMacPointerMove(forceRemainder = false): Promise<void> {
@@ -268,16 +260,11 @@ export class MouseController {
     }, WINDOWS_POINTER_FRAME_MS);
   }
 
-  private async flushWindowsPointerMove(): Promise<void> {
+  private async flushWindowsPointerMove(forceRemainder = false): Promise<void> {
     if (this.platform !== "win32") {
       return;
     }
 
-    await this.windowsRelativePointer?.flush();
-    await this.flushWindowsAbsolutePointerMove();
-  }
-
-  private async flushWindowsAbsolutePointerMove(): Promise<void> {
     if (this.windowsPointerTimer !== null) {
       clearTimeout(this.windowsPointerTimer);
       this.windowsPointerTimer = null;
@@ -291,24 +278,23 @@ export class MouseController {
       this.windowsPendingDy = 0;
 
       if (dx === 0 && dy === 0) {
+        await this.windowsRelativePointer?.flush(forceRemainder);
         return;
       }
 
-      const now = Date.now();
-      const current =
-        this.windowsVirtualPosition &&
-        now - this.windowsLastPointerFlushAt < WINDOWS_POINTER_IDLE_RESET_MS
-          ? this.windowsVirtualPosition
-          : await mouse.getPosition();
-      const { width, height } = await this.getScreenSize();
-      const next = new Point(
-        clamp(Math.round(current.x + dx), 0, width - 1),
-        clamp(Math.round(current.y + dy), 0, height - 1),
-      );
+      if (this.windowsRelativePointer?.move(dx, dy, forceRemainder)) {
+        this.windowsVirtualPosition = null;
+        await this.windowsRelativePointer.flush();
 
-      this.windowsVirtualPosition = next;
-      this.windowsLastPointerFlushAt = now;
-      await mouse.setPosition(next);
+        if (this.windowsPendingDx !== 0 || this.windowsPendingDy !== 0) {
+          this.queueWindowsPointerMove(0, 0);
+        }
+
+        return;
+      }
+
+      this.windowsRelativePointer?.flushRemainder();
+      await this.flushWindowsAbsolutePointerMove(dx, dy);
 
       if (this.windowsPendingDx !== 0 || this.windowsPendingDy !== 0) {
         this.queueWindowsPointerMove(0, 0);
@@ -318,6 +304,31 @@ export class MouseController {
     this.windowsPointerFlush = nextFlush.catch(() => undefined);
 
     await nextFlush;
+  }
+
+  private async flushWindowsAbsolutePointerMove(
+    dx: number,
+    dy: number,
+  ): Promise<void> {
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const current =
+      this.windowsVirtualPosition &&
+      now - this.windowsLastPointerFlushAt < WINDOWS_POINTER_IDLE_RESET_MS
+        ? this.windowsVirtualPosition
+        : await mouse.getPosition();
+    const { width, height } = await this.getScreenSize();
+    const next = new Point(
+      clamp(Math.round(current.x + dx), 0, width - 1),
+      clamp(Math.round(current.y + dy), 0, height - 1),
+    );
+
+    this.windowsVirtualPosition = next;
+    this.windowsLastPointerFlushAt = now;
+    await mouse.setPosition(next);
   }
 
   private scaleWindowsPointerDelta(
@@ -454,11 +465,10 @@ class WindowsRelativePointerInput {
   private remainderY = 0;
   private flushSequence = 0;
   private stdoutBuffer = "";
-  private lastMoveAt = 0;
   private readonly flushWaiters = new Map<string, () => void>();
 
-  move(dx: number, dy: number): boolean {
-    const command = this.consumeMove(dx, dy, this.resolveSmoothDurationMs());
+  move(dx: number, dy: number, forceRemainder = false): boolean {
+    const command = this.consumeMove(dx, dy, forceRemainder);
 
     if (!command) {
       return true;
@@ -467,11 +477,19 @@ class WindowsRelativePointerInput {
     return this.write(command);
   }
 
-  async flush(): Promise<void> {
-    const remainderCommand = this.consumeMove(0, 0, 0, true);
+  flushRemainder(): boolean {
+    const remainderCommand = this.consumeMove(0, 0, true);
 
     if (remainderCommand) {
-      this.write(remainderCommand);
+      return this.write(remainderCommand);
+    }
+
+    return true;
+  }
+
+  async flush(forceRemainder = false): Promise<void> {
+    if (forceRemainder && !this.flushRemainder()) {
+      return;
     }
 
     if (!this.child || this.disabled) {
@@ -502,7 +520,6 @@ class WindowsRelativePointerInput {
   private consumeMove(
     dx: number,
     dy: number,
-    durationMs: number,
     force = false,
   ): string | null {
     const nextX = this.remainderX + dx;
@@ -517,24 +534,7 @@ class WindowsRelativePointerInput {
       return null;
     }
 
-    return `m ${moveX} ${moveY} ${durationMs}`;
-  }
-
-  private resolveSmoothDurationMs(): number {
-    const now = Date.now();
-    const elapsed = this.lastMoveAt > 0 ? now - this.lastMoveAt : 0;
-
-    this.lastMoveAt = now;
-
-    if (elapsed <= 0) {
-      return WINDOWS_POINTER_DEFAULT_SMOOTH_MS;
-    }
-
-    return clamp(
-      Math.round(elapsed),
-      WINDOWS_POINTER_MIN_SMOOTH_MS,
-      WINDOWS_POINTER_MAX_SMOOTH_MS,
-    );
+    return `m ${moveX} ${moveY}`;
   }
 
   private write(command: string): boolean {
@@ -545,8 +545,13 @@ class WindowsRelativePointerInput {
     }
 
     try {
-      child.stdin.write(`${command}\n`);
-      return true;
+      const accepted = child.stdin.write(`${command}\n`);
+
+      if (!accepted) {
+        this.disable();
+      }
+
+      return accepted;
     } catch {
       this.disable();
       return false;
@@ -644,13 +649,9 @@ $ErrorActionPreference = "Stop"
 Add-Type -TypeDefinition @"
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 public static class RemoteControlMouseInput {
-  private const int MaxSmoothSteps = 96;
-
   [StructLayout(LayoutKind.Sequential)]
   private struct INPUT {
     public UInt32 type;
@@ -670,44 +671,7 @@ public static class RemoteControlMouseInput {
   [DllImport("user32.dll", SetLastError = true)]
   private static extern UInt32 SendInput(UInt32 nInputs, INPUT[] pInputs, Int32 cbSize);
 
-  public static void Move(Int32 dx, Int32 dy, Int32 durationMs) {
-    if (dx == 0 && dy == 0) {
-      return;
-    }
-
-    int steps = Math.Max(Math.Abs(dx), Math.Abs(dy));
-
-    if (durationMs <= 0 || steps <= 1) {
-      MoveOnce(dx, dy);
-      return;
-    }
-
-    steps = Math.Min(steps, MaxSmoothSteps);
-
-    long durationTicks = Stopwatch.Frequency * durationMs / 1000;
-    Stopwatch stopwatch = Stopwatch.StartNew();
-    int sentX = 0;
-    int sentY = 0;
-
-    for (int step = 1; step <= steps; step++) {
-      int targetX = (int)Math.Round((double)dx * step / steps);
-      int targetY = (int)Math.Round((double)dy * step / steps);
-      int nextDx = targetX - sentX;
-      int nextDy = targetY - sentY;
-
-      if (nextDx != 0 || nextDy != 0) {
-        MoveOnce(nextDx, nextDy);
-        sentX = targetX;
-        sentY = targetY;
-      }
-
-      if (step < steps) {
-        WaitUntil(stopwatch, durationTicks * step / steps);
-      }
-    }
-  }
-
-  private static void MoveOnce(Int32 dx, Int32 dy) {
+  public static void Move(Int32 dx, Int32 dy) {
     if (dx == 0 && dy == 0) {
       return;
     }
@@ -726,19 +690,6 @@ public static class RemoteControlMouseInput {
       throw new Win32Exception(Marshal.GetLastWin32Error());
     }
   }
-
-  private static void WaitUntil(Stopwatch stopwatch, long targetTicks) {
-    while (stopwatch.ElapsedTicks < targetTicks) {
-      long remainingTicks = targetTicks - stopwatch.ElapsedTicks;
-      double remainingMs = remainingTicks * 1000.0 / Stopwatch.Frequency;
-
-      if (remainingMs > 1.5) {
-        Thread.Sleep(1);
-      } else {
-        Thread.SpinWait(80);
-      }
-    }
-  }
 }
 "@
 
@@ -750,8 +701,8 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
   $parts = $line.Split(" ")
 
   try {
-    if ($parts[0] -eq "m" -and $parts.Length -ge 4) {
-      [RemoteControlMouseInput]::Move([int]$parts[1], [int]$parts[2], [int]$parts[3])
+    if ($parts[0] -eq "m" -and $parts.Length -ge 3) {
+      [RemoteControlMouseInput]::Move([int]$parts[1], [int]$parts[2])
       continue
     }
 

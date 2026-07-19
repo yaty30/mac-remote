@@ -156,12 +156,6 @@ export function RemoteControlMaster() {
   const [scannerVisible, setScannerVisible] = useState(false);
   const [scannerZoom, setScannerZoom] = useState(0.2);
   const {
-    sensitivity,
-    setSensitivity,
-    setUnnaturalScrolling,
-    unnaturalScrolling,
-  } = useRemoteSettings();
-  const {
     applyHostProfile,
     hostCapabilities,
     hostDisplay,
@@ -217,6 +211,12 @@ export function RemoteControlMaster() {
     },
     onUnmount: clearBrightnessCommitTimer,
   });
+  const {
+    sensitivity,
+    setSensitivity,
+    setUnnaturalScrolling,
+    unnaturalScrolling,
+  } = useRemoteSettings(host);
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
   const [keyboardBuffer, setKeyboardBuffer] = useState("");
   const [showSettings, setShowSettings] = useState(false);
