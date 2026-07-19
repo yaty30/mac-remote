@@ -7,6 +7,9 @@ import type { HostPlatform } from "../types/protocol";
 
 const EDGE_PRESSURE_ZONE = 6;
 const EDGE_RELEASE_DISTANCE = 24;
+const MAC_POINTER_GAIN = 1.8;
+const MAC_POINTER_FRAME_MS = 4;
+const MAC_POINTER_IDLE_RESET_MS = 150;
 const WINDOWS_POINTER_FRAME_MS = 8;
 const WINDOWS_POINTER_IDLE_RESET_MS = 250;
 const WINDOWS_POINTER_ACCELERATION_START = 3;
@@ -24,6 +27,14 @@ type VerticalEdgeLock = "top" | "bottom" | null;
 export class MouseController {
   private scrollAccumX = 0;
   private scrollAccumY = 0;
+  private macPendingDx = 0;
+  private macPendingDy = 0;
+  private macRemainderX = 0;
+  private macRemainderY = 0;
+  private macPointerTimer: ReturnType<typeof setTimeout> | null = null;
+  private macPointerFlush: Promise<void> = Promise.resolve();
+  private macVirtualPosition: Point | null = null;
+  private macLastPointerFlushAt = 0;
   private windowsPendingDx = 0;
   private windowsPendingDy = 0;
   private windowsPointerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -45,6 +56,11 @@ export class MouseController {
   }
 
   async moveRelative(dx: number, dy: number): Promise<void> {
+    if (this.platform === "darwin") {
+      this.queueMacPointerMove(dx, dy);
+      return;
+    }
+
     if (this.platform === "win32") {
       const scaled = this.scaleWindowsPointerDelta(dx, dy);
 
@@ -56,35 +72,21 @@ export class MouseController {
       this.queueWindowsPointerMove(scaled.dx, scaled.dy);
       return;
     }
-
-    const current = await mouse.getPosition();
-    const width = await screen.width();
-    const height = await screen.height();
-    const nextX = clamp(Math.round(current.x + dx), 0, width - 1);
-    const nextY = this.resolveVerticalEdgeY(
-      clamp(Math.round(current.y + dy), 0, height - 1),
-      dy,
-      height,
-    );
-
-    await mouse.move(
-      buildMovementPath(current, new Point(nextX, nextY), this.platform),
-    );
   }
 
   async leftClick(): Promise<void> {
-    await this.flushWindowsPointerMove();
+    await this.flushPointerMove();
     await mouse.click(Button.LEFT);
   }
 
   async doubleClick(): Promise<void> {
-    await this.flushWindowsPointerMove();
+    await this.flushPointerMove();
     await mouse.click(Button.LEFT);
     await mouse.click(Button.LEFT);
   }
 
   async rightClick(): Promise<void> {
-    await this.flushWindowsPointerMove();
+    await this.flushPointerMove();
     await mouse.click(Button.RIGHT);
   }
 
@@ -132,6 +134,123 @@ export class MouseController {
       } else {
         await mouse.scrollLeft(amount);
       }
+    }
+  }
+
+  private queueMacPointerMove(dx: number, dy: number): void {
+    this.macPendingDx += dx * MAC_POINTER_GAIN;
+    this.macPendingDy += dy * MAC_POINTER_GAIN;
+
+    if (this.macPointerTimer !== null) {
+      return;
+    }
+
+    this.macPointerTimer = setTimeout(() => {
+      this.macPointerTimer = null;
+      void this.flushMacPointerMove();
+    }, MAC_POINTER_FRAME_MS);
+  }
+
+  private async flushPointerMove(): Promise<void> {
+    if (this.platform === "darwin") {
+      await this.flushMacPointerMove(true);
+      return;
+    }
+
+    await this.flushWindowsPointerMove();
+  }
+
+  private async flushMacPointerMove(forceRemainder = false): Promise<void> {
+    if (this.platform !== "darwin") {
+      return;
+    }
+
+    if (this.macPointerTimer !== null) {
+      clearTimeout(this.macPointerTimer);
+      this.macPointerTimer = null;
+    }
+
+    const nextFlush = this.macPointerFlush.catch(() => undefined).then(async () => {
+      const dx = this.macPendingDx;
+      const dy = this.macPendingDy;
+
+      this.macPendingDx = 0;
+      this.macPendingDy = 0;
+
+      const move = this.consumeMacPointerDelta(dx, dy, forceRemainder);
+
+      if (move.dx === 0 && move.dy === 0) {
+        return;
+      }
+
+      const now = Date.now();
+      const current =
+        this.macVirtualPosition &&
+        now - this.macLastPointerFlushAt < MAC_POINTER_IDLE_RESET_MS
+          ? this.macVirtualPosition
+          : await mouse.getPosition();
+      const { width, height } = await this.getScreenSize();
+      const nextX = clamp(current.x + move.dx, 0, width - 1);
+      const nextY = this.resolveVerticalEdgeY(
+        clamp(current.y + move.dy, 0, height - 1),
+        move.dy,
+        height,
+      );
+      const next = new Point(nextX, nextY);
+
+      this.resetMacRemainderAtEdge(current, next, width, height, move);
+      this.macVirtualPosition = next;
+      this.macLastPointerFlushAt = now;
+      await mouse.setPosition(next);
+
+      if (this.macPendingDx !== 0 || this.macPendingDy !== 0) {
+        this.queueMacPointerMove(0, 0);
+      }
+    });
+
+    this.macPointerFlush = nextFlush.catch(() => undefined);
+
+    await nextFlush;
+  }
+
+  private consumeMacPointerDelta(
+    dx: number,
+    dy: number,
+    forceRemainder: boolean,
+  ): { dx: number; dy: number } {
+    const nextX = this.macRemainderX + dx;
+    const nextY = this.macRemainderY + dy;
+    const moveX = forceRemainder ? Math.round(nextX) : Math.trunc(nextX);
+    const moveY = forceRemainder ? Math.round(nextY) : Math.trunc(nextY);
+
+    this.macRemainderX = nextX - moveX;
+    this.macRemainderY = nextY - moveY;
+
+    return {
+      dx: moveX,
+      dy: moveY,
+    };
+  }
+
+  private resetMacRemainderAtEdge(
+    current: Point,
+    next: Point,
+    width: number,
+    height: number,
+    move: { dx: number; dy: number },
+  ): void {
+    if (
+      (next.x === 0 && move.dx < 0 && current.x === 0) ||
+      (next.x === width - 1 && move.dx > 0 && current.x === width - 1)
+    ) {
+      this.macRemainderX = 0;
+    }
+
+    if (
+      (next.y === 0 && move.dy < 0 && current.y === 0) ||
+      (next.y === height - 1 && move.dy > 0 && current.y === height - 1)
+    ) {
+      this.macRemainderY = 0;
     }
   }
 
@@ -326,32 +445,6 @@ export class MouseController {
 
     return nextY;
   }
-}
-
-function buildMovementPath(
-  from: Point,
-  to: Point,
-  platform: HostPlatform,
-): Point[] {
-  if (platform === "win32") {
-    return [to];
-  }
-
-  const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  const steps = clamp(Math.ceil(distance / 12), 1, 10);
-  const path: Point[] = [];
-
-  for (let step = 1; step <= steps; step += 1) {
-    const progress = step / steps;
-    path.push(
-      new Point(
-        Math.round(from.x + (to.x - from.x) * progress),
-        Math.round(from.y + (to.y - from.y) * progress),
-      ),
-    );
-  }
-
-  return path;
 }
 
 class WindowsRelativePointerInput {

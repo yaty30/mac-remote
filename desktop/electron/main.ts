@@ -547,7 +547,7 @@ function createWindow(): void {
   const isMac = process.platform === "darwin";
   const isWindows = process.platform === "win32";
   const windowOptions: BrowserWindowConstructorOptions = {
-    width: 1010,
+    width: 1310,
     height: 800,
     minWidth: 720,
     minHeight: 520,
