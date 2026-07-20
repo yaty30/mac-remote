@@ -53,7 +53,7 @@ export default function App() {
   const [fontsReady, setFontsReady] = useState(false);
   const [appSplashVisible, setAppSplashVisible] = useState(true);
   const [activeScreen, setActiveScreen] =
-    useState<ActiveScreen>("getStarted");
+    useState<ActiveScreen>("remote");
   const [getStartedInitialPage, setGetStartedInitialPage] = useState(0);
 
   useEffect(() => {
