@@ -53,8 +53,9 @@ interface Page {
 }
 
 interface GetStartedScreenProps {
-  onComplete: () => void;
-  onLogin?: () => void;
+  initialPage?: number;
+  onComplete: (fromPage: number) => void;
+  onLogin?: (fromPage: number) => void;
 }
 
 const PremiumGradient =
@@ -172,10 +173,15 @@ function PremiumButton({
 }
 
 export function GetStartedScreen({
+  initialPage = 0,
   onComplete,
   onLogin,
 }: GetStartedScreenProps) {
-  const [currentPage, setCurrentPage] = useState(0);
+  const boundedInitialPage = Math.min(
+    Math.max(initialPage, 0),
+    pages.length - 1,
+  );
+  const [currentPage, setCurrentPage] = useState(boundedInitialPage);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const currentPageRef = useRef(currentPage);
@@ -206,7 +212,7 @@ export function GetStartedScreen({
    * 3 = fourth dot
    */
   const stepAnimation = useRef(
-    new Animated.Value(0),
+    new Animated.Value(boundedInitialPage),
   ).current;
 
   const animateToPage = (nextPage: number) => {
@@ -282,7 +288,7 @@ export function GetStartedScreen({
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
-        onComplete();
+        onComplete(currentPageRef.current);
         return;
       }
 
@@ -309,7 +315,7 @@ export function GetStartedScreen({
 
   const onSecondaryButtonPress = () => {
     if (currentPage === 0) {
-      onLogin?.();
+      onLogin?.(currentPage);
       return;
     }
 
@@ -480,7 +486,7 @@ export function GetStartedScreen({
             {page.subtitle}
           </Text>
 
-          {currentPage === 1 ? (
+          {currentPage === 1 && (
             <View style={styles.featureGrid}>
               {featureCards.map(
                 ({
@@ -518,7 +524,8 @@ export function GetStartedScreen({
                 ),
               )}
             </View>
-          ) : null}
+          )}
+
         </Animated.View>
 
         {/*
@@ -552,17 +559,21 @@ export function GetStartedScreen({
             />
           </View>
 
-          <PremiumButton
-            label={page.primaryButtonLabel}
-            variant="primary"
-            onPress={onNextPage}
-          />
+          {page.primaryButtonLabel && 
+            <PremiumButton
+              label={page.primaryButtonLabel}
+              variant="primary"
+              onPress={onNextPage}
+            />
+          }
 
-          <PremiumButton
-            label={page.secondaryButtonLabel}
-            variant="secondary"
-            onPress={onSecondaryButtonPress}
-          />
+          {page.secondaryButtonLabel && 
+            <PremiumButton
+              label={page.secondaryButtonLabel}
+              variant="secondary"
+              onPress={onSecondaryButtonPress}
+            />
+          }
         </View>
       </Animated.View>
     </SafeAreaView>

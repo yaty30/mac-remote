@@ -14,11 +14,13 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppSplashOverlay } from "./components/AppSplashOverlay";
+import { LoginPage } from "./components/LoginPage";
 import { GetStartedScreen } from "./screens/GetStartedScreen";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
 const APP_SPLASH_MIN_DURATION_MS = 950;
+type ActiveScreen = "getStarted" | "login" | "remote";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // The native splash may already be hidden during development reloads.
@@ -49,7 +51,9 @@ function applyDefaultFont() {
 export default function App() {
   const [fontsReady, setFontsReady] = useState(false);
   const [appSplashVisible, setAppSplashVisible] = useState(true);
-  const [showGetStarted, setShowGetStarted] = useState(true);
+  const [activeScreen, setActiveScreen] =
+    useState<ActiveScreen>("getStarted");
+  const [getStartedInitialPage, setGetStartedInitialPage] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,11 +108,28 @@ export default function App() {
       <SafeAreaProvider>
         <View style={styles.appRoot}>
           <StatusBar style="light" />
-          {showGetStarted ? (
-            <GetStartedScreen onComplete={() => setShowGetStarted(false)} />
-          ) : (
+          {activeScreen === "getStarted" ? (
+            <GetStartedScreen
+              initialPage={getStartedInitialPage}
+              onComplete={(fromPage) => {
+                setGetStartedInitialPage(fromPage);
+                setActiveScreen("login");
+              }}
+              onLogin={(fromPage) => {
+                setGetStartedInitialPage(fromPage);
+                setActiveScreen("login");
+              }}
+            />
+          ) : null}
+          {activeScreen === "login" ? (
+            <LoginPage
+              onBack={() => setActiveScreen("getStarted")}
+              onLogin={() => setActiveScreen("remote")}
+            />
+          ) : null}
+          {activeScreen === "remote" ? (
             <RemoteScreen showInitialSplash={false} />
-          )}
+          ) : null}
           <AppSplashOverlay visible={appSplashVisible} />
         </View>
       </SafeAreaProvider>
