@@ -278,6 +278,7 @@ export function RemoteControlMaster({
   const deviceSwitchOverlayAnim = useRef(new Animated.Value(0)).current;
   const deviceSwitchSpinnerAnim = useRef(new Animated.Value(0)).current;
   const deviceSwitchCancelAnim = useRef(new Animated.Value(0)).current;
+  const connectionSpinnerAnim = useRef(new Animated.Value(0)).current;
   const connectionCancelAnim = useRef(new Animated.Value(0)).current;
   const showConnectionPrompt =
     status !== "connected" && !deviceSwitchOverlayMounted;
@@ -607,6 +608,42 @@ export function RemoteControlMaster({
       }
     };
   }, [connectionCancelAnim, deviceSwitchOverlayMounted, status]);
+
+  useEffect(() => {
+    if (!connectionInProgress || deviceSwitchOverlayMounted) {
+      connectionSpinnerAnim.stopAnimation();
+      connectionSpinnerAnim.setValue(0);
+      return;
+    }
+
+    connectionSpinnerAnim.setValue(0);
+    const spinnerAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(connectionSpinnerAnim, {
+          toValue: 0.5,
+          duration: 820,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(connectionSpinnerAnim, {
+          toValue: 1,
+          duration: 860,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    spinnerAnimation.start();
+
+    return () => {
+      spinnerAnimation.stop();
+    };
+  }, [
+    connectionInProgress,
+    connectionSpinnerAnim,
+    deviceSwitchOverlayMounted,
+  ]);
 
   useEffect(
     () => () => {
@@ -1273,6 +1310,16 @@ export function RemoteControlMaster({
       },
     ],
   };
+  const connectionSpinnerAnimatedStyle = {
+    transform: [
+      {
+        rotate: connectionSpinnerAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["0deg", "360deg"],
+        }),
+      },
+    ],
+  };
   const deviceSwitchCancelAnimatedStyle = {
     maxHeight: deviceSwitchCancelAnim.interpolate({
       inputRange: [0, 1],
@@ -1297,14 +1344,14 @@ export function RemoteControlMaster({
   const connectionCancelAnimatedStyle = {
     maxHeight: connectionCancelAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, 44],
+      outputRange: [0, 42],
     }),
     opacity: connectionCancelAnim,
     transform: [
       {
         scale: connectionCancelAnim.interpolate({
           inputRange: [0, 1],
-          outputRange: [0.88, 1],
+          outputRange: [0.86, 1],
         }),
       },
       {
@@ -2093,66 +2140,76 @@ export function RemoteControlMaster({
         {showConnectionPrompt ? (
           <View style={styles.connectionPrompt}>
             <FloatingIconOverlay active={showConnectionPrompt} maxOpacity={0.26} />
-            <Pressable
-              accessibilityLabel={
-                connectionInProgress
-                  ? "Connecting to host"
-                  : "Scan to connect to host"
-              }
-              accessibilityRole="button"
-              disabled={connectionInProgress}
-              onPress={withHaptic(openScanner)}
-              style={({ pressed }) => [
-                styles.connectionPromptButton,
-                connectionInProgress
-                  ? styles.connectionPromptButtonDisabled
-                  : null,
-                pressed && !connectionInProgress
-                  ? styles.mouseButtonPressed
-                  : null,
-              ]}
-            >
-              <ScanButtonGradient
-                colors={[
-                  "rgba(44, 33, 23, 0.72)",
-                  "rgba(24, 20, 16, 0.72)",
-                  "rgba(14, 13, 11, 0.72)",
-                ]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={styles.connectionPromptButtonGradient}
-              >
-                <Ionicons
-                  name={connectionInProgress ? "sync" : "scan-outline"}
-                  size={23}
-                  color="#f0a942"
-                />
-                <Text style={styles.connectionPromptButtonText}>
-                  {connectionInProgress ? "Connecting..." : "Scan to Connect"}
-                </Text>
-              </ScanButtonGradient>
-            </Pressable>
-            {connectionInProgress && connectionCancelVisible ? (
+            {connectionInProgress ? (
               <Animated.View
-                style={[
-                  styles.connectionCancelSlot,
-                  connectionCancelAnimatedStyle,
+                accessibilityLabel="Connecting to host"
+                accessibilityRole="alert"
+                style={styles.deviceSwitchCard}
+              >
+                <View style={styles.deviceSwitchSpinner}>
+                  <Animated.View style={connectionSpinnerAnimatedStyle}>
+                    <Ionicons name="sync" size={22} color="#f0a942" />
+                  </Animated.View>
+                </View>
+                <Text style={styles.deviceSwitchTitle}>Connecting</Text>
+                <Text style={styles.deviceSwitchText} numberOfLines={1}>
+                  {hostName || host || "Selected device"}
+                </Text>
+                {connectionCancelVisible ? (
+                  <Animated.View
+                    style={[
+                      styles.deviceSwitchCancelSlot,
+                      connectionCancelAnimatedStyle,
+                    ]}
+                  >
+                    <Pressable
+                      accessibilityLabel="Cancel connection"
+                      accessibilityRole="button"
+                      style={({ pressed }) => [
+                        styles.deviceSwitchCancelButton,
+                        pressed ? styles.deviceSwitchCancelButtonPressed : null,
+                      ]}
+                      onPress={withHaptic(cancelConnection)}
+                    >
+                      <Ionicons name="close" size={16} color="#f7f5f1" />
+                      <Text style={styles.deviceSwitchCancelText}>Cancel</Text>
+                    </Pressable>
+                  </Animated.View>
+                ) : null}
+              </Animated.View>
+            ) : (
+              <Pressable
+                accessibilityLabel="Scan to connect to host"
+                accessibilityRole="button"
+                onPress={withHaptic(openScanner)}
+                style={({ pressed }) => [
+                  styles.connectionPromptButton,
+                  pressed
+                    ? styles.mouseButtonPressed
+                    : null,
                 ]}
               >
-                <Pressable
-                  accessibilityLabel="Cancel connection"
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.connectionCancelButton,
-                    pressed ? styles.connectionCancelButtonPressed : null,
+                <ScanButtonGradient
+                  colors={[
+                    "rgba(44, 33, 23, 0.72)",
+                    "rgba(24, 20, 16, 0.72)",
+                    "rgba(14, 13, 11, 0.72)",
                   ]}
-                  onPress={withHaptic(cancelConnection)}
+                  start={{ x: 0.1, y: 0 }}
+                  end={{ x: 0.9, y: 1 }}
+                  style={styles.connectionPromptButtonGradient}
                 >
-                  <Ionicons name="close" size={16} color="#f7f5f1" />
-                  <Text style={styles.connectionCancelText}>Cancel</Text>
-                </Pressable>
-              </Animated.View>
-            ) : null}
+                  <Ionicons
+                    name="scan-outline"
+                    size={23}
+                    color="#f0a942"
+                  />
+                  <Text style={styles.connectionPromptButtonText}>
+                    Scan to Connect
+                  </Text>
+                </ScanButtonGradient>
+              </Pressable>
+            )}
             {authError ? (
               <Text style={styles.connectionPromptError}>{authError}</Text>
             ) : null}

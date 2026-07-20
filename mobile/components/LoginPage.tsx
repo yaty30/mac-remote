@@ -3,10 +3,8 @@ import { ArrowLeft, KeyboardIcon } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   InputAccessoryView,
   Keyboard,
-  Modal,
   PanResponder,
   Platform,
   Pressable,
@@ -18,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withHaptic } from "../utils/haptics";
 import { FloatingIconOverlay } from "./FloatingIconOverlay";
+import { FullScreenLoadingOverlay } from "./FullScreenLoadingOverlay";
 
 const LOGIN_LOADING_MIN_DURATION_MS = 800;
 const LOGIN_INPUT_ACCESSORY_ID = "login-input-accessory";
@@ -25,17 +24,19 @@ const LOGIN_INPUT_ACCESSORY_ID = "login-input-accessory";
 interface LoginPageProps {
   onBack: () => void;
   onLogin?: () => void;
+  onSignUp?: () => void;
 }
 
 export function LoginPage({
   onBack,
   onLogin,
+  onSignUp,
 }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loginOverlayMounted, setLoginOverlayMounted] = useState(false);
+  const [loginLoadingVisible, setLoginLoadingVisible] = useState(false);
   const [activeInput, setActiveInput] = useState<"email" | "password" | null>(
     null,
   );
@@ -49,8 +50,7 @@ export function LoginPage({
   const screenAnimation = useRef(
     new Animated.Value(0),
   ).current;
-  const loginOverlayAnimation = useRef(new Animated.Value(0)).current;
-  const loginSpinnerAnimation = useRef(new Animated.Value(0)).current;
+  const shouldNavigateAfterLoginRef = useRef(false);
 
   useEffect(() => {
     Animated.timing(screenAnimation, {
@@ -59,38 +59,6 @@ export function LoginPage({
       useNativeDriver: true,
     }).start();
   }, [screenAnimation]);
-
-  useEffect(() => {
-    if (!loginOverlayMounted) {
-      loginSpinnerAnimation.stopAnimation();
-      loginSpinnerAnimation.setValue(0);
-      return;
-    }
-
-    loginSpinnerAnimation.setValue(0);
-    const spinnerAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(loginSpinnerAnimation, {
-          toValue: 0.45,
-          duration: 520,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(loginSpinnerAnimation, {
-          toValue: 1,
-          duration: 860,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    spinnerAnimation.start();
-
-    return () => {
-      spinnerAnimation.stop();
-    };
-  }, [loginOverlayMounted, loginSpinnerAnimation]);
 
   useEffect(
     () => () => {
@@ -173,33 +141,13 @@ export function LoginPage({
 
     isLoginLoadingRef.current = true;
     Keyboard.dismiss();
-    setLoginOverlayMounted(true);
-    loginOverlayAnimation.stopAnimation();
-    loginOverlayAnimation.setValue(0);
-
-    Animated.timing(loginOverlayAnimation, {
-      toValue: 1,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+    shouldNavigateAfterLoginRef.current = false;
+    setLoginLoadingVisible(true);
 
     loginTimerRef.current = setTimeout(() => {
       loginTimerRef.current = null;
-
-      Animated.timing(loginOverlayAnimation, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        isLoginLoadingRef.current = false;
-        setLoginOverlayMounted(false);
-
-        if (finished) {
-          onLogin?.();
-        }
-      });
+      shouldNavigateAfterLoginRef.current = true;
+      setLoginLoadingVisible(false);
     }, LOGIN_LOADING_MIN_DURATION_MS);
   };
 
@@ -240,6 +188,15 @@ export function LoginPage({
     setActiveInput(null);
   };
 
+  const handleLoginOverlayHidden = () => {
+    isLoginLoadingRef.current = false;
+
+    if (shouldNavigateAfterLoginRef.current) {
+      shouldNavigateAfterLoginRef.current = false;
+      onLogin?.();
+    }
+  };
+
   /**
    * Main form animation:
    * - fades in
@@ -277,35 +234,6 @@ export function LoginPage({
         translateX: screenAnimation.interpolate({
           inputRange: [0, 1],
           outputRange: [-24, 0],
-        }),
-      },
-    ],
-  };
-
-  const loginOverlayAnimatedStyle = {
-    opacity: loginOverlayAnimation,
-    transform: [
-      {
-        scale: loginOverlayAnimation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.96, 1],
-        }),
-      },
-      {
-        translateY: loginOverlayAnimation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [10, 0],
-        }),
-      },
-    ],
-  };
-
-  const loginSpinnerAnimatedStyle = {
-    transform: [
-      {
-        rotate: loginSpinnerAnimation.interpolate({
-          inputRange: [0, 1],
-          outputRange: ["0deg", "360deg"],
         }),
       },
     ],
@@ -585,6 +513,7 @@ export function LoginPage({
                         ? styles.pressed
                         : null,
                     ]}
+                    onPress={withHaptic(onSignUp)}
                   >
                     <Text style={styles.registerButtonLabel}>Register!</Text>
                   </Pressable>
@@ -662,43 +591,18 @@ export function LoginPage({
               onPress={withHaptic(dismissKeyboard)}
             >
               <KeyboardIcon size={18} color="#eeeeee" />
-              <Ionicons name="chevron-down-outline" size={12} color="#eeeeee" style={{transform: 'translateX(-2px)'}} />
+              <Ionicons name="chevron-down-outline" size={12} color="#eeeeee" />
             </Pressable>
           </View>
         </InputAccessoryView>
       ) : null}
 
-      <Modal
-        animationType="none"
-        transparent
-        visible={loginOverlayMounted}
-      >
-        <Animated.View
-          accessibilityLabel="Logging you in"
-          accessibilityRole="alert"
-          onStartShouldSetResponder={() => true}
-          style={styles.loginOverlay}
-        >
-          <FloatingIconOverlay
-            active={loginOverlayMounted}
-            maxOpacity={0.26}
-            spawnIntervalMs={520}
-          />
-          <Animated.View
-            style={[
-              styles.loginOverlayCard,
-              loginOverlayAnimatedStyle,
-            ]}
-          >
-            <View style={styles.loginSpinner}>
-              <Animated.View style={loginSpinnerAnimatedStyle}>
-                <Ionicons name="sync" size={22} color="#f0a942" />
-              </Animated.View>
-            </View>
-            <Text style={styles.loginOverlayTitle}>Loggin you in</Text>
-          </Animated.View>
-        </Animated.View>
-      </Modal>
+      <FullScreenLoadingOverlay
+        accessibilityLabel="Logging you in"
+        label="Logging you in"
+        visible={loginLoadingVisible}
+        onHidden={handleLoginOverlayHidden}
+      />
     </SafeAreaView>
   );
 }
@@ -896,7 +800,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
-    paddingVertical: 20
+    paddingVertical: 20,
   },
 
   dividerLine: {
@@ -913,8 +817,8 @@ const styles = StyleSheet.create({
 
   socialRow: {
     flexDirection: "row",
-    justifyContent: 'center',
-    gap: '30%',
+    gap: 44,
+    justifyContent: "center",
   },
 
   socialButton: {
@@ -943,14 +847,14 @@ const styles = StyleSheet.create({
 
   registerRow: {
     flexDirection: "row",
-    justifyContent: 'center',
+    justifyContent: "center",
     marginTop: 20,
   },
 
   registerButtonLabel: {
-    color: '#ff941f',
-    paddingLeft: 4,
+    color: "#ff941f",
     fontFamily: "Ubuntu-Bold",
+    paddingLeft: 4,
   },
 
   registerButtonPressed: {
@@ -1023,52 +927,5 @@ const styles = StyleSheet.create({
     color: "#14100b",
     fontFamily: "Ubuntu-Bold",
     fontSize: 12,
-  },
-
-  loginOverlay: {
-    alignItems: "center",
-    backgroundColor: "#070707",
-    bottom: 0,
-    flex: 1,
-    justifyContent: "center",
-    left: 0,
-    paddingHorizontal: 24,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    zIndex: 2000,
-  },
-
-  loginOverlayCard: {
-    alignItems: "center",
-    backgroundColor: "rgba(18, 17, 15, 0.94)",
-    borderColor: "rgba(255, 255, 255, 0.12)",
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 8,
-    minWidth: 210,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.38,
-    shadowRadius: 26,
-  },
-
-  loginSpinner: {
-    alignItems: "center",
-    backgroundColor: "rgba(240, 169, 66, 0.1)",
-    borderColor: "rgba(240, 169, 66, 0.34)",
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-
-  loginOverlayTitle: {
-    color: "#f7f5f1",
-    fontFamily: "Ubuntu-Bold",
-    fontSize: 15,
   },
 });

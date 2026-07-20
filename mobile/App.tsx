@@ -15,12 +15,13 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppSplashOverlay } from "./components/AppSplashOverlay";
 import { LoginPage } from "./components/LoginPage";
+import { SignUpPage } from "./components/SignUpPage";
 import { GetStartedScreen } from "./screens/GetStartedScreen";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
 const APP_SPLASH_MIN_DURATION_MS = 950;
-type ActiveScreen = "getStarted" | "login" | "remote";
+type ActiveScreen = "getStarted" | "login" | "signUp" | "remote";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // The native splash may already be hidden during development reloads.
@@ -125,6 +126,13 @@ export default function App() {
             <LoginPage
               onBack={() => setActiveScreen("getStarted")}
               onLogin={() => setActiveScreen("remote")}
+              onSignUp={() => setActiveScreen("signUp")}
+            />
+          ) : null}
+          {activeScreen === "signUp" ? (
+            <SignUpPage
+              onBack={() => setActiveScreen("login")}
+              onComplete={() => setActiveScreen("remote")}
             />
           ) : null}
           {activeScreen === "remote" ? (
