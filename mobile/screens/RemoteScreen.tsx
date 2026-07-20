@@ -1,5 +1,9 @@
 import { RemoteControlMaster } from "../features/remote/RemoteControlMaster";
 
-export function RemoteScreen() {
-  return <RemoteControlMaster />;
+interface RemoteScreenProps {
+  showInitialSplash?: boolean;
+}
+
+export function RemoteScreen({ showInitialSplash }: RemoteScreenProps) {
+  return <RemoteControlMaster showInitialSplash={showInitialSplash} />;
 }

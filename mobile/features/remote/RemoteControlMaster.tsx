@@ -125,7 +125,13 @@ interface DeviceSwitchUiSnapshot {
   display: HostDisplayInfo | null;
 }
 
-export function RemoteControlMaster() {
+interface RemoteControlMasterProps {
+  showInitialSplash?: boolean;
+}
+
+export function RemoteControlMaster({
+  showInitialSplash = true,
+}: RemoteControlMasterProps) {
   const socket = useMemo(() => new RemoteSocket(), []);
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const keyboardInputRef = useRef<TextInput>(null);
@@ -225,7 +231,9 @@ export function RemoteControlMaster() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [keyboardOverlay, setKeyboardOverlay] = useState(false);
   const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
-  const [appSplashReleased, setAppSplashReleased] = useState(false);
+  const [appSplashReleased, setAppSplashReleased] = useState(
+    !showInitialSplash,
+  );
   const [deviceSwitchOverlayMounted, setDeviceSwitchOverlayMounted] =
     useState(false);
   const [deviceSwitchCancelVisible, setDeviceSwitchCancelVisible] =
@@ -284,10 +292,15 @@ export function RemoteControlMaster() {
       (status === "connected" && hostPlatform !== null));
 
   useEffect(() => {
+    if (!showInitialSplash) {
+      setAppSplashReleased(true);
+      return;
+    }
+
     if (appSplashReadyToDismiss) {
       setAppSplashReleased(true);
     }
-  }, [appSplashReadyToDismiss]);
+  }, [appSplashReadyToDismiss, showInitialSplash]);
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
@@ -1427,7 +1440,7 @@ export function RemoteControlMaster() {
         >
           <FloatingIconOverlay
             active={deviceSwitchOverlayMounted}
-            maxOpacity={0.16}
+            maxOpacity={0.26}
             spawnIntervalMs={520}
           />
           <Animated.View
@@ -2079,7 +2092,7 @@ export function RemoteControlMaster() {
       <View style={styles.remoteControls}>
         {showConnectionPrompt ? (
           <View style={styles.connectionPrompt}>
-            <FloatingIconOverlay active={showConnectionPrompt} />
+            <FloatingIconOverlay active={showConnectionPrompt} maxOpacity={0.26} />
             <Pressable
               accessibilityLabel={
                 connectionInProgress

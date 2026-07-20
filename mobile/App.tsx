@@ -4,16 +4,21 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
+  StyleSheet,
   Text,
   TextInput,
+  View,
   type TextInputProps,
   type TextProps,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppSplashOverlay } from "./components/AppSplashOverlay";
+import { GetStartedScreen } from "./screens/GetStartedScreen";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
+const APP_SPLASH_MIN_DURATION_MS = 950;
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // The native splash may already be hidden during development reloads.
@@ -43,6 +48,8 @@ function applyDefaultFont() {
 
 export default function App() {
   const [fontsReady, setFontsReady] = useState(false);
+  const [appSplashVisible, setAppSplashVisible] = useState(true);
+  const [showGetStarted, setShowGetStarted] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +85,14 @@ export default function App() {
     void SplashScreen.hideAsync().catch(() => {
       // Ignore if the native splash is already hidden.
     });
+
+    const splashTimer = setTimeout(() => {
+      setAppSplashVisible(false);
+    }, APP_SPLASH_MIN_DURATION_MS);
+
+    return () => {
+      clearTimeout(splashTimer);
+    };
   }, [fontsReady]);
 
   if (!fontsReady) {
@@ -87,9 +102,23 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
-        <RemoteScreen />
+        <View style={styles.appRoot}>
+          <StatusBar style="light" />
+          {showGetStarted ? (
+            <GetStartedScreen onComplete={() => setShowGetStarted(false)} />
+          ) : (
+            <RemoteScreen showInitialSplash={false} />
+          )}
+          <AppSplashOverlay visible={appSplashVisible} />
+        </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  appRoot: {
+    backgroundColor: "#070707",
+    flex: 1,
+  },
+});
