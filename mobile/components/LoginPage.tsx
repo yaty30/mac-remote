@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ArrowLeft, KeyboardIcon } from "lucide-react-native";
+import { KeyboardIcon } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -13,9 +13,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { withHaptic } from "../utils/haptics";
-import { FloatingIconOverlay } from "./FloatingIconOverlay";
+import { AuthBackButton, AuthPageLayout } from "./AuthPageLayout";
 import { FullScreenLoadingOverlay } from "./FullScreenLoadingOverlay";
 
 const LOGIN_LOADING_MIN_DURATION_MS = 800;
@@ -23,12 +22,14 @@ const LOGIN_INPUT_ACCESSORY_ID = "login-input-accessory";
 
 interface LoginPageProps {
   onBack: () => void;
+  onForgotPassword?: () => void;
   onLogin?: () => void;
   onSignUp?: () => void;
 }
 
 export function LoginPage({
   onBack,
+  onForgotPassword,
   onLogin,
   onSignUp,
 }: LoginPageProps) {
@@ -46,11 +47,8 @@ export function LoginPage({
   const loginTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
-
-  const screenAnimation = useRef(
-    new Animated.Value(0),
-  ).current;
   const shouldNavigateAfterLoginRef = useRef(false);
+  const screenAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(screenAnimation, {
@@ -95,24 +93,16 @@ export function LoginPage({
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
         const isHorizontalGesture =
-          Math.abs(gestureState.dx) >
-          Math.abs(gestureState.dy);
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
 
-        return (
-          isHorizontalGesture &&
-          gestureState.dx > 10
-        );
+        return isHorizontalGesture && gestureState.dx > 10;
       },
 
       onMoveShouldSetPanResponder: (_, gestureState) => {
         const isHorizontalGesture =
-          Math.abs(gestureState.dx) >
-          Math.abs(gestureState.dy);
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
 
-        return (
-          isHorizontalGesture &&
-          gestureState.dx > 10
-        );
+        return isHorizontalGesture && gestureState.dx > 10;
       },
 
       onPanResponderRelease: (_, gestureState) => {
@@ -120,12 +110,7 @@ export function LoginPage({
           return;
         }
 
-        const swipeThreshold = 70;
-        const velocityThreshold = 0.4;
-
-        const swipedRight =
-          gestureState.dx > swipeThreshold ||
-          gestureState.vx > velocityThreshold;
+        const swipedRight = gestureState.dx > 70 || gestureState.vx > 0.4;
 
         if (swipedRight) {
           goBack();
@@ -197,12 +182,6 @@ export function LoginPage({
     }
   };
 
-  /**
-   * Main form animation:
-   * - fades in
-   * - moves upward
-   * - scales from 0.98 to 1
-   */
   const animatedContentStyle = {
     opacity: screenAnimation,
     transform: [
@@ -221,12 +200,6 @@ export function LoginPage({
     ],
   };
 
-  /**
-   * Back button animation:
-   * - opacity only
-   * - no translateY
-   * - no scale
-   */
   const animatedBackButtonStyle = {
     opacity: screenAnimation,
     transform: [
@@ -240,289 +213,186 @@ export function LoginPage({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <Animated.View
-        style={styles.screen}
-        {...swipeResponder.panHandlers}
-      >
-        <Pressable
-          accessibilityLabel="Dismiss keyboard"
-          style={styles.dismissPressable}
-          onPress={dismissKeyboard}
-        >
-          <FloatingIconOverlay
-            active
-            maxOpacity={0.26}
+    <>
+      <AuthPageLayout
+        animatedStyle={animatedContentStyle}
+        headerLeft={
+          <AuthBackButton
+            accessibilityLabel="Back to onboarding"
+            animatedStyle={animatedBackButtonStyle}
+            onPress={goBack}
           />
+        }
+        onDismissKeyboard={() => setActiveInput(null)}
+        panHandlers={swipeResponder.panHandlers}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>
+            Log in to continue controlling your Mac.
+          </Text>
+        </View>
 
-          <Animated.View
-            style={[
-              styles.backButtonContainer,
-              animatedBackButtonStyle,
-            ]}
-          >
+        <View style={styles.form}>
+          <View style={styles.inputWrap}>
+            <Ionicons name="mail-outline" size={18} color="#f0a942" />
+
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect={false}
+              blurOnSubmit={false}
+              inputAccessoryViewID={
+                Platform.OS === "ios" ? LOGIN_INPUT_ACCESSORY_ID : undefined
+              }
+              inputMode="email"
+              keyboardType="email-address"
+              onChangeText={(nextEmail) => {
+                setEmail(nextEmail);
+                if (errorMessage) {
+                  setErrorMessage(null);
+                }
+              }}
+              onFocus={() => setActiveInput("email")}
+              onSubmitEditing={focusPasswordInput}
+              placeholder="Email"
+              placeholderTextColor="rgba(255, 255, 255, 0.38)"
+              ref={emailInputRef}
+              returnKeyType="next"
+              style={styles.input}
+              textContentType="emailAddress"
+              value={email}
+            />
+          </View>
+
+          <View style={styles.inputWrap}>
+            <Ionicons name="lock-closed-outline" size={18} color="#f0a942" />
+
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="password"
+              autoCorrect={false}
+              inputAccessoryViewID={
+                Platform.OS === "ios" ? LOGIN_INPUT_ACCESSORY_ID : undefined
+              }
+              onChangeText={(nextPassword) => {
+                setPassword(nextPassword);
+                if (errorMessage) {
+                  setErrorMessage(null);
+                }
+              }}
+              onFocus={() => setActiveInput("password")}
+              onSubmitEditing={dismissKeyboard}
+              placeholder="Password"
+              placeholderTextColor="rgba(255, 255, 255, 0.38)"
+              ref={passwordInputRef}
+              returnKeyType="done"
+              secureTextEntry
+              style={styles.input}
+              textContentType="password"
+              value={password}
+            />
+          </View>
+
+          {errorMessage ? (
+            <Text accessibilityRole="alert" style={styles.errorText}>
+              {errorMessage}
+            </Text>
+          ) : null}
+
+          <View style={styles.optionsRow}>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: rememberMe }}
+              style={styles.rememberButton}
+              onPress={withHaptic(() =>
+                setRememberMe((current) => !current),
+              )}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  rememberMe ? styles.checkboxChecked : null,
+                ]}
+              >
+                {rememberMe ? (
+                  <Ionicons name="checkmark" size={13} color="#14100b" />
+                ) : null}
+              </View>
+
+              <Text style={styles.optionText}>Remember me</Text>
+            </Pressable>
+
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Back to onboarding"
-              hitSlop={12}
+              accessibilityLabel="Forgot password"
+              hitSlop={10}
               style={({ pressed }) => [
-                styles.backButton,
-                pressed
-                  ? styles.backButtonPressed
-                  : null,
+                styles.textButton,
+                pressed ? styles.pressed : null,
               ]}
-              onPress={withHaptic(goBack)}
+              onPress={withHaptic(onForgotPassword)}
             >
-              <ArrowLeft
-                size={23}
-                color="#ffffff"
-                strokeWidth={2.2}
-              />
+              <Text style={styles.forgotText}>Forgot password?</Text>
             </Pressable>
-          </Animated.View>
+          </View>
 
-          <Animated.View
-            pointerEvents="box-none"
-            style={[
-              styles.animatedContent,
-              animatedContentStyle,
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Log in"
+            style={({ pressed }) => [
+              styles.loginButton,
+              pressed ? styles.loginButtonPressed : null,
             ]}
+            onPress={withHaptic(handleCredentialLogin)}
           >
-            <View pointerEvents="box-none" style={styles.content}>
-              <View pointerEvents="box-none" style={styles.container}>
-                <View style={styles.header}>
-                  <Text style={styles.title}>
-                    Welcome Back
-                  </Text>
+            <Text style={styles.loginButtonText}>Log In</Text>
+          </Pressable>
+        </View>
 
-                  <Text style={styles.subtitle}>
-                    Log in to continue controlling your Mac.
-                  </Text>
-                </View>
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>OR</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
-                <View style={styles.form}>
-                  <View style={styles.inputWrap}>
-                    <Ionicons
-                      name="mail-outline"
-                      size={18}
-                      color="#f0a942"
-                    />
+        <View style={styles.socialRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Log in with Apple"
+            style={({ pressed }) => [
+              styles.socialButton,
+              pressed ? styles.socialButtonPressed : null,
+            ]}
+            onPress={withHaptic(handleSocialLogin)}
+          >
+            <Ionicons name="logo-apple" size={20} color="#ffffff" />
+          </Pressable>
 
-                    <TextInput
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      autoCorrect={false}
-                      blurOnSubmit={false}
-                      inputAccessoryViewID={
-                        Platform.OS === "ios"
-                          ? LOGIN_INPUT_ACCESSORY_ID
-                          : undefined
-                      }
-                      inputMode="email"
-                      keyboardType="email-address"
-                      onChangeText={(nextEmail) => {
-                        setEmail(nextEmail);
-                        if (errorMessage) {
-                          setErrorMessage(null);
-                        }
-                      }}
-                      onFocus={() => setActiveInput("email")}
-                      onSubmitEditing={focusPasswordInput}
-                      placeholder="Email"
-                      placeholderTextColor="rgba(255, 255, 255, 0.38)"
-                      ref={emailInputRef}
-                      returnKeyType="next"
-                      style={styles.input}
-                      textContentType="emailAddress"
-                      value={email}
-                    />
-                  </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Log in with Google"
+            style={({ pressed }) => [
+              styles.socialButton,
+              pressed ? styles.socialButtonPressed : null,
+            ]}
+            onPress={withHaptic(handleSocialLogin)}
+          >
+            <Ionicons name="logo-google" size={19} color="#ffffff" />
+          </Pressable>
+        </View>
 
-                  <View style={styles.inputWrap}>
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={18}
-                      color="#f0a942"
-                    />
-
-                    <TextInput
-                      autoCapitalize="none"
-                      autoComplete="password"
-                      autoCorrect={false}
-                      inputAccessoryViewID={
-                        Platform.OS === "ios"
-                          ? LOGIN_INPUT_ACCESSORY_ID
-                          : undefined
-                      }
-                      onChangeText={(nextPassword) => {
-                        setPassword(nextPassword);
-                        if (errorMessage) {
-                          setErrorMessage(null);
-                        }
-                      }}
-                      onFocus={() => setActiveInput("password")}
-                      onSubmitEditing={dismissKeyboard}
-                      placeholder="Password"
-                      placeholderTextColor="rgba(255, 255, 255, 0.38)"
-                      ref={passwordInputRef}
-                      returnKeyType="done"
-                      secureTextEntry
-                      style={styles.input}
-                      textContentType="password"
-                      value={password}
-                    />
-                  </View>
-
-                  {errorMessage ? (
-                    <Text
-                      accessibilityRole="alert"
-                      style={styles.errorText}
-                    >
-                      {errorMessage}
-                    </Text>
-                  ) : null}
-
-                  <View style={styles.optionsRow}>
-                    <Pressable
-                      accessibilityRole="checkbox"
-                      accessibilityState={{
-                        checked: rememberMe,
-                      }}
-                      style={styles.rememberButton}
-                      onPress={withHaptic(() =>
-                        setRememberMe(
-                          (current) => !current,
-                        ),
-                      )}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          rememberMe
-                            ? styles.checkboxChecked
-                            : null,
-                        ]}
-                      >
-                        {rememberMe ? (
-                          <Ionicons
-                            name="checkmark"
-                            size={13}
-                            color="#14100b"
-                          />
-                        ) : null}
-                      </View>
-
-                      <Text style={styles.optionText}>
-                        Remember me
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Forgot password"
-                      hitSlop={10}
-                      style={({ pressed }) => [
-                        styles.textButton,
-                        pressed
-                          ? styles.pressed
-                          : null,
-                      ]}
-                      onPress={withHaptic(
-                        () => undefined,
-                      )}
-                    >
-                      <Text style={styles.forgotText}>
-                        Forgot password?
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Log in"
-                    style={({ pressed }) => [
-                      styles.loginButton,
-                      pressed
-                        ? styles.loginButtonPressed
-                        : null,
-                    ]}
-                    onPress={withHaptic(handleCredentialLogin)}
-                  >
-                    <Text style={styles.loginButtonText}>
-                      Log In
-                    </Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-
-                  <Text style={styles.dividerText}>
-                    OR
-                  </Text>
-
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <View style={styles.socialRow}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Log in with Apple"
-                    style={({ pressed }) => [
-                      styles.socialButton,
-                      pressed
-                        ? styles.socialButtonPressed
-                        : null,
-                    ]}
-                    onPress={withHaptic(handleSocialLogin)}
-                  >
-                    <Ionicons
-                      name="logo-apple"
-                      size={20}
-                      color="#ffffff"
-                    />
-                  </Pressable>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Log in with Google"
-                    style={({ pressed }) => [
-                      styles.socialButton,
-                      pressed
-                        ? styles.socialButtonPressed
-                        : null,
-                    ]}
-                    onPress={withHaptic(handleSocialLogin)}
-                  >
-                    <Ionicons
-                      name="logo-google"
-                      size={19}
-                      color="#ffffff"
-                    />
-                  </Pressable>
-                </View>
-
-                <View style={styles.registerRow}>
-                  <Text style={styles.registerText}>
-                    Don't have an account?
-                  </Text>
-                  <Pressable
-                    hitSlop={20}
-                    style={({ pressed }) => [
-                      pressed
-                        ? styles.pressed
-                        : null,
-                    ]}
-                    onPress={withHaptic(onSignUp)}
-                  >
-                    <Text style={styles.registerButtonLabel}>Register!</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Animated.View>
+        <View style={styles.registerRow}>
+          <Text style={styles.registerText}>Don't have an account?</Text>
+          <Pressable
+            hitSlop={20}
+            style={({ pressed }) => [pressed ? styles.pressed : null]}
+            onPress={withHaptic(onSignUp)}
+          >
+            <Text style={styles.registerButtonLabel}>Register!</Text>
+          </Pressable>
+        </View>
+      </AuthPageLayout>
 
       {Platform.OS === "ios" ? (
         <InputAccessoryView nativeID={LOGIN_INPUT_ACCESSORY_ID}>
@@ -603,70 +473,11 @@ export function LoginPage({
         visible={loginLoadingVisible}
         onHidden={handleLoginOverlayHidden}
       />
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: "#070707",
-    flex: 1,
-  },
-
-  screen: {
-    backgroundColor: "rgba(0, 0, 0, 0.52)",
-    flex: 1,
-  },
-
-  dismissPressable: {
-    flex: 1,
-  },
-
-  /**
-   * This wrapper controls only the fixed position and
-   * fade animation of the back button.
-   */
-  backButtonContainer: {
-    left: 16,
-    position: "absolute",
-    top: 8,
-    zIndex: 3,
-  },
-
-  backButton: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-
-  backButtonPressed: {
-    opacity: 0.68,
-    transform: [{ scale: 0.96 }],
-  },
-
-  /**
-   * This fills the screen but is separate from the
-   * back button.
-   */
-  animatedContent: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  content: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    zIndex: 1,
-  },
-
-  container: {
-    gap: 18,
-    maxWidth: 330,
-    width: "100%",
-  },
-
   header: {
     alignItems: "center",
     gap: 8,
@@ -758,6 +569,7 @@ const styles = StyleSheet.create({
   },
 
   textButton: {
+    alignItems: "center",
     justifyContent: "center",
     minHeight: 34,
   },
@@ -830,19 +642,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     height: 50,
-    width: 50,
     justifyContent: "center",
+    width: 50,
   },
 
   socialButtonPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.99 }],
-  },
-
-  socialText: {
-    color: "#ffffff",
-    fontFamily: "Ubuntu-Bold",
-    fontSize: 14,
   },
 
   registerRow: {
@@ -855,11 +661,6 @@ const styles = StyleSheet.create({
     color: "#ff941f",
     fontFamily: "Ubuntu-Bold",
     paddingLeft: 4,
-  },
-
-  registerButtonPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
   },
 
   registerText: {
@@ -905,27 +706,11 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
 
-  keyboardAccessoryButtonText: {
-    color: "#f7f5f1",
-    fontFamily: "Ubuntu-Bold",
-    fontSize: 12,
-  },
-
-  keyboardAccessoryButtonTextDisabled: {
-    color: "rgba(247, 245, 241, 0.34)",
-  },
-
   keyboardDismissButton: {
     alignItems: "center",
     flexDirection: "row",
     gap: 5,
     minHeight: 34,
     paddingHorizontal: 12,
-  },
-
-  keyboardDismissButtonText: {
-    color: "#14100b",
-    fontFamily: "Ubuntu-Bold",
-    fontSize: 12,
   },
 });

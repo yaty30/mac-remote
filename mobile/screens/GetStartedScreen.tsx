@@ -230,6 +230,7 @@ export function GetStartedScreen({
 
     isTransitioningRef.current = true;
     setIsTransitioning(true);
+    contentAnimation.stopAnimation();
 
     /*
      * Move the active dot immediately while the old
@@ -258,6 +259,7 @@ export function GetStartedScreen({
       }
 
       currentPageRef.current = nextPage;
+      contentAnimation.setValue(0);
       setCurrentPage(nextPage);
 
       /*
@@ -268,7 +270,11 @@ export function GetStartedScreen({
         toValue: 1,
         duration: 280,
         useNativeDriver: true,
-      }).start(() => {
+      }).start(({ finished: enterFinished }) => {
+        if (!enterFinished) {
+          return;
+        }
+
         isTransitioningRef.current = false;
         setIsTransitioning(false);
       });
@@ -276,11 +282,13 @@ export function GetStartedScreen({
   };
 
   const completeWithExitFade = () => {
-    if (isExitingRef.current) {
+    if (isExitingRef.current || isTransitioningRef.current) {
       return;
     }
 
     isExitingRef.current = true;
+    contentAnimation.stopAnimation();
+    stepAnimation.stopAnimation();
 
     Animated.timing(screenExitAnimation, {
       toValue: 0,
@@ -297,6 +305,10 @@ export function GetStartedScreen({
   };
 
   const onNextPage = () => {
+    if (isTransitioningRef.current || isExitingRef.current) {
+      return;
+    }
+
     const activePage = currentPageRef.current;
     const isLastPage =
       activePage === pages.length - 1;
@@ -314,8 +326,14 @@ export function GetStartedScreen({
   };
 
   const onSecondaryButtonPress = () => {
-    if (currentPage === 0) {
-      onLogin?.(currentPage);
+    if (isTransitioningRef.current || isExitingRef.current) {
+      return;
+    }
+
+    const activePage = currentPageRef.current;
+
+    if (activePage === 0) {
+      onLogin?.(activePage);
       return;
     }
 
@@ -390,7 +408,7 @@ export function GetStartedScreen({
       },
 
       onPanResponderRelease: (_, gestureState) => {
-        if (isExitingRef.current) {
+        if (isExitingRef.current || isTransitioningRef.current) {
           return;
         }
 

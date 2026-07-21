@@ -26,82 +26,83 @@ import { AuthBackButton, AuthPageLayout } from "./AuthPageLayout";
 import { AuthVerificationStep } from "./AuthVerificationStep";
 import { FullScreenLoadingOverlay } from "./FullScreenLoadingOverlay";
 
-type SignUpStep = "details" | "verification";
-type DetailsInputName = "email" | "password" | "confirmPassword";
+type ForgotPasswordStep = "email" | "verification" | "resetPassword";
+type ForgotPasswordInputName = "email" | "password" | "confirmPassword";
 
 const RESEND_SECONDS = 60;
-const SIGN_UP_LOADING_MIN_DURATION_MS = 800;
-const SIGN_UP_INPUT_ACCESSORY_ID = "sign-up-input-accessory";
+const FORGOT_PASSWORD_LOADING_MIN_DURATION_MS = 800;
+const FORGOT_PASSWORD_INPUT_ACCESSORY_ID = "forgot-password-input-accessory";
 
-interface SignUpPageProps {
+interface ForgotPasswordPageProps {
   onBack: () => void;
   onComplete?: () => void;
 }
 
-interface DetailsErrors extends PasswordResetErrors {
-  email?: string;
-}
-
-async function registerAccountPlaceholder(
+async function requestPasswordResetCodePlaceholder(
   _email: string,
-  _password: string,
 ): Promise<void> {
-  // Placeholder for the eventual sign-up API request.
+  // Placeholder for the eventual reset-code API request.
   await new Promise((resolve) => setTimeout(resolve, 220));
 }
 
-async function verifySignUpCodePlaceholder(
+async function verifyPasswordResetCodePlaceholder(
   _email: string,
   _code: string,
 ): Promise<void> {
-  // Placeholder for the eventual verification API request.
+  // Placeholder for the eventual reset-code verification API request.
   await new Promise((resolve) => setTimeout(resolve, 260));
 }
 
-async function resendConfirmationCodePlaceholder(_email: string): Promise<void> {
-  // Placeholder for the eventual resend-code API request.
+async function resendPasswordResetCodePlaceholder(
+  _email: string,
+): Promise<void> {
+  // Placeholder for the eventual reset-code resend API request.
   await new Promise((resolve) => setTimeout(resolve, 220));
 }
 
-function getDetailsErrors(
-  email: string,
-  password: string,
-  confirmPassword: string,
-): DetailsErrors {
-  return {
-    ...getPasswordResetErrors(password, confirmPassword),
-    email: getEmailError(email, "Enter your email to create an account."),
-  };
+async function resetPasswordPlaceholder(
+  _email: string,
+  _code: string,
+  _password: string,
+): Promise<void> {
+  // Placeholder for the eventual password-reset API request.
+  await new Promise((resolve) => setTimeout(resolve, 260));
 }
 
-function hasDetailsErrors(errors: DetailsErrors) {
-  return Boolean(errors.email || errors.password || errors.confirmPassword);
+function hasPasswordErrors(errors: PasswordResetErrors) {
+  return Boolean(errors.password || errors.confirmPassword);
 }
 
-export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
+export function ForgotPasswordPage({
+  onBack,
+  onComplete,
+}: ForgotPasswordPageProps) {
   const {
     isTransitioningRef,
     step,
     stepAnimation,
     transitionTo,
-  } = useAnimatedAuthStep<SignUpStep>("details");
+  } = useAnimatedAuthStep<ForgotPasswordStep>("email");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [detailsErrors, setDetailsErrors] = useState<DetailsErrors>({});
-  const [confirmationCode, setConfirmationCode] = useState("");
+  const [submittedEmail, setSubmittedEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
   const [verificationError, setVerificationError] = useState<string | null>(
     null,
   );
   const [resendSeconds, setResendSeconds] = useState(RESEND_SECONDS);
   const [isResending, setIsResending] = useState(false);
   const [resendFeedback, setResendFeedback] = useState<string | null>(null);
-  const [loadingVisible, setLoadingVisible] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState("Verifying");
-  const [verificationFocusToken, setVerificationFocusToken] = useState(0);
-  const [activeInput, setActiveInput] = useState<DetailsInputName | null>(null);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordErrors, setPasswordErrors] = useState<PasswordResetErrors>({});
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [loadingVisible, setLoadingVisible] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Sending code");
+  const [verificationFocusToken, setVerificationFocusToken] = useState(0);
+  const [activeInput, setActiveInput] =
+    useState<ForgotPasswordInputName | null>(null);
 
   const screenAnimation = useRef(new Animated.Value(0)).current;
   const keyboardLiftAnimation = useRef(new Animated.Value(0)).current;
@@ -109,12 +110,14 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
   const isLeavingRef = useRef(false);
-  const isSubmittingDetailsRef = useRef(false);
+  const isSubmittingEmailRef = useRef(false);
   const isVerifyingRef = useRef(false);
+  const isResettingPasswordRef = useRef(false);
   const isResendingRef = useRef(false);
   const mountedRef = useRef(true);
   const shouldMoveToVerificationRef = useRef(false);
-  const shouldCompleteAfterVerificationRef = useRef(false);
+  const shouldMoveToResetPasswordRef = useRef(false);
+  const shouldCompleteAfterResetRef = useRef(false);
   const shouldFocusCodeAfterFailureRef = useRef(false);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resendFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -165,10 +168,12 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
 
     function handleKeyboardShow(event: KeyboardEvent) {
       const keyboardHeight = event.endCoordinates.height;
-      const targetLift =
-        step === "details" && activeInput !== null
-          ? Math.min(132, Math.round(keyboardHeight * 0.34))
-          : 0;
+      const shouldLift =
+        activeInput !== null &&
+        (step === "email" || step === "resetPassword");
+      const targetLift = shouldLift
+        ? Math.min(132, Math.round(keyboardHeight * 0.34))
+        : 0;
 
       animateKeyboardLift(targetLift, event.duration ?? 260);
     }
@@ -184,7 +189,10 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     const showSubscription = Keyboard.addListener(showEvent, handleKeyboardShow);
     const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
 
-    if (activeInput === null || step !== "details") {
+    if (
+      activeInput === null ||
+      (step !== "email" && step !== "resetPassword")
+    ) {
       animateKeyboardLift(0, 180);
     }
 
@@ -197,8 +205,9 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
   const exitToLogin = () => {
     if (
       isLeavingRef.current ||
-      isSubmittingDetailsRef.current ||
+      isSubmittingEmailRef.current ||
       isVerifyingRef.current ||
+      isResettingPasswordRef.current ||
       isTransitioningRef.current
     ) {
       return;
@@ -222,16 +231,25 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
   };
 
   const goBack = () => {
+    if (
+      isSubmittingEmailRef.current ||
+      isVerifyingRef.current ||
+      isResettingPasswordRef.current ||
+      isTransitioningRef.current
+    ) {
+      return;
+    }
+
+    if (step === "resetPassword") {
+      setPasswordErrors({});
+      transitionTo("verification");
+      return;
+    }
+
     if (step === "verification") {
-      if (
-        !isVerifyingRef.current &&
-        !isSubmittingDetailsRef.current &&
-        !isTransitioningRef.current
-      ) {
-        setVerificationError(null);
-        setResendFeedback(null);
-        transitionTo("details");
-      }
+      setVerificationError(null);
+      setResendFeedback(null);
+      transitionTo("email");
       return;
     }
 
@@ -262,7 +280,7 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     }),
   ).current;
 
-  const focusDetailsInput = (inputName: DetailsInputName) => {
+  const focusInput = (inputName: ForgotPasswordInputName) => {
     if (inputName === "email") {
       emailInputRef.current?.focus();
       return;
@@ -281,19 +299,15 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     setActiveInput(null);
   };
 
-  const clearFieldError = (field: DetailsInputName) => {
-    setDetailsErrors((current) => ({
-      ...current,
-      [field]: undefined,
-    }));
-  };
-
   const finishLoadingAfterMinimum = (
     startedAt: number,
     onDone: () => void,
   ) => {
     const elapsed = Date.now() - startedAt;
-    const remaining = Math.max(0, SIGN_UP_LOADING_MIN_DURATION_MS - elapsed);
+    const remaining = Math.max(
+      0,
+      FORGOT_PASSWORD_LOADING_MIN_DURATION_MS - elapsed,
+    );
 
     if (loadingTimerRef.current !== null) {
       clearTimeout(loadingTimerRef.current);
@@ -311,40 +325,36 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     }, remaining);
   };
 
-  const submitDetails = async () => {
-    if (
-      isSubmittingDetailsRef.current ||
-      isVerifyingRef.current ||
-      isTransitioningRef.current
-    ) {
+  const submitEmail = async () => {
+    if (isSubmittingEmailRef.current || isTransitioningRef.current) {
       return;
     }
 
-    const nextErrors = getDetailsErrors(email, password, confirmPassword);
-    if (hasDetailsErrors(nextErrors)) {
-      setDetailsErrors(nextErrors);
+    const nextError = getEmailError(email, "Enter your email.");
+    if (nextError) {
+      setEmailError(nextError);
       return;
     }
 
-    isSubmittingDetailsRef.current = true;
+    const cleanEmail = email.trim();
+    isSubmittingEmailRef.current = true;
     Keyboard.dismiss();
     setActiveInput(null);
-    setDetailsErrors({});
-    setLoadingLabel("Creating account");
+    setEmailError(null);
+    setSubmittedEmail(cleanEmail);
+    setLoadingLabel("Sending code");
     setLoadingVisible(true);
     const startedAt = Date.now();
 
     try {
-      await registerAccountPlaceholder(email.trim(), password);
+      await requestPasswordResetCodePlaceholder(cleanEmail);
       finishLoadingAfterMinimum(startedAt, () => {
         shouldMoveToVerificationRef.current = true;
       });
     } catch {
       finishLoadingAfterMinimum(startedAt, () => {
-        isSubmittingDetailsRef.current = false;
-        setDetailsErrors({
-          email: "We couldn't create this account. Try again.",
-        });
+        isSubmittingEmailRef.current = false;
+        setEmailError("We couldn't send a code. Try again.");
       });
     }
   };
@@ -355,7 +365,6 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     }
 
     isVerifyingRef.current = true;
-    shouldCompleteAfterVerificationRef.current = false;
     setVerificationError(null);
     setResendFeedback(null);
     Keyboard.dismiss();
@@ -364,16 +373,54 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     const startedAt = Date.now();
 
     try {
-      await verifySignUpCodePlaceholder(email.trim(), code);
+      await verifyPasswordResetCodePlaceholder(submittedEmail, code);
       finishLoadingAfterMinimum(startedAt, () => {
-        shouldCompleteAfterVerificationRef.current = true;
+        shouldMoveToResetPasswordRef.current = true;
       });
     } catch {
       finishLoadingAfterMinimum(startedAt, () => {
         isVerifyingRef.current = false;
-        setConfirmationCode("");
-        setVerificationError("That confirmation code is invalid.");
+        setVerificationCode("");
+        setVerificationError("That verification code is invalid.");
         shouldFocusCodeAfterFailureRef.current = true;
+      });
+    }
+  };
+
+  const submitResetPassword = async () => {
+    if (isResettingPasswordRef.current || isTransitioningRef.current) {
+      return;
+    }
+
+    const nextErrors = getPasswordResetErrors(password, confirmPassword);
+    if (hasPasswordErrors(nextErrors)) {
+      setPasswordErrors(nextErrors);
+      return;
+    }
+
+    isResettingPasswordRef.current = true;
+    Keyboard.dismiss();
+    setActiveInput(null);
+    setPasswordErrors({});
+    setLoadingLabel("Resetting password");
+    setLoadingVisible(true);
+    const startedAt = Date.now();
+
+    try {
+      await resetPasswordPlaceholder(
+        submittedEmail,
+        verificationCode,
+        password,
+      );
+      finishLoadingAfterMinimum(startedAt, () => {
+        shouldCompleteAfterResetRef.current = true;
+      });
+    } catch {
+      finishLoadingAfterMinimum(startedAt, () => {
+        isResettingPasswordRef.current = false;
+        setPasswordErrors({
+          password: "We couldn't reset your password. Try again.",
+        });
       });
     }
   };
@@ -381,17 +428,24 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
   const handleLoadingOverlayHidden = () => {
     if (shouldMoveToVerificationRef.current) {
       shouldMoveToVerificationRef.current = false;
-      isSubmittingDetailsRef.current = false;
+      isSubmittingEmailRef.current = false;
       setResendSeconds(RESEND_SECONDS);
-      setConfirmationCode("");
+      setVerificationCode("");
       setVerificationError(null);
       setResendFeedback(null);
       transitionTo("verification");
       return;
     }
 
-    if (shouldCompleteAfterVerificationRef.current) {
-      shouldCompleteAfterVerificationRef.current = false;
+    if (shouldMoveToResetPasswordRef.current) {
+      shouldMoveToResetPasswordRef.current = false;
+      isVerifyingRef.current = false;
+      transitionTo("resetPassword");
+      return;
+    }
+
+    if (shouldCompleteAfterResetRef.current) {
+      shouldCompleteAfterResetRef.current = false;
       onComplete?.();
       return;
     }
@@ -413,7 +467,7 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
     setResendFeedback(null);
 
     try {
-      await resendConfirmationCodePlaceholder(email.trim());
+      await resendPasswordResetCodePlaceholder(submittedEmail);
 
       if (!mountedRef.current) {
         return;
@@ -438,6 +492,13 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
         setIsResending(false);
       }
     }
+  };
+
+  const clearPasswordError = (field: keyof PasswordResetErrors) => {
+    setPasswordErrors((current) => ({
+      ...current,
+      [field]: undefined,
+    }));
   };
 
   const animatedContentStyle = {
@@ -486,9 +547,11 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
         headerLeft={
           <AuthBackButton
             accessibilityLabel={
-              step === "verification"
-                ? "Back to account details"
-                : "Back to login"
+              step === "email"
+                ? "Back to login"
+                : step === "verification"
+                  ? "Back to forgot password"
+                  : "Back to verification"
             }
             animatedStyle={animatedBackButtonStyle}
             onPress={goBack}
@@ -498,12 +561,12 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
         panHandlers={swipeResponder.panHandlers}
         scrollable
       >
-        {step === "details" ? (
+        {step === "email" ? (
           <>
             <View style={styles.header}>
-              <Text style={styles.title}>Create Account</Text>
+              <Text style={styles.title}>Forgot Password</Text>
               <Text style={styles.subtitle}>
-                Set up your account to keep your Mac remote ready.
+                Enter your email and we'll send a verification code.
               </Text>
             </View>
 
@@ -515,36 +578,80 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
-                    blurOnSubmit={false}
                     inputAccessoryViewID={
                       Platform.OS === "ios"
-                        ? SIGN_UP_INPUT_ACCESSORY_ID
+                        ? FORGOT_PASSWORD_INPUT_ACCESSORY_ID
                         : undefined
                     }
                     inputMode="email"
                     keyboardType="email-address"
                     onChangeText={(nextEmail) => {
                       setEmail(nextEmail);
-                      clearFieldError("email");
+                      setEmailError(null);
                     }}
                     onFocus={() => setActiveInput("email")}
-                    onSubmitEditing={() => focusDetailsInput("password")}
+                    onSubmitEditing={submitEmail}
                     placeholder="Email"
                     placeholderTextColor="rgba(255, 255, 255, 0.38)"
                     ref={emailInputRef}
-                    returnKeyType="next"
+                    returnKeyType="done"
                     style={styles.input}
                     textContentType="emailAddress"
                     value={email}
                   />
                 </View>
-                {detailsErrors.email ? (
+                {emailError ? (
                   <Text accessibilityRole="alert" style={styles.errorText}>
-                    {detailsErrors.email}
+                    {emailError}
                   </Text>
                 ) : null}
               </View>
 
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Send password reset code"
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed ? styles.primaryButtonPressed : null,
+                ]}
+                onPress={withHaptic(submitEmail)}
+              >
+                <Text style={styles.primaryButtonText}>Send Code</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+
+        {step === "verification" ? (
+          <AuthVerificationStep
+            code={verificationCode}
+            email={submittedEmail}
+            error={verificationError}
+            focusToken={verificationFocusToken}
+            isResending={isResending}
+            onChangeCode={(nextCode) => {
+              setVerificationCode(nextCode);
+              setVerificationError(null);
+              setResendFeedback(null);
+            }}
+            onComplete={completeVerification}
+            onResend={resendCode}
+            resendFeedback={resendFeedback}
+            resendSeconds={resendSeconds}
+            verificationDisabled={isVerifyingRef.current}
+          />
+        ) : null}
+
+        {step === "resetPassword" ? (
+          <>
+            <View style={styles.header}>
+              <Text style={styles.title}>Reset Password</Text>
+              <Text style={styles.subtitle}>
+                Create a new password for your account.
+              </Text>
+            </View>
+
+            <View style={styles.form}>
               <View style={styles.inputGroup}>
                 <View style={styles.inputWrap}>
                   <Ionicons
@@ -559,20 +666,20 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
                     blurOnSubmit={false}
                     inputAccessoryViewID={
                       Platform.OS === "ios"
-                        ? SIGN_UP_INPUT_ACCESSORY_ID
+                        ? FORGOT_PASSWORD_INPUT_ACCESSORY_ID
                         : undefined
                     }
                     onChangeText={(nextPassword) => {
                       setPassword(nextPassword);
-                      clearFieldError("password");
+                      clearPasswordError("password");
 
                       if (confirmPassword) {
-                        clearFieldError("confirmPassword");
+                        clearPasswordError("confirmPassword");
                       }
                     }}
                     onFocus={() => setActiveInput("password")}
-                    onSubmitEditing={() => focusDetailsInput("confirmPassword")}
-                    placeholder="Password"
+                    onSubmitEditing={() => focusInput("confirmPassword")}
+                    placeholder="New Password"
                     placeholderTextColor="rgba(255, 255, 255, 0.38)"
                     ref={passwordInputRef}
                     returnKeyType="next"
@@ -599,9 +706,9 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
                     )}
                   </Pressable>
                 </View>
-                {detailsErrors.password ? (
+                {passwordErrors.password ? (
                   <Text accessibilityRole="alert" style={styles.errorText}>
-                    {detailsErrors.password}
+                    {passwordErrors.password}
                   </Text>
                 ) : null}
               </View>
@@ -619,16 +726,16 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
                     autoCorrect={false}
                     inputAccessoryViewID={
                       Platform.OS === "ios"
-                        ? SIGN_UP_INPUT_ACCESSORY_ID
+                        ? FORGOT_PASSWORD_INPUT_ACCESSORY_ID
                         : undefined
                     }
                     onChangeText={(nextConfirmPassword) => {
                       setConfirmPassword(nextConfirmPassword);
-                      clearFieldError("confirmPassword");
+                      clearPasswordError("confirmPassword");
                     }}
                     onFocus={() => setActiveInput("confirmPassword")}
-                    onSubmitEditing={submitDetails}
-                    placeholder="Confirm Password"
+                    onSubmitEditing={submitResetPassword}
+                    placeholder="Confirm New Password"
                     placeholderTextColor="rgba(255, 255, 255, 0.38)"
                     ref={confirmPasswordInputRef}
                     returnKeyType="done"
@@ -657,75 +764,53 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
                     )}
                   </Pressable>
                 </View>
-                {detailsErrors.confirmPassword ? (
+                {passwordErrors.confirmPassword ? (
                   <Text accessibilityRole="alert" style={styles.errorText}>
-                    {detailsErrors.confirmPassword}
+                    {passwordErrors.confirmPassword}
                   </Text>
                 ) : null}
               </View>
 
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Continue to email verification"
+                accessibilityLabel="Reset password"
                 style={({ pressed }) => [
                   styles.primaryButton,
                   pressed ? styles.primaryButtonPressed : null,
                 ]}
-                onPress={withHaptic(submitDetails)}
+                onPress={withHaptic(submitResetPassword)}
               >
-                <Text style={styles.primaryButtonText}>Continue</Text>
+                <Text style={styles.primaryButtonText}>Reset Password</Text>
               </Pressable>
             </View>
           </>
-        ) : (
-          <AuthVerificationStep
-            code={confirmationCode}
-            email={email.trim()}
-            error={verificationError}
-            focusToken={verificationFocusToken}
-            isResending={isResending}
-            onChangeCode={(nextCode) => {
-              setConfirmationCode(nextCode);
-              setVerificationError(null);
-              setResendFeedback(null);
-            }}
-            onComplete={completeVerification}
-            onResend={resendCode}
-            resendFeedback={resendFeedback}
-            resendSeconds={resendSeconds}
-            verificationDisabled={isVerifyingRef.current}
-          />
-        )}
+        ) : null}
       </AuthPageLayout>
 
-      {Platform.OS === "ios" && step === "details" ? (
-        <InputAccessoryView nativeID={SIGN_UP_INPUT_ACCESSORY_ID}>
+      {Platform.OS === "ios" && step !== "verification" ? (
+        <InputAccessoryView nativeID={FORGOT_PASSWORD_INPUT_ACCESSORY_ID}>
           <View style={styles.keyboardAccessory}>
             <View style={styles.keyboardAccessoryNav}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Move to previous field"
-                disabled={activeInput === null || activeInput === "email"}
+                disabled={activeInput !== "confirmPassword"}
                 style={({ pressed }) => [
                   styles.keyboardAccessoryButton,
-                  activeInput === null || activeInput === "email"
+                  activeInput !== "confirmPassword"
                     ? styles.keyboardAccessoryButtonDisabled
                     : null,
-                  pressed && activeInput !== null && activeInput !== "email"
+                  pressed && activeInput === "confirmPassword"
                     ? styles.keyboardAccessoryButtonPressed
                     : null,
                 ]}
-                onPress={withHaptic(() => {
-                  focusDetailsInput(
-                    activeInput === "confirmPassword" ? "password" : "email",
-                  );
-                })}
+                onPress={withHaptic(() => focusInput("password"))}
               >
                 <Ionicons
                   name="chevron-up"
                   size={18}
                   color={
-                    activeInput !== null && activeInput !== "email"
+                    activeInput === "confirmPassword"
                       ? "#f7f5f1"
                       : "rgba(247, 245, 241, 0.34)"
                   }
@@ -735,31 +820,23 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Move to next field"
-                disabled={
-                  activeInput === null || activeInput === "confirmPassword"
-                }
+                disabled={activeInput !== "password"}
                 style={({ pressed }) => [
                   styles.keyboardAccessoryButton,
-                  activeInput === null || activeInput === "confirmPassword"
+                  activeInput !== "password"
                     ? styles.keyboardAccessoryButtonDisabled
                     : null,
-                  pressed &&
-                  activeInput !== null &&
-                  activeInput !== "confirmPassword"
+                  pressed && activeInput === "password"
                     ? styles.keyboardAccessoryButtonPressed
                     : null,
                 ]}
-                onPress={withHaptic(() => {
-                  focusDetailsInput(
-                    activeInput === "email" ? "password" : "confirmPassword",
-                  );
-                })}
+                onPress={withHaptic(() => focusInput("confirmPassword"))}
               >
                 <Ionicons
                   name="chevron-down"
                   size={18}
                   color={
-                    activeInput !== null && activeInput !== "confirmPassword"
+                    activeInput === "password"
                       ? "#f7f5f1"
                       : "rgba(247, 245, 241, 0.34)"
                   }
