@@ -1,5 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -8,24 +7,58 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import {
+  Balloon,
+  Beer,
+  Rabbit,
+  Turtle,
+  Gamepad2,
+  IceCreamBowl,
+  Leaf,
+  Pizza,
+  Rocket,
+  Heart,
+  Rose,
+  Ghost,
+  Icon,
+  LucideProps
+} from "lucide-react-native";
+import { faceAlien, hockeyMask } from "@lucide/lab";
 
-type FloatingIconName = ComponentProps<typeof Ionicons>["name"];
+/**
+ * All Lucide React Native icons share the same component type.
+ * Using an existing icon's type avoids relying on icon-name strings.
+ */
+export type FloatingLucideIcon = typeof Rocket;
 
-const DEFAULT_ICONS: FloatingIconName[] = [
-  "balloon-outline",
-  "ice-cream-outline",
-  "bowling-ball-outline",
-  "pizza-outline",
-  "leaf-outline",
-  "beer-outline",
-  "baseball-outline",
-  "game-controller-outline",
-  "rocket-outline",
+function FaceAlien(props: LucideProps) {
+  return <Icon iconNode={faceAlien} {...props} />;
+}
+
+function HockeyMask(props: LucideProps) {
+  return <Icon iconNode={hockeyMask} {...props} />;
+}
+
+const DEFAULT_ICONS: FloatingLucideIcon[] = [
+  Balloon,
+  IceCreamBowl,
+  Turtle,
+  Pizza,
+  Leaf,
+  Beer,
+  Rabbit,
+  Gamepad2,
+  Rocket,
+  Heart,
+  Rose,
+  Ghost,
+  FaceAlien,
+  HockeyMask
 ];
 
 interface FloatingIconParticle {
   id: number;
-  icon: FloatingIconName;
+  Icon: FloatingLucideIcon;
   left: number;
   size: number;
   depth: number;
@@ -34,13 +67,21 @@ interface FloatingIconParticle {
   progress: Animated.Value;
   spin: Animated.Value;
   spinEnabled: boolean;
+  isBalloon: boolean;
 }
 
 interface FloatingIconOverlayProps {
   active: boolean;
   color?: string;
   floatDurationMs?: number;
-  icons?: FloatingIconName[];
+
+  /**
+   * Pass Lucide icon components directly:
+   *
+   * icons={[Rocket, Pizza, Gamepad2]}
+   */
+  icons?: FloatingLucideIcon[];
+
   maxIconSize?: number;
   maxOpacity?: number;
   minFloatDistance?: number;
@@ -48,7 +89,14 @@ interface FloatingIconOverlayProps {
   spawnIntervalMs?: number;
   spinDurationMaxMs?: number;
   spinDurationMinMs?: number;
+  strokeWidth?: number;
   style?: StyleProp<ViewStyle>;
+}
+
+interface ParticleAnimations {
+  float: ReturnType<typeof Animated.timing>;
+  spin: ReturnType<typeof Animated.loop> | null;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 export function FloatingIconOverlay({
@@ -63,28 +111,34 @@ export function FloatingIconOverlay({
   spawnIntervalMs = 460,
   spinDurationMaxMs = 4200,
   spinDurationMinMs = 800,
+  strokeWidth = 1.8,
   style,
 }: FloatingIconOverlayProps) {
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } =
+    useWindowDimensions();
+
   const iconIdRef = useRef(0);
+
   const animationsRef = useRef(
-    new Map<
-      number,
-      {
-        float: ReturnType<typeof Animated.timing>;
-        spin: ReturnType<typeof Animated.loop> | null;
-        timeout: ReturnType<typeof setTimeout>;
-      }
-    >(),
+    new Map<number, ParticleAnimations>(),
   );
-  const [particles, setParticles] = useState<FloatingIconParticle[]>([]);
+
+  const [particles, setParticles] = useState<
+    FloatingIconParticle[]
+  >([]);
 
   useEffect(() => {
+    function stopParticleAnimations(
+      animation: ParticleAnimations,
+    ) {
+      animation.float.stop();
+      animation.spin?.stop();
+      clearTimeout(animation.timeout);
+    }
+
     function clearParticles() {
       for (const animation of animationsRef.current.values()) {
-        animation.float.stop();
-        animation.spin?.stop();
-        clearTimeout(animation.timeout);
+        stopParticleAnimations(animation);
       }
 
       animationsRef.current.clear();
@@ -100,14 +154,14 @@ export function FloatingIconOverlay({
       const animation = animationsRef.current.get(id);
 
       if (animation) {
-        animation.float.stop();
-        animation.spin?.stop();
-        clearTimeout(animation.timeout);
+        stopParticleAnimations(animation);
         animationsRef.current.delete(id);
       }
 
       setParticles((currentParticles) =>
-        currentParticles.filter((particle) => particle.id !== id),
+        currentParticles.filter(
+          (particle) => particle.id !== id,
+        ),
       );
     }
 
@@ -117,40 +171,80 @@ export function FloatingIconOverlay({
 
       const progress = new Animated.Value(0);
       const spin = new Animated.Value(0);
-      const icon = icons[Math.floor(Math.random() * icons.length)];
-      const isBalloon = icon === "balloon-outline";
-      const sizeRange = Math.max(0, maxIconSize - minIconSize);
-      const depth = sizeRange === 0 ? 0 : Math.random();
-      const size = minIconSize + Math.round(Math.pow(depth, 0.72) * sizeRange);
+
+      const Icon =
+        icons[Math.floor(Math.random() * icons.length)];
+
+      const isBalloon = Icon === Balloon;
+
+      const sizeRange = Math.max(
+        0,
+        maxIconSize - minIconSize,
+      );
+
+      const depth =
+        sizeRange === 0
+          ? 0
+          : Math.random();
+
+      const size =
+        minIconSize +
+        Math.round(
+          Math.pow(depth, 0.72) * sizeRange,
+        );
+
       const spinDurationRange = Math.max(
         0,
         spinDurationMaxMs - spinDurationMinMs,
       );
+
       const spinDuration =
         spinDurationMinMs +
-        Math.round(Math.pow(depth, 1.15) * spinDurationRange) +
+        Math.round(
+          Math.pow(depth, 1.15) *
+            spinDurationRange,
+        ) +
         Math.round(Math.random() * 180);
+
       const particleFloatDuration = isBalloon
-        ? Math.round(floatDurationMs * 1.55 + Math.random() * 650)
+        ? Math.round(
+            floatDurationMs * 1.55 +
+              Math.random() * 650,
+          )
         : floatDurationMs;
-      const item: FloatingIconParticle = {
+
+      const particle: FloatingIconParticle = {
         id,
-        icon,
-        left: Math.random() * (windowWidth + 80) - 40,
+        Icon,
+        left:
+          Math.random() *
+            (windowWidth + 80) -
+          40,
         size,
         depth,
-        drift: isBalloon ? Math.random() * 180 - 90 : Math.random() * 80 - 40,
-        floatDistance: Math.max(minFloatDistance, windowHeight * 0.58),
+        drift: isBalloon
+          ? Math.random() * 180 - 90
+          : Math.random() * 80 - 40,
+        floatDistance: Math.max(
+          minFloatDistance,
+          windowHeight * 0.58,
+        ),
         progress,
         spin,
         spinEnabled: !isBalloon,
+        isBalloon,
       };
-      const floatAnimation = Animated.timing(progress, {
-        toValue: 1,
-        duration: particleFloatDuration,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      });
+
+      const floatAnimation = Animated.timing(
+        progress,
+        {
+          toValue: 1,
+          duration: particleFloatDuration,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        },
+      );
+
       const spinAnimation = isBalloon
         ? null
         : Animated.loop(
@@ -161,9 +255,14 @@ export function FloatingIconOverlay({
               useNativeDriver: true,
             }),
           );
+
+      /*
+       * Safety timeout in case the animation completion
+       * callback is interrupted or skipped by the platform.
+       */
       const timeout = setTimeout(
         () => removeParticle(id),
-        particleFloatDuration + 20,
+        particleFloatDuration + 50,
       );
 
       animationsRef.current.set(id, {
@@ -171,8 +270,14 @@ export function FloatingIconOverlay({
         spin: spinAnimation,
         timeout,
       });
-      setParticles((currentParticles) => [...currentParticles, item]);
+
+      setParticles((currentParticles) => [
+        ...currentParticles,
+        particle,
+      ]);
+
       spinAnimation?.start();
+
       floatAnimation.start(({ finished }) => {
         if (finished) {
           removeParticle(id);
@@ -181,7 +286,11 @@ export function FloatingIconOverlay({
     }
 
     spawnParticle();
-    const interval = setInterval(spawnParticle, spawnIntervalMs);
+
+    const interval = setInterval(
+      spawnParticle,
+      spawnIntervalMs,
+    );
 
     return () => {
       clearInterval(interval);
@@ -202,28 +311,58 @@ export function FloatingIconOverlay({
   ]);
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.layer, style]}>
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.layer, style]}
+    >
       {[...particles]
         .sort(
           (leftParticle, rightParticle) =>
-            rightParticle.depth - leftParticle.depth,
+            rightParticle.depth -
+            leftParticle.depth,
         )
         .map((particle) => {
-          const depth = particle.depth;
-          const zIndex = Math.round((1 - depth) * 1000);
-          const translateY = particle.progress.interpolate({
+          const {
+            Icon,
+            depth,
+            drift,
+            floatDistance,
+            isBalloon,
+            progress,
+            size,
+            spin,
+            spinEnabled,
+          } = particle;
+
+          const zIndex = Math.round(
+            (1 - depth) * 1000,
+          );
+
+          const translateY = progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [0, -particle.floatDistance],
+            outputRange: [0, -floatDistance],
           });
-          const translateX = particle.progress.interpolate({
+
+          const translateX = progress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: [0, particle.drift, particle.drift * 0.35],
+            outputRange: [
+              0,
+              drift,
+              drift * 0.35,
+            ],
           });
-          const opacity = particle.progress.interpolate({
+
+          const opacity = progress.interpolate({
             inputRange: [0, 0.12, 0.78, 1],
-            outputRange: [0, maxOpacity, maxOpacity * 0.7, 0],
+            outputRange: [
+              0,
+              maxOpacity,
+              maxOpacity * 0.7,
+              0,
+            ],
           });
-          const rotate = particle.spin.interpolate({
+
+          const rotate = spin.interpolate({
             inputRange: [0, 1],
             outputRange: ["0deg", "360deg"],
           });
@@ -234,20 +373,31 @@ export function FloatingIconOverlay({
               style={[
                 styles.icon,
                 {
-                  bottom: -particle.size - 16,
+                  bottom: -size - 16,
                   left: particle.left,
                   opacity,
                   zIndex,
-                  transform: particle.spinEnabled
-                    ? [{ translateX }, { translateY }, { rotate }]
-                    : [{ translateX }, { translateY }],
+                  transform: spinEnabled
+                    ? [
+                        { translateX },
+                        { translateY },
+                        { rotate },
+                      ]
+                    : [
+                        { translateX },
+                        { translateY },
+                      ],
                 },
               ]}
             >
-              <Ionicons
-                name={particle.icon}
-                size={particle.size}
-                color={particle.icon === "balloon-outline" ? "#ef4444" : color}
+              <Icon
+                color={
+                  isBalloon
+                    ? "#ef4444"
+                    : color
+                }
+                size={size}
+                strokeWidth={strokeWidth}
               />
             </Animated.View>
           );
@@ -261,6 +411,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     overflow: "hidden",
   },
+
   icon: {
     position: "absolute",
   },
