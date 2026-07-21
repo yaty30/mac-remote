@@ -1,12 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  LinearGradient as ExpoLinearGradient,
-  type LinearGradientProps,
-} from "expo-linear-gradient";
 import type { ComponentType } from "react";
-import { Image, Pressable, StyleSheet, Text } from "react-native";
+import { Image, StyleSheet, Text } from "react-native";
 import type { SvgProps } from "react-native-svg";
-import { withHaptic } from "../utils/haptics";
+import { ScanGradientButton } from "./GradientButton";
 
 interface ShortcutButtonProps {
   icon?: keyof typeof Ionicons.glyphMap;
@@ -19,9 +15,6 @@ interface ShortcutButtonProps {
   onLongPress?: () => void;
   size?: number;
 }
-
-const ShortcutGradient =
-  ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
 
 export function ShortcutButton({
   icon,
@@ -37,54 +30,50 @@ export function ShortcutButton({
   const iconSize = Math.max(24, Math.round(size * 0.51));
   const initialSize = Math.max(18, Math.round(size * 0.34));
 
+  const shortcutIcon = SvgIcon ? (
+    <SvgIcon width={iconSize} height={iconSize} />
+  ) : imageUri ? (
+    <Image
+      source={{ uri: imageUri }}
+      style={[
+        styles.imageIcon,
+        {
+          borderRadius: Math.max(6, Math.round(size * 0.11)),
+          height: iconSize,
+          width: iconSize,
+        },
+      ]}
+    />
+  ) : initial ? (
+    <Text style={[styles.initialIcon, { fontSize: initialSize }]}>
+      {initial.slice(0, 1).toUpperCase()}
+    </Text>
+  ) : (
+    <Ionicons
+      name={icon ?? "apps-outline"}
+      size={Math.max(22, Math.round(size * 0.46))}
+      color={iconColor}
+    />
+  );
+
   return (
-    <Pressable
+    <ScanGradientButton
       accessibilityLabel={label}
-      style={({ pressed }) => [
+      action={onPress}
+      buttonStyle={[
         styles.button,
         {
           borderRadius: Math.max(12, Math.round(size * 0.26)),
           height: size,
           width: size,
         },
-        pressed ? styles.buttonPressed : null,
       ]}
-      onPress={withHaptic(onPress)}
-      onLongPress={withHaptic(onLongPress)}
-    >
-      <ShortcutGradient
-        colors={["#2b211a", "#1b1714", "#11100e"]}
-        start={{ x: 0.18, y: 0 }}
-        end={{ x: 0.82, y: 1 }}
-        style={styles.buttonGradient}
-      >
-        {SvgIcon ? (
-          <SvgIcon width={iconSize} height={iconSize} />
-        ) : imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            style={[
-              styles.imageIcon,
-              {
-                borderRadius: Math.max(6, Math.round(size * 0.11)),
-                height: iconSize,
-                width: iconSize,
-              },
-            ]}
-          />
-        ) : initial ? (
-          <Text style={[styles.initialIcon, { fontSize: initialSize }]}>
-            {initial.slice(0, 1).toUpperCase()}
-          </Text>
-        ) : (
-          <Ionicons
-            name={icon ?? "apps-outline"}
-            size={Math.max(22, Math.round(size * 0.46))}
-            color={iconColor}
-          />
-        )}
-      </ShortcutGradient>
-    </Pressable>
+      colors={["#2b211a", "#1b1714", "#11100e"]}
+      gradientStyle={styles.buttonGradient}
+      icon={shortcutIcon}
+      longAction={onLongPress}
+      pressedStyle={styles.buttonPressed}
+    />
   );
 }
 

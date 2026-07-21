@@ -7,6 +7,7 @@ import {
 } from "expo-camera";
 import {
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -57,12 +58,17 @@ import {
   Pencil,
   Undo2,
   Redo2,
+  QrCode,
 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppSplashOverlay } from "../../components/AppSplashOverlay";
 import { FloatingIconOverlay } from "../../components/FloatingIconOverlay";
+import { ScanGradientButton } from "../../components/GradientButton";
 import { Header } from "../../components/Header";
 import { ShortcutButton } from "../../components/ShortcutButton";
+import { TourTarget } from "../../components/tour/TourTarget";
+import { createAppTourSteps } from "../../components/tour/tourSteps";
+import { useAppTour } from "../../components/tour/useAppTour";
 import { Trackpad } from "../trackpad/Trackpad";
 import type {
   HostCapabilities,
@@ -100,7 +106,7 @@ import { useHostProfile } from "./useHostProfile";
 import { useRemoteActions } from "./useRemoteActions";
 import { useRemoteControlsAvailability } from "./useRemoteControlsAvailability";
 
-const ScanButtonGradient =
+const GradientSurface =
   ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
 const DEVICE_NAME_MIN_LENGTH = 2;
 const DEVICE_NAME_MAX_LENGTH = 20;
@@ -127,6 +133,11 @@ interface DeviceSwitchUiSnapshot {
 
 export function RemoteControlMaster() {
   const socket = useMemo(() => new RemoteSocket(), []);
+  const {
+    handleRestartTour,
+    setTourAutoStartEnabled,
+    setTourSteps,
+  } = useAppTour();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const keyboardInputRef = useRef<TextInput>(null);
   const keyboardActiveRef = useRef(false);
@@ -815,12 +826,12 @@ export function RemoteControlMaster() {
     setDeviceSwitchUiSnapshot(
       hasActiveDevice
         ? {
-            host,
-            name: hostName,
-            platform: hostPlatform ?? getSelectedDevicePlatform(host) ?? null,
-            capabilities: hostCapabilities,
-            display: hostDisplay,
-          }
+          host,
+          name: hostName,
+          platform: hostPlatform ?? getSelectedDevicePlatform(host) ?? null,
+          capabilities: hostCapabilities,
+          display: hostDisplay,
+        }
         : null,
     );
     deviceSwitchStartedAtRef.current = Date.now();
@@ -1019,7 +1030,7 @@ export function RemoteControlMaster() {
       suffixLength < prev.length - prefixLength &&
       suffixLength < nextText.length - prefixLength &&
       prev[prev.length - 1 - suffixLength] ===
-        nextText[nextText.length - 1 - suffixLength]
+      nextText[nextText.length - 1 - suffixLength]
     ) {
       suffixLength += 1;
     }
@@ -1349,7 +1360,7 @@ export function RemoteControlMaster() {
       (windowWidth -
         BODY_HORIZONTAL_PADDING * 2 -
         SHORTCUT_GAP * (SHORTCUT_VISIBLE_COUNT - 1)) /
-        SHORTCUT_VISIBLE_COUNT,
+      SHORTCUT_VISIBLE_COUNT,
     ),
     SHORTCUT_MIN_SIZE,
     SHORTCUT_MAX_SIZE,
@@ -1392,6 +1403,48 @@ export function RemoteControlMaster() {
     ],
   };
   const devicePickerTitle = visibleDeviceName || "No device saved";
+  const closeTourKeyboard = useCallback(() => {
+    if (keyboardOverlay || keyboardVisible) {
+      dismissKeyboardInput();
+    }
+  }, [keyboardOverlay, keyboardVisible]);
+  const closeTourSettings = useCallback(() => {
+    setShowSettings(false);
+  }, []);
+  const tourSteps = useMemo(
+    () =>
+      createAppTourSteps({
+        capabilities: visibleHostCapabilities,
+        closeKeyboard: closeTourKeyboard,
+        closeSettings: closeTourSettings,
+        platform: visibleHostPlatform,
+      }),
+    [
+      closeTourKeyboard,
+      closeTourSettings,
+      visibleHostCapabilities,
+      visibleHostPlatform,
+    ],
+  );
+
+  useEffect(() => {
+    setTourSteps(tourSteps);
+  }, [setTourSteps, tourSteps]);
+
+  useEffect(() => {
+    setTourAutoStartEnabled(
+      appSplashReleased &&
+      !showConnectionPrompt &&
+      !deviceSwitchOverlayMounted &&
+      !scannerVisible,
+    );
+  }, [
+    appSplashReleased,
+    deviceSwitchOverlayMounted,
+    scannerVisible,
+    setTourAutoStartEnabled,
+    showConnectionPrompt,
+  ]);
 
   return (
     <SafeAreaView style={styles.screen} onLayout={handleScreenLayout}>
@@ -1471,7 +1524,7 @@ export function RemoteControlMaster() {
         latencyMs={latencyMs}
         status={visibleStatus}
         titleContent={
-          <View style={styles.homeDevicePicker}>
+          <TourTarget targetKey="device-switch" style={styles.homeDevicePicker}>
             <Pressable
               accessibilityLabel="Select host"
               style={({ pressed }) => [
@@ -1584,7 +1637,7 @@ export function RemoteControlMaster() {
                 )}
               </Animated.View>
             ) : null}
-          </View>
+          </TourTarget>
         }
         onScan={openScanner}
         settingsDisabled={showConnectionPrompt}
@@ -1606,33 +1659,29 @@ export function RemoteControlMaster() {
         <View style={styles.keyboardPanelHeader}>
           <View style={styles.keyboardPanelTitleRow}>
             <View style={styles.keyboardPanelIcon}>
-              <ScanButtonGradient
-                colors={["#ffbd62", "#f0a942", "#b86a25"]}
+              <GradientSurface
+                colors={[
+                  "rgba(44, 33, 23, 0.72)",
+                  "rgba(24, 20, 16, 0.72)",
+                  "rgba(14, 13, 11, 0.72)",]}
                 start={{ x: 0.18, y: 0 }}
                 end={{ x: 0.82, y: 1 }}
                 style={styles.keyboardPanelIconGradient}
               >
-                <Ionicons name="keypad-outline" size={18} color="#1b1008" />
-              </ScanButtonGradient>
+                <KeyboardIcon size={18} color="#f0a942" />
+              </GradientSurface>
             </View>
             <Text style={styles.keyboardPanelTitle}>Keyboard</Text>
           </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardPanelClose,
-              pressed ? styles.keyboardPanelClosePressed : null,
-            ]}
-            onPress={withHaptic(dismissKeyboardInput)}
-          >
-            <ScanButtonGradient
-              colors={["#4b211c", "#321917", "#1b1110"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardPanelCloseGradient}
-            >
-              <Ionicons name="close" size={20} color="#ff8a72" />
-            </ScanButtonGradient>
-          </Pressable>
+          <ScanGradientButton
+            accessibilityLabel="Close keyboard panel"
+            action={dismissKeyboardInput}
+            buttonStyle={styles.keyboardPanelClose}
+            colors={["#4b211c", "#321917", "#1b1110"]}
+            gradientStyle={styles.keyboardPanelCloseGradient}
+            icon={<Ionicons name="close" size={20} color="#ff8a72" />}
+            pressedStyle={styles.keyboardPanelClosePressed}
+          />
         </View>
 
         <TextInput
@@ -1659,122 +1708,82 @@ export function RemoteControlMaster() {
         />
 
         <View style={styles.keyboardShortcutGrid}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => sendKeyboardShortcut("selectAll"))}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
-              <Ionicons name="scan-outline" size={18} color="#f0c17c" />
-              <Text style={styles.keyboardShortcutText}>Select All</Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(insertKeyboardNewLine)}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
+          <ScanGradientButton
+            action={() => sendKeyboardShortcut("selectAll")}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#2b211a", "#1b1714", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={<Ionicons name="scan-outline" size={18} color="#f0c17c" />}
+            label="Select All"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
+          <ScanGradientButton
+            action={insertKeyboardNewLine}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#2b211a", "#1b1714", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={
               <Ionicons
                 name="return-down-forward-outline"
                 size={18}
                 color="#f0c17c"
               />
-              <Text style={styles.keyboardShortcutText}>New Line</Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => sendKeyboardShortcut("copy"))}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
-              <Ionicons name="copy-outline" size={18} color="#f0c17c" />
-              <Text style={styles.keyboardShortcutText}>Copy</Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => sendKeyboardShortcut("paste"))}
-          >
-            <ScanButtonGradient
-              colors={["#2b211a", "#1b1714", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
+            }
+            label="New Line"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
+          <ScanGradientButton
+            action={() => sendKeyboardShortcut("copy")}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#2b211a", "#1b1714", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={<Ionicons name="copy-outline" size={18} color="#f0c17c" />}
+            label="Copy"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
+          <ScanGradientButton
+            action={() => sendKeyboardShortcut("paste")}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#2b211a", "#1b1714", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={
               <Ionicons name="clipboard-outline" size={18} color="#f0c17c" />
-              <Text style={styles.keyboardShortcutText}>Paste</Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(pasteFromPhoneClipboard)}
-          >
-            <ScanButtonGradient
-              colors={["#3b2816", "#211811", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
+            }
+            label="Paste"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
+          <ScanGradientButton
+            action={pasteFromPhoneClipboard}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#3b2816", "#211811", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={
               <Ionicons
                 name="phone-portrait-outline"
                 size={18}
                 color="#f0a942"
               />
-              <Text style={styles.keyboardShortcutText}>Paste Phone</Text>
-            </ScanButtonGradient>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.keyboardShortcutButton,
-              keyboardShortcutButtonStyle,
-              pressed ? styles.keyboardShortcutButtonPressed : null,
-            ]}
-            onPress={withHaptic(() => sendKeyboardShortcut("clear"))}
-          >
-            <ScanButtonGradient
-              colors={["#342019", "#211613", "#11100e"]}
-              start={{ x: 0.18, y: 0 }}
-              end={{ x: 0.82, y: 1 }}
-              style={styles.keyboardShortcutGradient}
-            >
+            }
+            label="Paste Phone"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
+          <ScanGradientButton
+            action={() => sendKeyboardShortcut("clear")}
+            buttonStyle={[styles.keyboardShortcutButton, keyboardShortcutButtonStyle]}
+            colors={["#342019", "#211613", "#11100e"]}
+            gradientStyle={styles.keyboardShortcutGradient}
+            icon={
               <Ionicons name="backspace-outline" size={18} color="#ffb08a" />
-              <Text style={styles.keyboardShortcutText}>Clear</Text>
-            </ScanButtonGradient>
-          </Pressable>
+            }
+            label="Clear"
+            labelStyle={styles.keyboardShortcutText}
+            pressedStyle={styles.keyboardShortcutButtonPressed}
+          />
         </View>
       </Animated.View>
 
@@ -2025,8 +2034,8 @@ export function RemoteControlMaster() {
                 style={[
                   styles.mediaStepButton,
                   !volumeAdjustable ||
-                  volumeStep === null ||
-                  volumeStep === MEDIA_CONTROL_STEPS
+                    volumeStep === null ||
+                    volumeStep === MEDIA_CONTROL_STEPS
                     ? styles.disabledControl
                     : null,
                 ]}
@@ -2073,6 +2082,32 @@ export function RemoteControlMaster() {
               </Text>
             ) : null}
           </View>
+
+          <View style={styles.sensitivityCard}>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={styles.settingsCardIcon}>
+                  <Ionicons name="sparkles-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>App Tour</Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityLabel="Restart app tour"
+              accessibilityRole="button"
+              onPress={withHaptic(() => {
+                setShowSettings(false);
+                handleRestartTour();
+              })}
+              style={({ pressed }) => [
+                styles.restartTourButton,
+                pressed ? styles.restartTourButtonPressed : null,
+              ]}
+            >
+              <Ionicons name="refresh" size={19} color="#f0a942" />
+              <Text style={styles.restartTourText}>Restart App Tour</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </SettingsBottomSheet>
 
@@ -2080,45 +2115,35 @@ export function RemoteControlMaster() {
         {showConnectionPrompt ? (
           <View style={styles.connectionPrompt}>
             <FloatingIconOverlay active={showConnectionPrompt} />
-            <Pressable
+            <ScanGradientButton
               accessibilityLabel={
                 connectionInProgress
                   ? "Connecting to host"
                   : "Scan to connect to host"
               }
-              accessibilityRole="button"
-              disabled={connectionInProgress}
-              onPress={withHaptic(openScanner)}
-              style={({ pressed }) => [
-                styles.connectionPromptButton,
-                connectionInProgress
-                  ? styles.connectionPromptButtonDisabled
-                  : null,
-                pressed && !connectionInProgress
-                  ? styles.mouseButtonPressed
-                  : null,
+              action={openScanner}
+              buttonStyle={styles.connectionPromptButton}
+              colors={[
+                "rgba(44, 33, 23, 0.72)",
+                "rgba(24, 20, 16, 0.72)",
+                "rgba(14, 13, 11, 0.72)",
               ]}
-            >
-              <ScanButtonGradient
-                colors={[
-                  "rgba(44, 33, 23, 0.72)",
-                  "rgba(24, 20, 16, 0.72)",
-                  "rgba(14, 13, 11, 0.72)",
-                ]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={styles.connectionPromptButtonGradient}
-              >
+              disabled={connectionInProgress}
+              disabledStyle={styles.connectionPromptButtonDisabled}
+              end={{ x: 0.9, y: 1 }}
+              gradientStyle={styles.connectionPromptButtonGradient}
+              icon={
                 <Ionicons
                   name={connectionInProgress ? "sync" : "scan-outline"}
                   size={23}
                   color="#f0a942"
                 />
-                <Text style={styles.connectionPromptButtonText}>
-                  {connectionInProgress ? "Connecting..." : "Scan to Connect"}
-                </Text>
-              </ScanButtonGradient>
-            </Pressable>
+              }
+              label={connectionInProgress ? "Connecting..." : "Scan to Connect"}
+              labelStyle={styles.connectionPromptButtonText}
+              pressedStyle={styles.mouseButtonPressed}
+              start={{ x: 0.1, y: 0 }}
+            />
             {connectionInProgress && connectionCancelVisible ? (
               <Animated.View
                 style={[
@@ -2146,64 +2171,69 @@ export function RemoteControlMaster() {
           </View>
         ) : (
           <>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={[styles.shortcutsScroller, shortcutsScrollerStyle]}
-              contentContainerStyle={styles.shortcuts}
-            >
-              <ShortcutButton
-                SvgIcon={NetflixIcon}
-                label="Netflix"
-                onPress={() => sendShortcut("netflix")}
-                size={shortcutButtonSize}
-              />
-              <ShortcutButton
-                icon="logo-youtube"
-                iconColor="#ff0033"
-                label="YouTube"
-                onPress={() => sendShortcut("youtube")}
-                size={shortcutButtonSize}
-              />
-              <ShortcutButton
-                SvgIcon={DisneyPlusIcon}
-                label="Disney+"
-                onPress={() => sendShortcut("disney")}
-                size={shortcutButtonSize}
-              />
-              <ShortcutButton
-                SvgIcon={PrimeIcon}
-                label="Amazon Prime"
-                onPress={() => sendShortcut("amazon")}
-                size={shortcutButtonSize}
-              />
-              <ShortcutButton
-                SvgIcon={SpotifyIcon}
-                label="Spotify"
-                onPress={() => sendShortcut("spotify")}
-                size={shortcutButtonSize}
-              />
-              {customShortcuts.map((shortcut) => (
+            <TourTarget targetKey="shortcuts">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={[styles.shortcutsScroller, shortcutsScrollerStyle]}
+                contentContainerStyle={styles.shortcuts}
+              >
                 <ShortcutButton
-                  key={shortcut.id}
-                  imageUri={shortcut.iconUri}
-                  initial={shortcut.name}
-                  label={shortcut.name}
-                  onPress={() => sendCustomShortcut(shortcut)}
-                  onLongPress={() => openEditShortcutModal(shortcut)}
+                  SvgIcon={NetflixIcon}
+                  label="Netflix"
+                  onPress={() => sendShortcut("netflix")}
                   size={shortcutButtonSize}
                 />
-              ))}
-              <ShortcutButton
-                icon="add"
-                iconColor="#ff941f"
-                label="Add Shortcut"
-                onPress={openShortcutModal}
-                size={shortcutButtonSize}
-              />
-            </ScrollView>
+                <ShortcutButton
+                  icon="logo-youtube"
+                  iconColor="#ff0033"
+                  label="YouTube"
+                  onPress={() => sendShortcut("youtube")}
+                  size={shortcutButtonSize}
+                />
+                <ShortcutButton
+                  SvgIcon={DisneyPlusIcon}
+                  label="Disney+"
+                  onPress={() => sendShortcut("disney")}
+                  size={shortcutButtonSize}
+                />
+                <ShortcutButton
+                  SvgIcon={PrimeIcon}
+                  label="Amazon Prime"
+                  onPress={() => sendShortcut("amazon")}
+                  size={shortcutButtonSize}
+                />
+                <ShortcutButton
+                  SvgIcon={SpotifyIcon}
+                  label="Spotify"
+                  onPress={() => sendShortcut("spotify")}
+                  size={shortcutButtonSize}
+                />
+                {customShortcuts.map((shortcut) => (
+                  <ShortcutButton
+                    key={shortcut.id}
+                    imageUri={shortcut.iconUri}
+                    initial={shortcut.name}
+                    label={shortcut.name}
+                    onPress={() => sendCustomShortcut(shortcut)}
+                    onLongPress={() => openEditShortcutModal(shortcut)}
+                    size={shortcutButtonSize}
+                  />
+                ))}
+                <ShortcutButton
+                  icon="add"
+                  iconColor="#ff941f"
+                  label="Add Shortcut"
+                  onPress={openShortcutModal}
+                  size={shortcutButtonSize}
+                />
+              </ScrollView>
+            </TourTarget>
 
-            <View style={styles.controlShortcutRow}>
+            <TourTarget
+              targetKey="shortcut-actions"
+              style={styles.controlShortcutRow}
+            >
               <View style={styles.shortcutGroup}>
                 {isWindowsHost ? (
                   <>
@@ -2302,7 +2332,7 @@ export function RemoteControlMaster() {
                   <ClockArrowRightIcon size={22} color="#9e9890" />
                 </Pressable>
               </View>
-            </View>
+            </TourTarget>
 
             <View
               style={styles.trackpadWrap}
@@ -2313,30 +2343,32 @@ export function RemoteControlMaster() {
                 }
               }}
             >
-              <Trackpad
-                latencyMs={latencyMs}
-                onMove={(dx, dy) =>
-                  socket.sendMove(dx * sensitivity, dy * sensitivity)
-                }
-                onClick={() => socket.sendLeftClick()}
-                onDoubleClick={() => socket.sendDoubleClick()}
-                onRightClick={() => socket.sendRightClick()}
-                onScroll={(dx, dy) => {
-                  const direction = unnaturalScrolling ? -1 : 1;
-                  socket.sendScroll(dx * direction, dy * direction);
-                }}
-                onZoom={(direction) => socket.sendZoom(direction)}
-                onSwipeSpaces={(direction) => {
-                  if (primarySwitchAvailable) {
-                    switchPrimaryHorizontal(direction);
+              <TourTarget targetKey="trackpad" style={styles.trackpadTourTarget}>
+                <Trackpad
+                  latencyMs={latencyMs}
+                  onMove={(dx, dy) =>
+                    socket.sendMove(dx * sensitivity, dy * sensitivity)
                   }
-                }}
-                status={visibleStatus}
-              />
+                  onClick={() => socket.sendLeftClick()}
+                  onDoubleClick={() => socket.sendDoubleClick()}
+                  onRightClick={() => socket.sendRightClick()}
+                  onScroll={(dx, dy) => {
+                    const direction = unnaturalScrolling ? -1 : 1;
+                    socket.sendScroll(dx * direction, dy * direction);
+                  }}
+                  onZoom={(direction) => socket.sendZoom(direction)}
+                  onSwipeSpaces={(direction) => {
+                    if (primarySwitchAvailable) {
+                      switchPrimaryHorizontal(direction);
+                    }
+                  }}
+                  status={visibleStatus}
+                />
+              </TourTarget>
             </View>
 
             {!isWindowsHost ? (
-              <View style={styles.remoteActionRow}>
+              <TourTarget targetKey="mac-actions" style={styles.remoteActionRow}>
                 <View
                   style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}
                 >
@@ -2395,75 +2427,50 @@ export function RemoteControlMaster() {
                     <SquareXIcon size={22} color="#f0c17c" />
                   </Pressable>
                 </View>
-              </View>
+              </TourTarget>
             ) : null}
 
-            <View style={styles.mouseButtonRow}>
-              <Pressable
+            <TourTarget targetKey="mouse-actions" style={styles.mouseButtonRow}>
+              <ScanGradientButton
                 accessibilityLabel="Refresh"
-                style={({ pressed }) => [
-                  styles.mouseButton,
-                  styles.mouseButtonSide,
-                  pressed ? styles.mouseButtonPressed : null,
-                ]}
-                onPress={withHaptic(() => socket.sendTextCommand("reload"))}
+                action={() => socket.sendTextCommand("reload")}
+                buttonStyle={[styles.mouseButton, styles.mouseButtonSide]}
+                colors={["#2b211a", "#1b1714", "#11100e"]}
+                gradientStyle={styles.sideMouseButtonGradient}
+                icon={<RefreshCwIcon size={23} color="#ffffff" />}
+                pressedStyle={styles.mouseButtonPressed}
+              />
+              <TourTarget
+                targetKey="keyboard-button"
+                style={styles.keyboardButtonTourTarget}
               >
-                <ScanButtonGradient
-                  colors={["#2b211a", "#1b1714", "#11100e"]}
-                  start={{ x: 0.18, y: 0 }}
-                  end={{ x: 0.82, y: 1 }}
-                  style={styles.sideMouseButtonGradient}
-                >
-                  <RefreshCwIcon size={23} color="#ffffff" />
-                </ScanButtonGradient>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.mouseButton,
-                  styles.keyboardMouseButton,
-                  pressed ? styles.mouseButtonPressed : null,
-                ]}
-                onPress={withHaptic(
-                  keyboardVisible ? dismissKeyboardInput : focusKeyboard,
-                )}
-              >
-                <ScanButtonGradient
+                <ScanGradientButton
+                  action={keyboardVisible ? dismissKeyboardInput : focusKeyboard}
+                  buttonStyle={[styles.mouseButton, styles.keyboardMouseButton]}
                   colors={[
                     "rgba(44, 33, 23, 0.72)",
                     "rgba(24, 20, 16, 0.72)",
                     "rgba(14, 13, 11, 0.72)",
                   ]}
-                  start={{ x: 0.1, y: 0 }}
                   end={{ x: 0.9, y: 1 }}
-                  style={styles.keyboardMouseButtonGradient}
-                >
-                  <KeyboardIcon size={23} color="#f0a942" />
-                  <Text
-                    style={[styles.mouseButtonText, styles.accentButtonText]}
-                  >
-                    Keyboard
-                  </Text>
-                </ScanButtonGradient>
-              </Pressable>
-              <Pressable
+                  gradientStyle={styles.keyboardMouseButtonGradient}
+                  icon={<KeyboardIcon size={23} color="#f0a942" />}
+                  label="Keyboard"
+                  labelStyle={[styles.mouseButtonText, styles.accentButtonText]}
+                  pressedStyle={styles.mouseButtonPressed}
+                  start={{ x: 0.1, y: 0 }}
+                />
+              </TourTarget>
+              <ScanGradientButton
                 accessibilityLabel="Right Click"
-                style={({ pressed }) => [
-                  styles.mouseButton,
-                  styles.mouseButtonSide,
-                  pressed ? styles.mouseButtonPressed : null,
-                ]}
-                onPress={withHaptic(() => socket.sendRightClick())}
-              >
-                <ScanButtonGradient
-                  colors={["#2b211a", "#1b1714", "#11100e"]}
-                  start={{ x: 0.18, y: 0 }}
-                  end={{ x: 0.82, y: 1 }}
-                  style={styles.sideMouseButtonGradient}
-                >
-                  <MouseRightIcon size={23} color="#ffffff" />
-                </ScanButtonGradient>
-              </Pressable>
-            </View>
+                action={() => socket.sendRightClick()}
+                buttonStyle={[styles.mouseButton, styles.mouseButtonSide]}
+                colors={["#2b211a", "#1b1714", "#11100e"]}
+                gradientStyle={styles.sideMouseButtonGradient}
+                icon={<MouseRightIcon size={23} color="#ffffff" />}
+                pressedStyle={styles.mouseButtonPressed}
+              />
+            </TourTarget>
           </>
         )}
       </View>
@@ -2479,16 +2486,30 @@ export function RemoteControlMaster() {
             <View style={styles.scannerHeader}>
               <View style={styles.scannerTitleRow}>
                 <View style={styles.scannerIcon}>
-                  <Ionicons name="qr-code-outline" size={20} color="#1b1008" />
+                  <GradientSurface
+                    colors={[
+                      "rgba(44, 33, 23, 0.72)",
+                      "rgba(24, 20, 16, 0.72)",
+                      "rgba(14, 13, 11, 0.72)",]}
+                    start={{ x: 0.18, y: 0 }}
+                    end={{ x: 0.82, y: 1 }}
+                    style={styles.keyboardPanelIconGradient}
+                  >
+                    <QrCode size={18} color="#f0a942" />
+                  </GradientSurface>
                 </View>
                 <Text style={styles.scannerTitle}>Scan Desktop QR</Text>
               </View>
-              <Pressable
-                style={styles.scannerCloseButton}
-                onPress={withHaptic(closeScanner)}
-              >
-                <Ionicons name="close" size={22} color="#ffffff" />
-              </Pressable>
+
+              <ScanGradientButton
+                accessibilityLabel="Close qrcode scanner"
+                action={withHaptic(closeScanner)}
+                buttonStyle={styles.keyboardPanelClose}
+                colors={["#4b211c", "#321917", "#1b1110"]}
+                gradientStyle={styles.keyboardPanelCloseGradient}
+                icon={<Ionicons name="close" size={20} color="#ff8a72" />}
+                pressedStyle={styles.keyboardPanelClosePressed}
+              />
             </View>
 
             <View
@@ -3255,6 +3276,27 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  restartTourButton: {
+    alignItems: "center",
+    backgroundColor: "#211811",
+    borderColor: "rgba(240, 169, 66, 0.28)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  restartTourButtonPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.99 }],
+  },
+  restartTourText: {
+    color: "#f7f5f1",
+    fontSize: 14,
+    fontWeight: "900",
+  },
   renameBackdrop: {
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.62)",
@@ -3487,6 +3529,10 @@ const styles = StyleSheet.create({
     minHeight: 0,
     paddingHorizontal: BODY_HORIZONTAL_PADDING,
   },
+  trackpadTourTarget: {
+    flex: 1,
+    minHeight: 0,
+  },
   mouseButtonRow: {
     flexShrink: 0,
     flexDirection: "row",
@@ -3519,9 +3565,12 @@ const styles = StyleSheet.create({
   keyboardMouseButton: {
     backgroundColor: "rgba(31, 25, 18, 0.82)",
     borderColor: "rgba(240, 169, 66, 0.62)",
-    flex: 4,
+    flex: 1,
     paddingHorizontal: 0,
     shadowOpacity: 0.24,
+  },
+  keyboardButtonTourTarget: {
+    flex: 4,
   },
   keyboardMouseButtonGradient: {
     alignItems: "center",
@@ -3595,11 +3644,19 @@ const styles = StyleSheet.create({
   },
   scannerIcon: {
     alignItems: "center",
-    backgroundColor: "#ff941f",
-    borderRadius: 8,
-    height: 36,
+    backgroundColor: "#211811",
+    borderColor: "rgba(240, 169, 66, 0.5)",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 4,
+    height: 32,
     justifyContent: "center",
-    width: 36,
+    overflow: "hidden",
+    shadowColor: "#f0a942",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    width: 32,
   },
   scannerTitle: {
     color: "#ffffff",

@@ -25,6 +25,7 @@ import {
 } from "react-native-gesture-handler";
 import { triggerLongPressHaptic } from "../../utils/haptics";
 import type { ConnectionStatus } from "../../types/protocol";
+import { useAppTour } from "../../components/tour/useAppTour";
 import { useTrackpadGestures } from "./useTrackpadGestures";
 
 interface TrackpadProps {
@@ -73,6 +74,7 @@ export function Trackpad({
   onSwipeSpaces,
   status,
 }: TrackpadProps) {
+  const { registerTourTarget } = useAppTour();
   const {
     handleSinglePan,
     handleSinglePanState,
@@ -98,6 +100,7 @@ export function Trackpad({
   const threePanRef = useRef(null);
   const pinchRef = useRef(null);
   const scrollDotPanRef = useRef(null);
+  const scrollDotTourRef = useRef<View>(null);
   const scrollDotX = useRef(new Animated.Value(0)).current;
   const scrollDotY = useRef(new Animated.Value(0)).current;
   const scrollDotScale = useRef(new Animated.Value(1)).current;
@@ -131,6 +134,11 @@ export function Trackpad({
   const roundedLatencyMs =
     typeof latencyMs === "number" ? Math.round(latencyMs) : null;
   const LatencyIcon = latencyBand?.Icon;
+
+  useEffect(
+    () => registerTourTarget("scroll-handle", scrollDotTourRef),
+    [registerTourTarget],
+  );
 
   const resetTouchMark = useCallback(() => {
     if (!TRACKPAD_TOUCH_MARK_ANIMATION_ENABLED) {
@@ -710,55 +718,63 @@ export function Trackpad({
                     onHandlerStateChange={handleScrollDotState}
                   >
                     <Animated.View
+                      ref={scrollDotTourRef}
+                      collapsable={false}
                       style={[
                         styles.scrollDot,
                         scrollDotPositionStyle,
-                        scrollDotActive ? styles.scrollDotActive : null,
-                        scrollDotPlacing ? styles.scrollDotPlacing : null,
-                        {
-                          transform: [
-                            { translateX: scrollDotX },
-                            { translateY: scrollDotY },
-                            { scale: scrollDotScale },
-                          ],
-                        },
                       ]}
                     >
-                      <View
+                      <Animated.View
                         style={[
-                          styles.scrollDotFace,
-                          scrollDotActive ? styles.scrollDotFaceActive : null,
-                          scrollDotPlacing ? styles.scrollDotFacePlacing : null,
+                          styles.scrollDotInner,
+                          scrollDotActive ? styles.scrollDotActive : null,
+                          scrollDotPlacing ? styles.scrollDotPlacing : null,
+                          {
+                            transform: [
+                              { translateX: scrollDotX },
+                              { translateY: scrollDotY },
+                              { scale: scrollDotScale },
+                            ],
+                          },
                         ]}
                       >
-                        <View style={styles.scrollDotAxisVertical} />
-                        <View style={styles.scrollDotAxisHorizontal} />
-                        <Ionicons
-                          name="chevron-up"
-                          size={15}
-                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                          style={styles.scrollDotChevronUp}
-                        />
-                        <Ionicons
-                          name="chevron-back"
-                          size={15}
-                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                          style={styles.scrollDotChevronLeft}
-                        />
-                        <View style={styles.scrollDotCenter} />
-                        <Ionicons
-                          name="chevron-forward"
-                          size={15}
-                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                          style={styles.scrollDotChevronRight}
-                        />
-                        <Ionicons
-                          name="chevron-down"
-                          size={15}
-                          color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                          style={styles.scrollDotChevronDown}
-                        />
-                      </View>
+                        <View
+                          style={[
+                            styles.scrollDotFace,
+                            scrollDotActive ? styles.scrollDotFaceActive : null,
+                            scrollDotPlacing ? styles.scrollDotFacePlacing : null,
+                          ]}
+                        >
+                          <View style={styles.scrollDotAxisVertical} />
+                          <View style={styles.scrollDotAxisHorizontal} />
+                          <Ionicons
+                            name="chevron-up"
+                            size={15}
+                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                            style={styles.scrollDotChevronUp}
+                          />
+                          <Ionicons
+                            name="chevron-back"
+                            size={15}
+                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                            style={styles.scrollDotChevronLeft}
+                          />
+                          <View style={styles.scrollDotCenter} />
+                          <Ionicons
+                            name="chevron-forward"
+                            size={15}
+                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                            style={styles.scrollDotChevronRight}
+                          />
+                          <Ionicons
+                            name="chevron-down"
+                            size={15}
+                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
+                            style={styles.scrollDotChevronDown}
+                          />
+                        </View>
+                      </Animated.View>
                     </Animated.View>
                   </PanGestureHandler>
                   {/* {scrollDotActive ? (
@@ -880,22 +896,28 @@ const styles = StyleSheet.create({
   },
   scrollDot: {
     alignItems: "center",
+    height: SCROLL_DOT_SIZE,
+    justifyContent: "center",
+    left: 10,
+    marginTop: -SCROLL_DOT_SIZE / 2,
+    position: "absolute",
+    top: "50%",
+    width: SCROLL_DOT_SIZE,
+    zIndex: 2,
+  },
+  scrollDotInner: {
+    alignItems: "center",
     backgroundColor: "#211a14",
     borderColor: "#744c2c",
     borderRadius: SCROLL_DOT_SIZE / 2,
     borderWidth: 1,
     height: SCROLL_DOT_SIZE,
     justifyContent: "center",
-    left: 10,
-    marginTop: -SCROLL_DOT_SIZE / 2,
-    position: "absolute",
     shadowColor: "#413028",
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.44,
     shadowRadius: 22,
-    top: "50%",
     width: SCROLL_DOT_SIZE,
-    zIndex: 2,
   },
   scrollDotActive: {
     backgroundColor: "#3a2617",

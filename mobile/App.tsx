@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppTourProvider } from "./components/tour/AppTourProvider";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
@@ -88,7 +89,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="light" />
-        <RemoteScreen />
+        <AppTourProvider>
+          <RemoteScreen />
+        </AppTourProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
