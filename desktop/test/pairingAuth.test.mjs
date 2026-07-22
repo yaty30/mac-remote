@@ -159,6 +159,37 @@ test("proof-based pairing token replay is rejected by token id", () => {
   });
 });
 
+test("rotating the desktop QR keeps the previous unexpired token pairable", () => {
+  withManager((manager) => {
+    const clientId = "phone-a";
+    const challengeNonce = "desktop-challenge";
+    const visiblePairingToken = manager.getPairingToken().token;
+    const visiblePairingTokenHash = sha256Hex(visiblePairingToken);
+
+    manager.rotatePairingToken();
+
+    const auth = manager.authenticate(
+      {
+        type: "authRequest",
+        clientId,
+        clientName: "Phone A",
+        pairingTokenId: getTokenId(visiblePairingTokenHash),
+        pairingTokenProof: buildTokenProof(
+          visiblePairingTokenHash,
+          clientId,
+          challengeNonce,
+        ),
+      },
+      challengeNonce,
+    );
+
+    assert.deepEqual(auth, {
+      type: "authAccepted",
+      paired: true,
+    });
+  });
+});
+
 test("legacy raw token auth can be disabled for production mode", () => {
   withStorage((storagePath) => {
     const devManager = new PairingAuthManager(storagePath);

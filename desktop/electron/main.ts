@@ -37,6 +37,7 @@ import { RemoteWebSocketServer } from "../websocket/server";
 const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
 const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
+const PAIRING_QR_REFRESH_LEEWAY_MS = 30 * 1000;
 const hostName = getDeviceName();
 const startupAgentLabel = "local.remote-control.dev";
 const mobileServerDefaultCommand = "npm run start -- --clear";
@@ -722,7 +723,10 @@ function schedulePairingQrRefresh(expiresAt: number | undefined): void {
     return;
   }
 
-  const delayMs = Math.max(1000, expiresAt - Date.now() + 250);
+  const delayMs = Math.max(
+    1000,
+    expiresAt - Date.now() - PAIRING_QR_REFRESH_LEEWAY_MS,
+  );
 
   pairingQrRefreshTimer = setTimeout(() => {
     pairingQrRefreshTimer = null;
@@ -731,8 +735,9 @@ function schedulePairingQrRefresh(expiresAt: number | undefined): void {
       return;
     }
 
+    pairingAuth?.rotatePairingToken();
     publishStatus(remoteServer.getStatus()).catch((error) => {
-      console.error("[desktop] failed to refresh expired pairing QR", error);
+      console.error("[desktop] failed to refresh pairing QR", error);
     });
   }, delayMs);
 }

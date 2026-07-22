@@ -560,6 +560,12 @@ export class RemoteSocket {
           this.clearPendingAuthTimeout();
           const acceptedDeviceToken =
             parsed.deviceToken ?? this.pendingConnectionDeviceToken ?? undefined;
+          if (!this.pendingServerNonce) {
+            this.pendingAuth?.onRejected?.("unsupportedEncryptionVersion");
+            this.closePendingSocket();
+            return;
+          }
+
           this.createPendingSecureSession(acceptedDeviceToken);
           this.pendingAuth?.onAccepted?.(
             acceptedDeviceToken,
@@ -570,6 +576,15 @@ export class RemoteSocket {
           this.clearAuthTimeout();
           const acceptedDeviceToken =
             parsed.deviceToken ?? this.pendingPairingDeviceToken ?? undefined;
+          if (!this.serverNonce) {
+            this.currentAuth?.onRejected?.("unsupportedEncryptionVersion");
+            this.pendingPairingDeviceToken = null;
+            this.shouldReconnect = false;
+            this.emit("error");
+            this.closeSocket();
+            return;
+          }
+
           this.createSecureSession(acceptedDeviceToken);
           this.currentAuth?.onAccepted?.(
             acceptedDeviceToken,
@@ -604,8 +619,11 @@ export class RemoteSocket {
         (error.reason === "plaintextAfterSecureMode" ||
           error.reason === "decryptionFailed" ||
           error.reason === "invalidSequence" ||
-          error.reason === "replayDetected")
+          error.reason === "replayDetected" ||
+          error.reason === "secureHandshakeTimeout")
       ) {
+        const auth = pending ? this.pendingAuth : this.currentAuth;
+        auth?.onRejected?.("unsupportedEncryptionVersion");
         this.shouldReconnect = false;
         this.emit("error");
         if (pending) {

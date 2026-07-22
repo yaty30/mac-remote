@@ -19,6 +19,7 @@ import {
 
 const PAIRING_TOKEN_TTL_MS = 10 * 60 * 1000;
 const CONSUMED_TOKEN_RETENTION_MS = 30 * 60 * 1000;
+const MAX_ACTIVE_PAIRING_TOKENS = 3;
 const MAX_CLIENT_ID_LENGTH = 128;
 const MAX_CLIENT_NAME_LENGTH = 80;
 
@@ -54,7 +55,7 @@ interface PairingAuthManagerOptions {
 }
 
 export class PairingAuthManager {
-  private activePairingToken: PairingTokenState | null = null;
+  private activePairingTokens: PairingTokenState[] = [];
   private state: StoredAuthState;
   private readonly allowLegacyRawTokenAuth: boolean;
 
@@ -68,18 +69,29 @@ export class PairingAuthManager {
 
   getPairingToken(): PairingTokenState {
     const now = Date.now();
+    this.purgeExpiredPairingTokens(now);
 
-    if (
-      !this.activePairingToken ||
-      this.activePairingToken.expiresAt <= now
-    ) {
-      this.activePairingToken = {
-        token: randomToken(),
-        expiresAt: now + PAIRING_TOKEN_TTL_MS,
-      };
+    const currentToken = this.activePairingTokens.at(-1);
+
+    if (!currentToken) {
+      return this.rotatePairingToken();
     }
 
-    return this.activePairingToken;
+    return currentToken;
+  }
+
+  rotatePairingToken(): PairingTokenState {
+    const now = Date.now();
+    this.purgeExpiredPairingTokens(now);
+    this.activePairingTokens.push({
+      token: randomToken(),
+      expiresAt: now + PAIRING_TOKEN_TTL_MS,
+    });
+    this.activePairingTokens = this.activePairingTokens.slice(
+      -MAX_ACTIVE_PAIRING_TOKENS,
+    );
+
+    return this.activePairingTokens.at(-1) as PairingTokenState;
   }
 
   listDevices(activeClientIds: ReadonlySet<string>): PairedDeviceInfo[] {
@@ -131,6 +143,7 @@ export class PairingAuthManager {
     }
 
     this.purgeConsumedPairingTokens();
+    this.purgeExpiredPairingTokens();
 
     if (message.deviceTokenProof && challengeNonce) {
       return this.authenticateDeviceTokenProof(
@@ -231,11 +244,18 @@ export class PairingAuthManager {
       return { type: "authRejected", reason: "pairingTokenUsed" };
     }
 
-    const activeToken = this.activePairingToken;
+    const activeToken = this.findActivePairingTokenById(
+      normalizedPairingTokenId,
+    );
 
-    if (!activeToken || activeToken.expiresAt <= Date.now()) {
-      this.activePairingToken = null;
-      return { type: "authRejected", reason: "pairingTokenExpired" };
+    if (!activeToken) {
+      return {
+        type: "authRejected",
+        reason:
+          this.activePairingTokens.length === 0
+            ? "pairingTokenExpired"
+            : "pairingTokenInvalid",
+      };
     }
 
     const pairingTokenHash = hashToken(activeToken.token);
@@ -272,7 +292,7 @@ export class PairingAuthManager {
       tokenHash: pairingTokenHash,
       expiresAt: now + CONSUMED_TOKEN_RETENTION_MS,
     });
-    this.activePairingToken = null;
+    this.removeActivePairingToken(activeToken.token);
     this.writeState();
 
     return withTransportSecret(
@@ -296,15 +316,16 @@ export class PairingAuthManager {
       return { type: "authRejected", reason: "pairingTokenUsed" };
     }
 
-    const activeToken = this.activePairingToken;
+    const activeToken = this.findActivePairingTokenByHash(pairingTokenHash);
 
-    if (!activeToken || activeToken.expiresAt <= Date.now()) {
-      this.activePairingToken = null;
-      return { type: "authRejected", reason: "pairingTokenExpired" };
-    }
-
-    if (!safeHashEqual(hashToken(activeToken.token), pairingTokenHash)) {
-      return { type: "authRejected", reason: "pairingTokenInvalid" };
+    if (!activeToken) {
+      return {
+        type: "authRejected",
+        reason:
+          this.activePairingTokens.length === 0
+            ? "pairingTokenExpired"
+            : "pairingTokenInvalid",
+      };
     }
 
     const now = Date.now();
@@ -325,7 +346,7 @@ export class PairingAuthManager {
       tokenHash: pairingTokenHash,
       expiresAt: now + CONSUMED_TOKEN_RETENTION_MS,
     });
-    this.activePairingToken = null;
+    this.removeActivePairingToken(activeToken.token);
     this.writeState();
 
     return withTransportSecret(
@@ -346,6 +367,46 @@ export class PairingAuthManager {
 
     this.state.consumedPairingTokens = nextTokens;
     this.writeState();
+  }
+
+  private purgeExpiredPairingTokens(now = Date.now()): void {
+    const nextTokens = this.activePairingTokens
+      .filter((item) => item.expiresAt > now)
+      .slice(-MAX_ACTIVE_PAIRING_TOKENS);
+
+    this.activePairingTokens = nextTokens;
+  }
+
+  private findActivePairingTokenById(
+    pairingTokenId: string,
+  ): PairingTokenState | null {
+    const normalizedPairingTokenId = normalizeTokenId(pairingTokenId);
+
+    if (!normalizedPairingTokenId) {
+      return null;
+    }
+
+    return (
+      this.activePairingTokens.find(
+        (item) => getTokenId(hashToken(item.token)) === normalizedPairingTokenId,
+      ) ?? null
+    );
+  }
+
+  private findActivePairingTokenByHash(
+    tokenHash: string,
+  ): PairingTokenState | null {
+    return (
+      this.activePairingTokens.find((item) =>
+        safeHashEqual(hashToken(item.token), tokenHash),
+      ) ?? null
+    );
+  }
+
+  private removeActivePairingToken(token: string): void {
+    this.activePairingTokens = this.activePairingTokens.filter(
+      (item) => item.token !== token,
+    );
   }
 
   private readState(): StoredAuthState {

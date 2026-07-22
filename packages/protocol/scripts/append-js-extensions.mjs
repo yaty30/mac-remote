@@ -12,7 +12,8 @@ for (const fileName of readdirSync(distRoot)) {
   const source = readFileSync(filePath, "utf8");
   const output = source.replaceAll(
     /(from|export\s+\*)\s+"(\.\/[^"]+?)"/g,
-    (_, keyword, specifier) => `${keyword} "${specifier}.js"`,
+    (match, keyword, specifier) =>
+      specifier.endsWith(".js") ? match : `${keyword} "${specifier}.js"`,
   );
 
   writeFileSync(filePath, output, "utf8");
