@@ -45,7 +45,9 @@ interface StoredAuthState {
   consumedPairingTokens: ConsumedPairingToken[];
 }
 
-type AuthResult = AuthAcceptedMessage | AuthRejectedMessage;
+type AuthResult =
+  | (AuthAcceptedMessage & { transportSecretHash?: string })
+  | AuthRejectedMessage;
 
 interface PairingAuthManagerOptions {
   allowLegacyRawTokenAuth?: boolean;
@@ -187,7 +189,10 @@ export class PairingAuthManager {
     device.lastSeenAt = Date.now();
     this.writeState();
 
-    return { type: "authAccepted", paired: false };
+    return withTransportSecret(
+      { type: "authAccepted", paired: false },
+      device.deviceTokenHash,
+    );
   }
 
   private authenticateDeviceToken(
@@ -203,7 +208,10 @@ export class PairingAuthManager {
     device.lastSeenAt = Date.now();
     this.writeState();
 
-    return { type: "authAccepted", paired: false };
+    return withTransportSecret(
+      { type: "authAccepted", paired: false },
+      device.deviceTokenHash,
+    );
   }
 
   private authenticatePairingTokenProof(
@@ -267,7 +275,10 @@ export class PairingAuthManager {
     this.activePairingToken = null;
     this.writeState();
 
-    return { type: "authAccepted", paired: true };
+    return withTransportSecret(
+      { type: "authAccepted", paired: true },
+      nextDevice.deviceTokenHash,
+    );
   }
 
   private authenticatePairingToken(
@@ -317,7 +328,10 @@ export class PairingAuthManager {
     this.activePairingToken = null;
     this.writeState();
 
-    return { type: "authAccepted", deviceToken, paired: true };
+    return withTransportSecret(
+      { type: "authAccepted", deviceToken, paired: true },
+      nextDevice.deviceTokenHash,
+    );
   }
 
   private purgeConsumedPairingTokens(): void {
@@ -401,6 +415,19 @@ function parseConsumedPairingToken(value: unknown): ConsumedPairingToken[] {
   const expiresAt = parseTimestamp(value.expiresAt);
 
   return tokenHash && expiresAt > Date.now() ? [{ tokenHash, expiresAt }] : [];
+}
+
+function withTransportSecret<T extends AuthAcceptedMessage>(
+  message: T,
+  transportSecretHash: string,
+): T & { transportSecretHash: string } {
+  Object.defineProperty(message, "transportSecretHash", {
+    configurable: true,
+    enumerable: false,
+    value: transportSecretHash,
+  });
+
+  return message as T & { transportSecretHash: string };
 }
 
 function normalizeClientId(value: unknown): string {

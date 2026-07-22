@@ -1,11 +1,23 @@
 import type {
   AuthRejectedReason,
+  ApplicationHostMessage,
   ConnectionStatus,
   HostMessage,
   RemoteMessage,
   ShortcutId,
   TextCommand,
 } from "../types/protocol";
+import {
+  ENCRYPTION_VERSION,
+  PROTOCOL_VERSION,
+  ProtocolValidationError,
+  type SecurePlainMessage,
+  SecureTransportSession,
+  createSecureNonce,
+  validateApplicationHostMessage,
+  validateHostMessage,
+} from "../types/protocol";
+import { RemoteCommandSender } from "./RemoteCommandSender";
 import {
   buildTokenProof,
   deriveDeviceToken,
@@ -48,6 +60,17 @@ export class RemoteSocket {
   private pendingAuthTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingPairingDeviceToken: string | null = null;
   private pendingConnectionDeviceToken: string | null = null;
+  private clientNonce: string | null = null;
+  private pendingClientNonce: string | null = null;
+  private serverNonce: string | null = null;
+  private pendingServerNonce: string | null = null;
+  private transportSecretHash: string | null = null;
+  private pendingTransportSecretHash: string | null = null;
+  private secureSession: SecureTransportSession | null = null;
+  private pendingSecureSession: SecureTransportSession | null = null;
+  private readonly commandSender = new RemoteCommandSender((message, lowLatency) =>
+    this.send(message, lowLatency),
+  );
 
   connect(host: string, auth?: AuthOptions, port = 8787): void {
     this.closeSocket();
@@ -57,6 +80,11 @@ export class RemoteSocket {
     this.currentHost = host;
     this.currentAuth = auth ?? null;
     this.pendingPairingDeviceToken = null;
+    this.transportSecretHash = null;
+    this.clientNonce = null;
+    this.serverNonce = null;
+    this.secureSession?.clear();
+    this.secureSession = null;
     this.shouldReconnect = true;
 
     const normalizedHost = host
@@ -75,6 +103,11 @@ export class RemoteSocket {
     this.pendingHost = host;
     this.pendingAuth = auth;
     this.pendingConnectionDeviceToken = null;
+    this.pendingClientNonce = null;
+    this.pendingServerNonce = null;
+    this.pendingTransportSecretHash = null;
+    this.pendingSecureSession?.clear();
+    this.pendingSecureSession = null;
 
     const normalizedHost = host
       .trim()
@@ -146,6 +179,11 @@ export class RemoteSocket {
     this.shouldReconnect = false;
     this.currentAuth = null;
     this.pendingPairingDeviceToken = null;
+    this.transportSecretHash = null;
+    this.clientNonce = null;
+    this.serverNonce = null;
+    this.secureSession?.clear();
+    this.secureSession = null;
     this.closePendingSocket();
     this.clearReconnectTimer();
     this.closeSocket();
@@ -154,6 +192,8 @@ export class RemoteSocket {
   private closeSocket(): void {
     this.clearAuthTimeout();
     this.stopLatencyChecks();
+    this.secureSession?.clear();
+    this.secureSession = null;
 
     if (this.socket) {
       this.socket.onopen = null;
@@ -170,6 +210,11 @@ export class RemoteSocket {
     this.pendingHost = null;
     this.pendingAuth = null;
     this.pendingConnectionDeviceToken = null;
+    this.pendingClientNonce = null;
+    this.pendingServerNonce = null;
+    this.pendingTransportSecretHash = null;
+    this.pendingSecureSession?.clear();
+    this.pendingSecureSession = null;
 
     if (this.pendingSocket) {
       this.pendingSocket.onopen = null;
@@ -197,39 +242,39 @@ export class RemoteSocket {
   }
 
   sendMove(dx: number, dy: number): void {
-    this.send({ type: "moveMouse", dx, dy }, true);
+    this.commandSender.sendMove(dx, dy);
   }
 
   sendLeftClick(): void {
-    this.send({ type: "leftClick" });
+    this.commandSender.sendLeftClick();
   }
 
   sendDoubleClick(): void {
-    this.send({ type: "doubleClick" });
+    this.commandSender.sendDoubleClick();
   }
 
   sendRightClick(): void {
-    this.send({ type: "rightClick" });
+    this.commandSender.sendRightClick();
   }
 
   sendScroll(dx: number, dy: number): void {
-    this.send({ type: "scroll", dx, dy }, true);
+    this.commandSender.sendScroll(dx, dy);
   }
 
   sendZoom(direction: "in" | "out"): void {
-    this.send({ type: "zoom", direction });
+    this.commandSender.sendZoom(direction);
   }
 
   switchWorkspace(direction: "left" | "right"): void {
-    this.send({ type: "switchWorkspace", direction });
+    this.commandSender.switchWorkspace(direction);
   }
 
   switchWindow(direction: "next" | "previous" = "next"): void {
-    this.send({ type: "switchWindow", direction });
+    this.commandSender.switchWindow(direction);
   }
 
   showOverview(): void {
-    this.send({ type: "showOverview" });
+    this.commandSender.showOverview();
   }
 
   sendSwipeSpaces(direction: "left" | "right"): void {
@@ -241,57 +286,57 @@ export class RemoteSocket {
   }
 
   requestHostState(): void {
-    this.send({ type: "requestHostState" }, true);
+    this.commandSender.requestHostState();
   }
 
   sendBrightness(delta: -1 | 1): void {
-    this.send({ type: "adjustBrightness", delta }, true);
+    this.commandSender.sendBrightness(delta);
   }
 
   setBrightness(value: number): void {
-    this.send({ type: "setBrightness", value });
+    this.commandSender.setBrightness(value);
   }
 
   sendVolume(value: number): void {
-    this.send({ type: "setVolume", value }, true);
+    this.commandSender.sendVolume(value);
   }
 
   sendSleep(): void {
-    this.send({ type: "sleep" });
+    this.commandSender.sendSleep();
   }
 
   sendRestartHost(): void {
-    this.send({ type: "restartHost" });
+    this.commandSender.sendRestartHost();
   }
 
   sendShortcut(shortcut: ShortcutId): void {
-    this.send({ type: "shortcut", shortcut });
+    this.commandSender.sendShortcut(shortcut);
   }
 
   sendWebsiteShortcut(name: string, url: string): void {
-    this.send({ type: "websiteShortcut", name, url });
+    this.commandSender.sendWebsiteShortcut(name, url);
   }
 
   sendText(text: string): void {
-    this.send({ type: "typeText", text });
+    this.commandSender.sendText(text);
   }
 
   pasteText(text: string): void {
-    this.send({ type: "pasteText", text });
+    this.commandSender.pasteText(text);
   }
 
   sendTextCommand(command: TextCommand): void {
-    this.send({ type: "textCommand", command });
+    this.commandSender.sendTextCommand(command);
   }
 
   moveCaret(direction: "left" | "right", count: number): void {
-    this.send({ type: "moveCaret", direction, count }, true);
+    this.commandSender.moveCaret(direction, count);
   }
 
   sendKey(
     key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow",
   ): void {
-    this.send({ type: "pressKey", key });
+    this.commandSender.sendKey(key);
   }
 
   private send(message: RemoteMessage, lowLatency = false): void {
@@ -307,12 +352,23 @@ export class RemoteSocket {
 
     const authRequest: RemoteMessage = {
       type: "authRequest",
+      protocolVersion: PROTOCOL_VERSION,
+      encryptionVersion: ENCRYPTION_VERSION,
       clientId: auth.clientId,
       clientName: auth.clientName,
     };
+    const clientNonce = createSecureNonce();
+    authRequest.clientNonce = clientNonce;
 
     if (auth.deviceToken) {
       const deviceTokenHash = hashToken(auth.deviceToken);
+      if (pending) {
+        this.pendingTransportSecretHash = deviceTokenHash;
+        this.pendingClientNonce = clientNonce;
+      } else {
+        this.transportSecretHash = deviceTokenHash;
+        this.clientNonce = clientNonce;
+      }
       authRequest.deviceTokenProof = buildTokenProof(
         deviceTokenHash,
         auth.clientId,
@@ -331,10 +387,15 @@ export class RemoteSocket {
         auth.clientId,
         challengeNonce,
       );
+      const nextDeviceTokenHash = hashToken(nextDeviceToken);
       if (pending) {
         this.pendingConnectionDeviceToken = nextDeviceToken;
+        this.pendingTransportSecretHash = nextDeviceTokenHash;
+        this.pendingClientNonce = clientNonce;
       } else {
         this.pendingPairingDeviceToken = nextDeviceToken;
+        this.transportSecretHash = nextDeviceTokenHash;
+        this.clientNonce = clientNonce;
       }
     }
 
@@ -466,59 +527,52 @@ export class RemoteSocket {
     }
 
     try {
-      const message = JSON.parse(raw) as HostMessage;
+      const parsed = validateHostMessage(JSON.parse(raw) as unknown);
+      const session = pending ? this.pendingSecureSession : this.secureSession;
 
-      if (message.type === "ping") {
-        if (typeof message.id !== "string") {
-          return;
+      if (session) {
+        if (parsed.type !== "encrypted") {
+          throw new ProtocolValidationError(
+            "plaintextAfterSecureMode",
+            "Plaintext message after secure mode",
+          );
         }
 
-        this.sendToSocket(
-          pending ? this.pendingSocket : this.socket,
-          { type: "pong", id: message.id },
-          true,
+        this.handleApplicationMessage(
+          validateApplicationHostMessage(session.decrypt(parsed)),
+          pending,
         );
         return;
       }
 
-      if (message.type === "authChallenge") {
-        if (typeof message.nonce !== "string") {
-          return;
+      if (parsed.type === "authChallenge") {
+        if (pending) {
+          this.pendingServerNonce = parsed.serverNonce ?? null;
+        } else {
+          this.serverNonce = parsed.serverNonce ?? null;
         }
-
-        this.sendAuthRequest(message.nonce, pending);
+        this.sendAuthRequest(parsed.nonce, pending);
         return;
       }
 
-      if (message.type === "pong") {
-        if (typeof message.id !== "string") {
-          return;
-        }
-
-        const startedAt = this.pendingPings.get(message.id);
-
-        if (startedAt !== undefined) {
-          this.pendingPings.delete(message.id);
-          this.emitLatency(Math.max(0, Date.now() - startedAt));
-        }
-
-        return;
-      }
-
-      if (message.type === "authAccepted") {
+      if (parsed.type === "authAccepted") {
         if (pending) {
           this.clearPendingAuthTimeout();
+          const acceptedDeviceToken =
+            parsed.deviceToken ?? this.pendingConnectionDeviceToken ?? undefined;
+          this.createPendingSecureSession(acceptedDeviceToken);
           this.pendingAuth?.onAccepted?.(
-            message.deviceToken ??
-              this.pendingConnectionDeviceToken ??
-              undefined,
+            acceptedDeviceToken,
           );
           this.pendingConnectionDeviceToken = null;
           this.promotePendingSocket();
         } else {
           this.clearAuthTimeout();
+          const acceptedDeviceToken =
+            parsed.deviceToken ?? this.pendingPairingDeviceToken ?? undefined;
+          this.createSecureSession(acceptedDeviceToken);
           this.currentAuth?.onAccepted?.(
-            message.deviceToken ?? this.pendingPairingDeviceToken ?? undefined,
+            acceptedDeviceToken,
           );
           this.pendingPairingDeviceToken = null;
           this.emit("connected");
@@ -527,14 +581,14 @@ export class RemoteSocket {
         return;
       }
 
-      if (message.type === "authRejected") {
+      if (parsed.type === "authRejected") {
         if (pending) {
           this.clearPendingAuthTimeout();
-          this.pendingAuth?.onRejected?.(message.reason);
+          this.pendingAuth?.onRejected?.(parsed.reason);
           this.closePendingSocket();
         } else {
           this.clearAuthTimeout();
-          this.currentAuth?.onRejected?.(message.reason);
+          this.currentAuth?.onRejected?.(parsed.reason);
           this.pendingPairingDeviceToken = null;
           this.shouldReconnect = false;
           this.emit("error");
@@ -543,16 +597,102 @@ export class RemoteSocket {
         return;
       }
 
-      if (message.type !== "hostState") {
-        return;
+      throw new ProtocolValidationError("invalidPayload", "Expected auth handshake");
+    } catch (error) {
+      if (
+        error instanceof ProtocolValidationError &&
+        (error.reason === "plaintextAfterSecureMode" ||
+          error.reason === "decryptionFailed" ||
+          error.reason === "invalidSequence" ||
+          error.reason === "replayDetected")
+      ) {
+        this.shouldReconnect = false;
+        this.emit("error");
+        if (pending) {
+          this.closePendingSocket();
+        } else {
+          this.closeSocket();
+        }
+      }
+    }
+  }
+
+  private handleApplicationMessage(
+    message: ApplicationHostMessage,
+    pending: boolean,
+  ): void {
+    if (message.type === "ping") {
+      this.sendToSocket(
+        pending ? this.pendingSocket : this.socket,
+        { type: "pong", id: message.id },
+        true,
+      );
+      return;
+    }
+
+    if (message.type === "pong") {
+      const startedAt = this.pendingPings.get(message.id);
+
+      if (startedAt !== undefined) {
+        this.pendingPings.delete(message.id);
+        this.emitLatency(Math.max(0, Date.now() - startedAt));
       }
 
-      for (const listener of this.messageListeners) {
-        listener(message);
-      }
-    } catch {
-      // Ignore malformed host messages.
+      return;
     }
+
+    for (const listener of this.messageListeners) {
+      listener(message);
+    }
+  }
+
+  private createSecureSession(deviceToken?: string): void {
+    const secretHash = deviceToken ? hashToken(deviceToken) : this.transportSecretHash;
+
+    if (!secretHash || !this.clientNonce || !this.serverNonce || !this.currentAuth) {
+      throw new ProtocolValidationError(
+        "secureHandshakeTimeout",
+        "Missing secure handshake state",
+      );
+    }
+
+    this.secureSession?.clear();
+    this.secureSession = new SecureTransportSession({
+      clientId: this.currentAuth.clientId,
+      clientNonce: this.clientNonce,
+      role: "client",
+      secretHash,
+      serverNonce: this.serverNonce,
+    });
+    this.transportSecretHash = secretHash;
+  }
+
+  private createPendingSecureSession(deviceToken?: string): void {
+    const secretHash = deviceToken
+      ? hashToken(deviceToken)
+      : this.pendingTransportSecretHash;
+
+    if (
+      !secretHash ||
+      !this.pendingClientNonce ||
+      !this.pendingServerNonce ||
+      !this.pendingAuth
+    ) {
+      throw new ProtocolValidationError(
+        "secureHandshakeTimeout",
+        "Missing pending secure handshake state",
+      );
+    }
+
+    this.pendingSecureSession?.clear();
+    this.pendingSecureSession = new SecureTransportSession({
+      clientId: this.pendingAuth.clientId,
+      clientNonce: this.pendingClientNonce,
+      role: "client",
+      secretHash,
+      serverNonce: this.pendingServerNonce,
+    });
+    this.pendingTransportSecretHash = secretHash;
   }
 
   private promotePendingSocket(): void {
@@ -568,10 +708,22 @@ export class RemoteSocket {
     this.pendingHost = null;
     this.pendingAuth = null;
     this.pendingConnectionDeviceToken = null;
+    const pendingSession = this.pendingSecureSession;
+    const pendingSecretHash = this.pendingTransportSecretHash;
+    const pendingClientNonce = this.pendingClientNonce;
+    const pendingServerNonce = this.pendingServerNonce;
+    this.pendingSecureSession = null;
+    this.pendingTransportSecretHash = null;
+    this.pendingClientNonce = null;
+    this.pendingServerNonce = null;
     this.closeSocket();
     this.clearReconnectTimer();
     this.currentHost = host;
     this.currentAuth = auth;
+    this.secureSession = pendingSession;
+    this.transportSecretHash = pendingSecretHash;
+    this.clientNonce = pendingClientNonce;
+    this.serverNonce = pendingServerNonce;
     this.shouldReconnect = true;
     this.socket = socket;
     this.attachActiveSocketHandlers(socket);
@@ -593,6 +745,18 @@ export class RemoteSocket {
       return;
     }
 
-    socket.send(JSON.stringify(message));
+    if (message.type === "authRequest") {
+      socket.send(JSON.stringify(message));
+      return;
+    }
+
+    const session =
+      socket === this.pendingSocket ? this.pendingSecureSession : this.secureSession;
+
+    if (!session) {
+      return;
+    }
+
+    socket.send(JSON.stringify(session.encrypt(message as unknown as SecurePlainMessage)));
   }
 }
