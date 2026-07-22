@@ -4,6 +4,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
   type RefObject,
 } from "react";
@@ -38,6 +39,7 @@ import { RESTART_COUNTDOWN_SECONDS } from "../settings/constants";
 import { SettingsBottomSheet } from "../settings/SettingsBottomSheet";
 
 const BODY_HORIZONTAL_PADDING = 10;
+const SETTINGS_RESTART_TOUR_DELAY_MS = 280;
 
 export interface RemoteSettingsHandle {
   close: () => void;
@@ -110,6 +112,9 @@ export const RemoteSettingsPanel = forwardRef<
   },
   ref,
 ) {
+  const restartTourTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [isOpen, setIsOpen] = useState(false);
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
@@ -151,6 +156,16 @@ export const RemoteSettingsPanel = forwardRef<
       socket.requestHostState();
     }
   }, [isOpen, socket, status]);
+
+  useEffect(
+    () => () => {
+      if (restartTourTimerRef.current !== null) {
+        clearTimeout(restartTourTimerRef.current);
+        restartTourTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
@@ -212,6 +227,19 @@ export const RemoteSettingsPanel = forwardRef<
         },
       ],
     );
+  }
+
+  function restartAppTour() {
+    setIsOpen(false);
+
+    if (restartTourTimerRef.current !== null) {
+      clearTimeout(restartTourTimerRef.current);
+    }
+
+    restartTourTimerRef.current = setTimeout(() => {
+      restartTourTimerRef.current = null;
+      onRestartTour();
+    }, SETTINGS_RESTART_TOUR_DELAY_MS);
   }
 
   return (
@@ -501,10 +529,7 @@ export const RemoteSettingsPanel = forwardRef<
           <Pressable
             accessibilityLabel="Restart app tour"
             accessibilityRole="button"
-            onPress={withHaptic(() => {
-              setIsOpen(false);
-              onRestartTour();
-            })}
+            onPress={withHaptic(restartAppTour)}
             style={({ pressed }) => [
               styles.restartTourButton,
               pressed ? styles.restartTourButtonPressed : null,

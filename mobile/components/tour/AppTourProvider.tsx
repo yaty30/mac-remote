@@ -240,6 +240,8 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
 
   const handleRestartTour = useCallback(() => {
     autoStartAttemptedRef.current = true;
+    setCompletionLoaded(true);
+    setTourWasCompleted(false);
     setCurrentStep(0);
     setIsTourVisible(true);
   }, []);
