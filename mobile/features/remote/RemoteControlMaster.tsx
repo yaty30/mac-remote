@@ -677,7 +677,7 @@ export function RemoteControlMaster() {
         >
           <FloatingIconOverlay
             active={deviceSwitchOverlayMounted}
-            maxOpacity={0.16}
+            maxOpacity={0.36}
             spawnIntervalMs={520}
           />
           <Animated.View
@@ -972,10 +972,17 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   deviceSwitchText: {
-    color: "#a7a39d",
-    fontSize: 13,
+    color: "#f8aa34",
+    fontSize: 14,
     fontWeight: "700",
     maxWidth: 190,
+    borderWidth: 1,
+    borderColor: '#f0aa42c9',
+    backgroundColor: '#f0aa422b',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    marginVertical: 6
   },
   deviceSwitchCancelSlot: {
     marginTop: 4,

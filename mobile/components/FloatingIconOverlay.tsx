@@ -21,9 +21,12 @@ import {
   Rose,
   Ghost,
   Icon,
-  LucideProps
+  LucideProps,
+  Fan,
+  Satellite
 } from "lucide-react-native";
-import { faceAlien, hockeyMask } from "@lucide/lab";
+import { faceAlien, hockeyMask, pacMan, pumpkin, ufo, unicornHead } from "@lucide/lab";
+import { Clapperboard, ClosedCaption, CupSoda, Popcorn, Projector, Sofa, TvMinimalPlay, VenetianMask, Video } from "lucide-react-native/icons";
 
 /**
  * All Lucide React Native icons share the same component type.
@@ -31,13 +34,12 @@ import { faceAlien, hockeyMask } from "@lucide/lab";
  */
 export type FloatingLucideIcon = typeof Rocket;
 
-function FaceAlien(props: LucideProps) {
-  return <Icon iconNode={faceAlien} {...props} />;
-}
-
-function HockeyMask(props: LucideProps) {
-  return <Icon iconNode={hockeyMask} {...props} />;
-}
+const FaceAlien = (props: LucideProps) => <Icon iconNode={faceAlien} {...props} />
+const UFO = (props: LucideProps) => <Icon iconNode={ufo} {...props} />
+const UnicornHead = (props: LucideProps) => <Icon iconNode={unicornHead} {...props} />
+const HockeyMask = (props: LucideProps) => <Icon iconNode={hockeyMask} {...props} />
+const PackMan = (props: LucideProps) => <Icon iconNode={pacMan} {...props} />
+const Pumpkin = (props: LucideProps) => <Icon iconNode={pumpkin} {...props} />;
 
 const DEFAULT_ICONS: FloatingLucideIcon[] = [
   Balloon,
@@ -53,7 +55,22 @@ const DEFAULT_ICONS: FloatingLucideIcon[] = [
   Rose,
   Ghost,
   FaceAlien,
-  HockeyMask
+  HockeyMask,
+  TvMinimalPlay,
+  Clapperboard,
+  Video,
+  Popcorn,
+  Projector,
+  ClosedCaption,
+  Fan,
+  VenetianMask,
+  Satellite,
+  CupSoda,
+  Sofa,
+  PackMan,
+  Pumpkin,
+  UnicornHead,
+  UFO
 ];
 
 interface FloatingIconParticle {
@@ -202,15 +219,15 @@ export function FloatingIconOverlay({
         spinDurationMinMs +
         Math.round(
           Math.pow(depth, 1.15) *
-            spinDurationRange,
+          spinDurationRange,
         ) +
         Math.round(Math.random() * 180);
 
       const particleFloatDuration = isBalloon
         ? Math.round(
-            floatDurationMs * 1.55 +
-              Math.random() * 650,
-          )
+          floatDurationMs * 1.55 +
+          Math.random() * 650,
+        )
         : floatDurationMs;
 
       const particle: FloatingIconParticle = {
@@ -218,7 +235,7 @@ export function FloatingIconOverlay({
         Icon,
         left:
           Math.random() *
-            (windowWidth + 80) -
+          (windowWidth + 80) -
           40,
         size,
         depth,
@@ -248,13 +265,13 @@ export function FloatingIconOverlay({
       const spinAnimation = isBalloon
         ? null
         : Animated.loop(
-            Animated.timing(spin, {
-              toValue: 1,
-              duration: spinDuration,
-              easing: Easing.linear,
-              useNativeDriver: true,
-            }),
-          );
+          Animated.timing(spin, {
+            toValue: 1,
+            duration: spinDuration,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+        );
 
       /*
        * Safety timeout in case the animation completion
@@ -379,14 +396,14 @@ export function FloatingIconOverlay({
                   zIndex,
                   transform: spinEnabled
                     ? [
-                        { translateX },
-                        { translateY },
-                        { rotate },
-                      ]
+                      { translateX },
+                      { translateY },
+                      { rotate },
+                    ]
                     : [
-                        { translateX },
-                        { translateY },
-                      ],
+                      { translateX },
+                      { translateY },
+                    ],
                 },
               ]}
             >
