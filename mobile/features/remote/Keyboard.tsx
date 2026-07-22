@@ -1,4 +1,3 @@
-import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Keyboard as KeyboardIcon } from "lucide-react-native";
 import {
@@ -7,17 +6,11 @@ import {
   useImperativeHandle,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import {
-  Animated,
-  Dimensions,
-  Easing,
   Keyboard as NativeKeyboard,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   TextInput,
   useWindowDimensions,
   type KeyboardEvent,
@@ -27,21 +20,19 @@ import {
 } from "react-native";
 import { ScanGradientButton } from "../../components/GradientButton";
 import { TourTarget } from "../../components/tour/TourTarget";
-import { TEXT_SEND_CHUNK_SIZE } from "../keyboard/constants";
 import type { HostPlatform, TextCommand } from "../../types/protocol";
 import type { RemoteSocket } from "../../websocket/RemoteSocket";
-
-const BODY_HORIZONTAL_PADDING = 10;
-const KEYBOARD_PANEL_KEYBOARD_GAP = 12;
-const KEYBOARD_PANEL_TOP = 106;
-const KEYBOARD_PANEL_RESTING_BOTTOM = 112;
-
-export interface RemoteKeyboardHandle {
-  close: () => void;
-  isVisible: () => boolean;
-  open: () => void;
-  toggle: () => void;
-}
+import { RemoteKeyboardInput } from "./keyboard/RemoteKeyboardInput";
+import { RemoteKeyboardPanel } from "./keyboard/RemoteKeyboardPanel";
+import { RemoteKeyboardToolbar } from "./keyboard/RemoteKeyboardToolbar";
+import {
+  diffKeyboardText,
+  replaceKeyboardSelection,
+  splitTextIntoRemoteChunks,
+} from "./keyboard/keyboardTextModel";
+import { useKeyboardPanelAnimation } from "./keyboard/useKeyboardPanelAnimation";
+export type { RemoteKeyboardHandle } from "./keyboard/types";
+import type { RemoteKeyboardHandle } from "./keyboard/types";
 
 interface RemoteKeyboardProps {
   hostPlatform: HostPlatform | null;
@@ -54,22 +45,30 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const inputRef = useRef<TextInput>(null);
     const keyboardActiveRef = useRef(false);
-    const fullScreenLayoutHeightRef = useRef(windowHeight);
     const bufferRef = useRef("");
     const keyboardSelectionRef = useRef({ start: 0, end: 0 });
     const remoteKeyboardCursorRef = useRef(0);
     const remoteKeyboardSelectionActiveRef = useRef(false);
-    const keyboardPanelAnim = useRef(new Animated.Value(0)).current;
     const [keyboardBuffer, setKeyboardBuffer] = useState("");
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
     const [keyboardOverlay, setKeyboardOverlay] = useState(false);
-    const [keyboardUiMounted, setKeyboardUiMounted] = useState(false);
     const [keyboardSelection, setKeyboardSelection] = useState({
       start: 0,
       end: 0,
     });
     const [keyboardInputKey, setKeyboardInputKey] = useState(0);
+    const {
+      keyboardBackdropAnimatedStyle,
+      keyboardPanelAnimatedStyle,
+      keyboardPanelDynamicStyle,
+      keyboardUiMounted,
+    } = useKeyboardPanelAnimation({
+      keyboardHeight,
+      keyboardOverlay,
+      screenLayoutHeight,
+      windowHeight,
+    });
 
     useImperativeHandle(
       ref,
@@ -121,49 +120,12 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     }, [windowHeight]);
 
     useEffect(() => {
-      if (keyboardOverlay || keyboardVisible) {
-        return;
-      }
-
-      fullScreenLayoutHeightRef.current = Math.max(
-        fullScreenLayoutHeightRef.current,
-        screenLayoutHeight,
-        windowHeight,
-      );
-    }, [keyboardOverlay, keyboardVisible, screenLayoutHeight, windowHeight]);
-
-    useEffect(() => {
       if (!keyboardVisible) {
         keyboardActiveRef.current = false;
         setKeyboardOverlay(false);
         clearKeyboardInput();
       }
     }, [keyboardVisible]);
-
-    useEffect(() => {
-      if (keyboardOverlay) {
-        setKeyboardUiMounted(true);
-        keyboardPanelAnim.setValue(0);
-        Animated.timing(keyboardPanelAnim, {
-          toValue: 1,
-          duration: 220,
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
-        return;
-      }
-
-      Animated.timing(keyboardPanelAnim, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setKeyboardUiMounted(false);
-        }
-      });
-    }, [keyboardOverlay, keyboardPanelAnim]);
 
     useEffect(() => {
       if (keyboardOverlay && keyboardUiMounted) {
@@ -227,19 +189,11 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     }
 
     function sendTextChunk(text: string) {
-      const pieces = text.split("\n");
-
-      pieces.forEach((piece, index) => {
-        for (
-          let offset = 0;
-          offset < piece.length;
-          offset += TEXT_SEND_CHUNK_SIZE
-        ) {
-          socket.sendText(piece.slice(offset, offset + TEXT_SEND_CHUNK_SIZE));
-        }
-
-        if (index < pieces.length - 1) {
+      splitTextIntoRemoteChunks(text).forEach((chunk) => {
+        if (chunk.type === "enter") {
           socket.sendKey("enter");
+        } else if (chunk.value) {
+          socket.sendText(chunk.value);
         }
       });
     }
@@ -301,32 +255,13 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
         return;
       }
 
-      let prefixLength = 0;
-      while (
-        prefixLength < prev.length &&
-        prefixLength < nextText.length &&
-        prev[prefixLength] === nextText[prefixLength]
-      ) {
-        prefixLength += 1;
-      }
+      const {
+        deletedCount,
+        insertedText,
+        syncCursorIndex,
+      } = diffKeyboardText(prev, nextText);
 
-      let suffixLength = 0;
-      while (
-        suffixLength < prev.length - prefixLength &&
-        suffixLength < nextText.length - prefixLength &&
-        prev[prev.length - 1 - suffixLength] ===
-          nextText[nextText.length - 1 - suffixLength]
-      ) {
-        suffixLength += 1;
-      }
-
-      const deletedCount = prev.length - prefixLength - suffixLength;
-      const insertedText = nextText.slice(
-        prefixLength,
-        nextText.length - suffixLength,
-      );
-
-      syncRemoteKeyboardCursor(prefixLength + deletedCount);
+      syncRemoteKeyboardCursor(syncCursorIndex);
 
       for (let index = 0; index < deletedCount; index += 1) {
         socket.sendKey("backspace");
@@ -341,7 +276,10 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
         return;
       }
 
-      updateKeyboardBuffer(nextText, prefixLength + insertedText.length);
+      updateKeyboardBuffer(
+        nextText,
+        syncCursorIndex - deletedCount + insertedText.length,
+      );
     }
 
     function handleKeyboardSelectionChange(
@@ -406,17 +344,12 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
       }
 
       const prev = bufferRef.current;
-      const selection = keyboardSelectionRef.current;
-      const selectionStart = Math.max(
-        0,
-        Math.min(selection.start, selection.end),
-      );
-      const selectionEnd = Math.min(
-        prev.length,
-        Math.max(selection.start, selection.end),
-      );
-      const nextText =
-        prev.slice(0, selectionStart) + text + prev.slice(selectionEnd);
+      const {
+        nextCursor,
+        nextText,
+        selectionEnd,
+        selectionStart,
+      } = replaceKeyboardSelection(prev, keyboardSelectionRef.current, text);
       const selectedAllRemotely =
         remoteKeyboardSelectionActiveRef.current &&
         selectionStart === 0 &&
@@ -447,7 +380,7 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
       }
 
       remoteKeyboardSelectionActiveRef.current = false;
-      updateKeyboardBuffer(nextText, selectionStart + text.length);
+      updateKeyboardBuffer(nextText, nextCursor);
 
       refocusKeyboardInput();
     }
@@ -462,66 +395,6 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
       insertKeyboardText(clipboardText, "paste");
     }
 
-    const androidKeyboardPanelTop = clamp(
-      Math.round(windowHeight * 0.08),
-      54,
-      76,
-    );
-    const androidKeyboardPanelGap = clamp(
-      Math.round(windowHeight * 0.09),
-      56,
-      82,
-    );
-    const currentWindowHeight = Dimensions.get("window").height;
-    const androidWindowShrinkInset =
-      keyboardOverlay && Platform.OS === "android"
-        ? Math.max(0, fullScreenLayoutHeightRef.current - currentWindowHeight)
-        : 0;
-    const androidParentAlreadyResized =
-      keyboardOverlay &&
-      Platform.OS === "android" &&
-      screenLayoutHeight < fullScreenLayoutHeightRef.current - 48;
-    const keyboardPanelInset =
-      keyboardOverlay &&
-      Platform.OS === "android" &&
-      !androidParentAlreadyResized
-        ? Math.max(keyboardHeight, androidWindowShrinkInset)
-        : keyboardHeight;
-    const keyboardPanelTop =
-      keyboardOverlay && Platform.OS === "android"
-        ? androidKeyboardPanelTop
-        : KEYBOARD_PANEL_TOP;
-    const keyboardPanelKeyboardGap =
-      keyboardOverlay && Platform.OS === "android"
-        ? androidKeyboardPanelGap
-        : KEYBOARD_PANEL_KEYBOARD_GAP;
-    const keyboardPanelBottom = keyboardOverlay
-      ? keyboardPanelInset + keyboardPanelKeyboardGap
-      : KEYBOARD_PANEL_RESTING_BOTTOM;
-    const keyboardPanelDynamicStyle = {
-      bottom: keyboardPanelBottom,
-      top: keyboardPanelTop,
-    };
-    const keyboardPanelAnimatedStyle = {
-      opacity: keyboardPanelAnim,
-      transform: [
-        {
-          translateY: keyboardPanelAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [22, 0],
-          }),
-        },
-        {
-          scale: keyboardPanelAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.98, 1],
-          }),
-        },
-      ],
-    };
-    const keyboardBackdropAnimatedStyle = {
-      opacity: keyboardPanelAnim,
-    };
     const keyboardShortcutColumns = windowWidth >= 390 ? 5 : 4;
     const keyboardShortcutGap = 8;
     const keyboardShortcutContentWidth = Math.max(0, windowWidth - 64);
@@ -534,114 +407,30 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     };
 
     return (
-      <>
-        {keyboardUiMounted ? (
-          <Animated.View
-            style={[styles.keyboardBg, keyboardBackdropAnimatedStyle]}
-          >
-            <Pressable
-              style={styles.keyboardBgPressable}
-              onPress={dismissKeyboardInput}
-            />
-          </Animated.View>
-        ) : null}
-
-        <Animated.View
-          style={[
-            styles.keyboardPanel,
-            keyboardUiMounted ? null : styles.keyboardPanelHidden,
-            keyboardPanelDynamicStyle,
-            keyboardPanelAnimatedStyle,
-          ]}
-          pointerEvents={keyboardUiMounted ? "auto" : "none"}
-        >
-          <ViewHeader onClose={dismissKeyboardInput} />
-
-          <TextInput
-            key={keyboardInputKey}
-            ref={inputRef}
-            value={keyboardBuffer}
-            onChangeText={handleKeyboardTextChange}
-            onKeyPress={handleKeyboardKeyPress}
-            onSelectionChange={handleKeyboardSelectionChange}
-            autoFocus={keyboardOverlay}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            multiline
-            blurOnSubmit={false}
-            keyboardAppearance="dark"
-            selection={keyboardSelection}
-            selectionColor="#ff941f"
-            showSoftInputOnFocus
-            style={[
-              styles.keyboardPreview,
-              keyboardBuffer ? null : styles.keyboardPreviewEmpty,
-            ]}
-          />
-
-          <Animated.View style={styles.keyboardShortcutGrid}>
-            <KeyboardShortcutButton
-              action={() => sendKeyboardShortcut("selectAll")}
-              icon={<Ionicons name="scan-outline" size={18} color="#f0c17c" />}
-              label="Select All"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-            <KeyboardShortcutButton
-              action={insertKeyboardNewLine}
-              icon={
-                <Ionicons
-                  name="return-down-forward-outline"
-                  size={18}
-                  color="#f0c17c"
-                />
-              }
-              label="New Line"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-            <KeyboardShortcutButton
-              action={() => sendKeyboardShortcut("copy")}
-              icon={<Ionicons name="copy-outline" size={18} color="#f0c17c" />}
-              label="Copy"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-            <KeyboardShortcutButton
-              action={() => sendKeyboardShortcut("paste")}
-              icon={
-                <Ionicons name="clipboard-outline" size={18} color="#f0c17c" />
-              }
-              label="Paste"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-            <KeyboardShortcutButton
-              action={pasteFromPhoneClipboard}
-              colors={["#3b2816", "#211811", "#11100e"]}
-              icon={
-                <Ionicons
-                  name="phone-portrait-outline"
-                  size={18}
-                  color="#f0a942"
-                />
-              }
-              label="Paste Phone"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-            <KeyboardShortcutButton
-              action={() => sendKeyboardShortcut("clear")}
-              colors={["#342019", "#211613", "#11100e"]}
-              icon={
-                <Ionicons
-                  name="backspace-outline"
-                  size={18}
-                  color="#ffb08a"
-                />
-              }
-              label="Clear"
-              widthStyle={keyboardShortcutButtonStyle}
-            />
-          </Animated.View>
-        </Animated.View>
-      </>
+      <RemoteKeyboardPanel
+        backdropAnimatedStyle={keyboardBackdropAnimatedStyle}
+        dynamicStyle={keyboardPanelDynamicStyle}
+        onClose={dismissKeyboardInput}
+        panelAnimatedStyle={keyboardPanelAnimatedStyle}
+        uiMounted={keyboardUiMounted}
+      >
+        <RemoteKeyboardInput
+          inputKey={keyboardInputKey}
+          inputRef={inputRef}
+          keyboardBuffer={keyboardBuffer}
+          keyboardOverlay={keyboardOverlay}
+          keyboardSelection={keyboardSelection}
+          onKeyPress={handleKeyboardKeyPress}
+          onSelectionChange={handleKeyboardSelectionChange}
+          onTextChange={handleKeyboardTextChange}
+        />
+        <RemoteKeyboardToolbar
+          buttonWidthStyle={keyboardShortcutButtonStyle}
+          onInsertNewLine={insertKeyboardNewLine}
+          onPasteFromPhone={pasteFromPhoneClipboard}
+          onShortcut={sendKeyboardShortcut}
+        />
+      </RemoteKeyboardPanel>
     );
   },
 );
@@ -673,222 +462,7 @@ export function KeyboardControlButton({ keyboardRef }: KeyboardControlButtonProp
   );
 }
 
-function ViewHeader({ onClose }: { onClose: () => void }) {
-  return (
-    <Animated.View style={styles.keyboardPanelHeader}>
-      <Animated.View style={styles.keyboardPanelTitleRow}>
-        <Animated.View style={styles.keyboardPanelIcon}>
-          <Animated.View style={styles.keyboardPanelIconGradient}>
-            <KeyboardIcon size={18} color="#f0a942" />
-          </Animated.View>
-        </Animated.View>
-        <Text style={styles.keyboardPanelTitle}>Keyboard</Text>
-      </Animated.View>
-      <ScanGradientButton
-        accessibilityLabel="Close keyboard panel"
-        action={onClose}
-        buttonStyle={styles.keyboardPanelClose}
-        colors={["#4b211c", "#321917", "#1b1110"]}
-        gradientStyle={styles.keyboardPanelCloseGradient}
-        icon={<Ionicons name="close" size={20} color="#ff8a72" />}
-        pressedStyle={styles.keyboardPanelClosePressed}
-      />
-    </Animated.View>
-  );
-}
-
-function KeyboardShortcutButton({
-  action,
-  colors = ["#2b211a", "#1b1714", "#11100e"],
-  icon,
-  label,
-  widthStyle,
-}: {
-  action: () => void;
-  colors?: [string, string, string];
-  icon: ReactNode;
-  label: string;
-  widthStyle: object;
-}) {
-  return (
-    <ScanGradientButton
-      action={action}
-      buttonStyle={[styles.keyboardShortcutButton, widthStyle]}
-      colors={colors}
-      gradientStyle={styles.keyboardShortcutGradient}
-      icon={icon}
-      label={label}
-      labelStyle={styles.keyboardShortcutText}
-      pressedStyle={styles.keyboardShortcutButtonPressed}
-    />
-  );
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 const styles = StyleSheet.create({
-  keyboardBg: {
-    backgroundColor: "rgba(7, 7, 7, 0.82)",
-    bottom: 0,
-    height: "100%",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "100%",
-    zIndex: 999,
-  },
-  keyboardBgPressable: {
-    flex: 1,
-  },
-  keyboardPanel: {
-    backgroundColor: "rgba(18, 17, 15, 0.94)",
-    borderColor: "rgba(240, 169, 66, 0.34)",
-    borderRadius: 8,
-    borderWidth: 1,
-    elevation: 18,
-    gap: 14,
-    left: BODY_HORIZONTAL_PADDING,
-    padding: 14,
-    position: "absolute",
-    right: BODY_HORIZONTAL_PADDING,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.46,
-    shadowRadius: 28,
-    top: KEYBOARD_PANEL_TOP,
-    zIndex: 1000,
-  },
-  keyboardPanelHidden: {
-    opacity: 0,
-  },
-  keyboardPanelHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  keyboardPanelTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  keyboardPanelIcon: {
-    alignItems: "center",
-    backgroundColor: "#211811",
-    borderColor: "rgba(240, 169, 66, 0.5)",
-    borderRadius: 10,
-    borderWidth: 1,
-    elevation: 4,
-    height: 32,
-    justifyContent: "center",
-    overflow: "hidden",
-    shadowColor: "#f0a942",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 14,
-    width: 32,
-  },
-  keyboardPanelIconGradient: {
-    alignItems: "center",
-    alignSelf: "stretch",
-    flex: 1,
-    justifyContent: "center",
-    width: "100%",
-  },
-  keyboardPanelTitle: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  keyboardPanelClose: {
-    alignItems: "center",
-    backgroundColor: "#211811",
-    borderColor: "rgba(255, 138, 114, 0.34)",
-    borderRadius: 10,
-    borderWidth: 1,
-    elevation: 4,
-    height: 36,
-    justifyContent: "center",
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    width: 36,
-  },
-  keyboardPanelCloseGradient: {
-    alignItems: "center",
-    alignSelf: "stretch",
-    flex: 1,
-    justifyContent: "center",
-    width: "100%",
-  },
-  keyboardPanelClosePressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.98 }],
-  },
-  keyboardPreview: {
-    alignItems: "flex-start",
-    backgroundColor: "rgba(12, 12, 12, 0.78)",
-    borderColor: "rgba(255, 148, 31, 0.22)",
-    borderRadius: 8,
-    borderWidth: 1,
-    color: "#ffffff",
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 22,
-    minHeight: 0,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    textAlignVertical: "top",
-  },
-  keyboardPreviewEmpty: {
-    color: "#5f5a54",
-  },
-  keyboardShortcutGrid: {
-    flexDirection: "row",
-    flexShrink: 0,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  keyboardShortcutButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(18, 17, 15, 0.78)",
-    borderColor: "rgba(240, 169, 66, 0.24)",
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 4,
-    gap: 5,
-    justifyContent: "center",
-    minHeight: 46,
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-  },
-  keyboardShortcutGradient: {
-    alignItems: "center",
-    alignSelf: "stretch",
-    flex: 1,
-    gap: 5,
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    width: "100%",
-  },
-  keyboardShortcutButtonPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
-  },
-  keyboardShortcutText: {
-    color: "#ffffff",
-    fontSize: 9,
-    fontWeight: "800",
-    textAlign: "center",
-  },
   keyboardButtonTourTarget: {
     flex: 4,
   },

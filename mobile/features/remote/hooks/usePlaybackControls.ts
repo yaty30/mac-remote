@@ -5,7 +5,7 @@ export function usePlaybackControls(socket: RemoteSocket) {
   const [playbackPaused, setPlaybackPaused] = useState(false);
 
   const toggleRemotePlayback = useCallback(() => {
-    socket.sendTextCommand(playbackPaused ? "mediaPlay" : "mediaPause");
+    socket.sendTextCommand(getPlaybackToggleCommand(playbackPaused));
     setPlaybackPaused((current) => !current);
   }, [playbackPaused, socket]);
 
@@ -13,4 +13,8 @@ export function usePlaybackControls(socket: RemoteSocket) {
     playbackPaused,
     toggleRemotePlayback,
   };
+}
+
+export function getPlaybackToggleCommand(playbackPaused: boolean) {
+  return playbackPaused ? "mediaPlay" : "mediaPause";
 }
