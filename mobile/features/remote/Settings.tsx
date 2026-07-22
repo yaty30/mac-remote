@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import {
+  LogOut as LogOutIcon,
   Volume2 as VolumeOnIcon,
   VolumeX as VolumeMutedIcon,
 } from "lucide-react-native";
@@ -39,7 +40,6 @@ import { RESTART_COUNTDOWN_SECONDS } from "../settings/constants";
 import { SettingsBottomSheet } from "../settings/SettingsBottomSheet";
 
 const BODY_HORIZONTAL_PADDING = 10;
-const SETTINGS_RESTART_TOUR_DELAY_MS = 280;
 
 export interface RemoteSettingsHandle {
   close: () => void;
@@ -61,6 +61,7 @@ interface RemoteSettingsPanelProps {
   };
   hostDisplay: HostDisplayInfo | null;
   hostName: string;
+  onLogout?: () => void;
   onRestartTour: () => void;
   sensitivity: number;
   setSensitivity: (value: number) => void;
@@ -102,6 +103,7 @@ export const RemoteSettingsPanel = forwardRef<
     controlsAvailability,
     hostDisplay,
     hostName,
+    onLogout,
     onRestartTour,
     sensitivity,
     setSensitivity,
@@ -112,9 +114,7 @@ export const RemoteSettingsPanel = forwardRef<
   },
   ref,
 ) {
-  const restartTourTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const restartTourAfterCloseRef = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
   const monitorName = hostDisplay?.name ?? "Unknown monitor";
@@ -156,16 +156,6 @@ export const RemoteSettingsPanel = forwardRef<
       socket.requestHostState();
     }
   }, [isOpen, socket, status]);
-
-  useEffect(
-    () => () => {
-      if (restartTourTimerRef.current !== null) {
-        clearTimeout(restartTourTimerRef.current);
-        restartTourTimerRef.current = null;
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     const unsubscribe = socket.onMessage((message) => {
@@ -229,21 +219,51 @@ export const RemoteSettingsPanel = forwardRef<
     );
   }
 
-  function restartAppTour() {
-    setIsOpen(false);
-
-    if (restartTourTimerRef.current !== null) {
-      clearTimeout(restartTourTimerRef.current);
+  function confirmLogout() {
+    if (!onLogout) {
+      return;
     }
 
-    restartTourTimerRef.current = setTimeout(() => {
-      restartTourTimerRef.current = null;
-      onRestartTour();
-    }, SETTINGS_RESTART_TOUR_DELAY_MS);
+    Alert.alert(
+      "Log out?",
+      "This will clear your saved session on this device and return you to the login screen.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: () => {
+            setIsOpen(false);
+            onLogout();
+          },
+        },
+      ],
+    );
+  }
+
+  function restartAppTour() {
+    restartTourAfterCloseRef.current = true;
+    setIsOpen(false);
+  }
+
+  function handleSettingsAfterClose() {
+    if (!restartTourAfterCloseRef.current) {
+      return;
+    }
+
+    restartTourAfterCloseRef.current = false;
+    onRestartTour();
   }
 
   return (
-    <SettingsBottomSheet isOpen={isOpen} onOpenChange={setIsOpen}>
+    <SettingsBottomSheet
+      isOpen={isOpen}
+      onAfterClose={handleSettingsAfterClose}
+      onOpenChange={setIsOpen}
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         style={styles.settingsScroll}
@@ -539,6 +559,31 @@ export const RemoteSettingsPanel = forwardRef<
             <Text style={styles.restartTourText}>Restart App Tour</Text>
           </Pressable>
         </View>
+
+        <View style={styles.sensitivityCard}>
+          <View style={styles.settingsCardHeader}>
+            <View style={styles.settingsCardTitleRow}>
+              <View style={[styles.settingsCardIcon, styles.dangerIcon]}>
+                <LogOutIcon size={18} color="#ffffff" />
+              </View>
+              <Text style={styles.sensitivityLabel}>Account</Text>
+            </View>
+          </View>
+          <Pressable
+            accessibilityLabel="Log out"
+            accessibilityRole="button"
+            disabled={!onLogout}
+            onPress={withHaptic(confirmLogout)}
+            style={({ pressed }) => [
+              styles.logoutButton,
+              pressed ? styles.logoutButtonPressed : null,
+              !onLogout ? styles.disabledControl : null,
+            ]}
+          >
+            <LogOutIcon size={19} color="#ffffff" />
+            <Text style={styles.logoutText}>Log Out</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SettingsBottomSheet>
   );
@@ -817,6 +862,27 @@ const styles = StyleSheet.create({
   },
   restartTourText: {
     color: "#f7f5f1",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  logoutButton: {
+    alignItems: "center",
+    backgroundColor: "#4b211c",
+    borderColor: "#8e3a31",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  logoutButtonPressed: {
+    backgroundColor: "#5f2822",
+    transform: [{ scale: 0.99 }],
+  },
+  logoutText: {
+    color: "#ffffff",
     fontSize: 14,
     fontWeight: "900",
   },

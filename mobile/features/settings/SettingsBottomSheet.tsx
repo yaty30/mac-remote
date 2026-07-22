@@ -1,6 +1,8 @@
 import {
+  useEffect,
   useMemo,
   useRef,
+  useState,
   type ComponentType,
   type ReactNode,
 } from "react";
@@ -30,6 +32,7 @@ interface NativeBottomSheetProps {
 interface SettingsBottomSheetProps {
   children: ReactNode;
   isOpen: boolean;
+  onAfterClose?: () => void;
   onOpenChange: (isOpen: boolean) => void;
 }
 
@@ -53,9 +56,11 @@ const NativeBottomSheet = getNativeBottomSheet();
 export function SettingsBottomSheet({
   children,
   isOpen,
+  onAfterClose,
   onOpenChange,
 }: SettingsBottomSheetProps) {
   const fallbackTranslateY = useRef(new Animated.Value(0)).current;
+  const [fallbackVisible, setFallbackVisible] = useState(isOpen);
   const closeFallbackSheet = useMemo(
     () => () => {
       Animated.timing(fallbackTranslateY, {
@@ -63,11 +68,15 @@ export function SettingsBottomSheet({
         duration: 180,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-      }).start(() => {
-        onOpenChange(false);
+      }).start(({ finished }) => {
+        if (finished) {
+          setFallbackVisible(false);
+          onOpenChange(false);
+          onAfterClose?.();
+        }
       });
     },
-    [fallbackTranslateY, onOpenChange],
+    [fallbackTranslateY, onAfterClose, onOpenChange],
   );
   const openFallbackSheet = useMemo(
     () => () => {
@@ -81,6 +90,22 @@ export function SettingsBottomSheet({
     },
     [fallbackTranslateY],
   );
+
+  useEffect(() => {
+    if (NativeBottomSheet) {
+      return;
+    }
+
+    if (isOpen) {
+      setFallbackVisible(true);
+      return;
+    }
+
+    if (fallbackVisible) {
+      closeFallbackSheet();
+    }
+  }, [closeFallbackSheet, fallbackVisible, isOpen]);
+
   const fallbackPanResponder = useMemo(
     () =>
       PanResponder.create({
@@ -122,7 +147,13 @@ export function SettingsBottomSheet({
     return (
       <NativeBottomSheet
         isOpened={isOpen}
-        onIsOpenedChange={onOpenChange}
+        onIsOpenedChange={(nextIsOpen) => {
+          onOpenChange(nextIsOpen);
+
+          if (!nextIsOpen) {
+            onAfterClose?.();
+          }
+        }}
         presentationDetents={["large"]}
         presentationDragIndicator="visible"
       >
@@ -137,7 +168,7 @@ export function SettingsBottomSheet({
       onShow={openFallbackSheet}
       onRequestClose={closeFallbackSheet}
       transparent
-      visible={isOpen}
+      visible={fallbackVisible}
     >
       <View style={styles.settingsFallbackOverlay}>
         <Pressable

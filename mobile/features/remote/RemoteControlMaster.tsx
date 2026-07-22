@@ -68,10 +68,12 @@ interface DeviceSwitchUiSnapshot {
 }
 
 interface RemoteControlMasterProps {
+  onLogout?: () => void;
   showInitialSplash?: boolean;
 }
 
 export function RemoteControlMaster({
+  onLogout,
   showInitialSplash = true,
 }: RemoteControlMasterProps) {
   const socket = useMemo(() => new RemoteSocket(), []);
@@ -438,6 +440,11 @@ export function RemoteControlMaster({
 
   function sendSleep() {
     socket.sendSleep();
+  }
+
+  function handleLogout() {
+    socket.disconnect();
+    onLogout?.();
   }
 
   function getSelectedDevicePlatform(
@@ -813,6 +820,7 @@ export function RemoteControlMaster({
         controlsAvailability={visibleControlsAvailability}
         hostDisplay={visibleHostDisplay}
         hostName={visibleDeviceName}
+        onLogout={handleLogout}
         onRestartTour={handleRestartTour}
         sensitivity={sensitivity}
         setSensitivity={setSensitivity}

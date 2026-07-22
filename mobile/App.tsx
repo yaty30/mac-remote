@@ -18,6 +18,8 @@ import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { LoginPage } from "./components/LoginPage";
 import { SignUpPage } from "./components/SignUpPage";
 import { AppTourProvider } from "./components/tour/AppTourProvider";
+import type { AuthSignInInput } from "./features/auth/authSession";
+import { useAuthSession } from "./features/auth/useAuthSession";
 import { GetStartedScreen } from "./screens/GetStartedScreen";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
@@ -57,10 +59,16 @@ function applyDefaultFont() {
 }
 
 export default function App() {
+  const {
+    isAuthenticated,
+    isRestoringSession,
+    signIn,
+    signOut,
+  } = useAuthSession();
   const [fontsReady, setFontsReady] = useState(false);
   const [appSplashVisible, setAppSplashVisible] = useState(true);
   const [activeScreen, setActiveScreen] =
-    useState<ActiveScreen>("getStarted");
+    useState<ActiveScreen>("login");
   const [getStartedInitialPage, setGetStartedInitialPage] = useState(0);
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!fontsReady) {
+    if (!fontsReady || isRestoringSession) {
       return;
     }
 
@@ -105,9 +113,34 @@ export default function App() {
     return () => {
       clearTimeout(splashTimer);
     };
-  }, [fontsReady]);
+  }, [fontsReady, isRestoringSession]);
 
-  if (!fontsReady) {
+  useEffect(() => {
+    if (isRestoringSession) {
+      return;
+    }
+
+    setActiveScreen(isAuthenticated ? "remote" : "login");
+  }, [isAuthenticated, isRestoringSession]);
+
+  function handleLogin(input: AuthSignInInput) {
+    void signIn(input)
+      .then(() => {
+        setActiveScreen("remote");
+      })
+      .catch(() => {
+        setActiveScreen("login");
+      });
+  }
+
+  function handleLogout() {
+    void signOut().finally(() => {
+      setGetStartedInitialPage(0);
+      setActiveScreen("login");
+    });
+  }
+
+  if (!fontsReady || isRestoringSession) {
     return null;
   }
 
@@ -134,7 +167,7 @@ export default function App() {
               <LoginPage
                 onBack={() => setActiveScreen("getStarted")}
                 onForgotPassword={() => setActiveScreen("forgotPassword")}
-                onLogin={() => setActiveScreen("remote")}
+                onLogin={handleLogin}
                 onSignUp={() => setActiveScreen("signUp")}
               />
             ) : null}
@@ -147,11 +180,19 @@ export default function App() {
             {activeScreen === "signUp" ? (
               <SignUpPage
                 onBack={() => setActiveScreen("login")}
-                onComplete={() => setActiveScreen("remote")}
+                onComplete={(email) =>
+                  handleLogin({
+                    email,
+                    method: "signUp",
+                  })
+                }
               />
             ) : null}
             {activeScreen === "remote" ? (
-              <RemoteScreen showInitialSplash={false} />
+              <RemoteScreen
+                onLogout={handleLogout}
+                showInitialSplash={false}
+              />
             ) : null}
             <AppSplashOverlay visible={appSplashVisible} />
           </View>
