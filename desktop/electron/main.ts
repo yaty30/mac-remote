@@ -30,7 +30,7 @@ import type {
   HostDisplayInfo,
   HostPlatform,
   HostMessage,
-  RemoteMessage,
+  ApplicationRemoteMessage,
 } from "../types/protocol";
 import { RemoteWebSocketServer } from "../websocket/server";
 
@@ -436,11 +436,9 @@ async function getHostState(): Promise<HostMessage> {
 }
 
 async function handleRemoteMessage(
-  message: RemoteMessage,
+  message: ApplicationRemoteMessage,
 ): Promise<HostMessage | void> {
   switch (message.type) {
-    case "authRequest":
-      break;
     case "moveMouse":
       await mouseController.moveRelative(message.dx, message.dy);
       break;
