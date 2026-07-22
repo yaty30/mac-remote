@@ -2,13 +2,12 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.native.ts"]
+  "include": ["src/**/*.ts"]
 }

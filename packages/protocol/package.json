@@ -5,9 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
-  "react-native": "src/index.native.ts",
+  "react-native": "src/index.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/append-js-extensions.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },

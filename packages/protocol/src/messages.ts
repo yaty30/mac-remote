@@ -1,4 +1,4 @@
-import type { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version.js";
+import type { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version";
 
 export type ShortcutId =
   | "netflix"

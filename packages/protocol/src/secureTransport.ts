@@ -2,11 +2,10 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { ProtocolValidationError } from "./errors.js";
-import type { EncryptedMessage } from "./messages.js";
-import { validateEncryptedEnvelope } from "./validation.js";
-import { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version.js";
+import { ProtocolValidationError } from "./errors";
+import type { EncryptedMessage } from "./messages";
+import { validateEncryptedEnvelope } from "./validation";
+import { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version";
 
 const KEY_BYTES = 32;
 const NONCE_BYTES = 24;
@@ -37,7 +36,7 @@ export function deriveTransportKeys({
   serverNonce,
   secretHash,
 }: Omit<SecureSessionOptions, "role">): DerivedTransportKeys {
-  const salt = utf8ToBytes(
+  const salt = utf8Bytes(
     [
       "mac-remote-transport-v1",
       `server:${serverNonce}`,
@@ -55,16 +54,16 @@ export function deriveTransportKeys({
   return {
     clientToServerKey: hkdf(
       sha256,
-      utf8ToBytes(secretHash),
+      utf8Bytes(secretHash),
       salt,
-      utf8ToBytes("client-to-server"),
+      utf8Bytes("client-to-server"),
       KEY_BYTES,
     ),
     serverToClientKey: hkdf(
       sha256,
-      utf8ToBytes(secretHash),
+      utf8Bytes(secretHash),
       salt,
-      utf8ToBytes("server-to-client"),
+      utf8Bytes("server-to-client"),
       KEY_BYTES,
     ),
   };
@@ -94,7 +93,7 @@ export class SecureTransportSession {
     const nonceBytes = randomBytes(NONCE_BYTES);
     const nonce = bytesToBase64Url(nonceBytes);
     const aad = buildAad(sequence, nonce);
-    const plaintext = utf8ToBytes(JSON.stringify(message));
+    const plaintext = utf8Bytes(JSON.stringify(message));
     const ciphertext = xchacha20poly1305(this.sendKey, nonceBytes, aad).encrypt(
       plaintext,
     );
@@ -140,7 +139,7 @@ export class SecureTransportSession {
         nonceBytes,
         buildAad(message.sequence, message.nonce),
       ).decrypt(base64UrlToBytes(message.ciphertext));
-      const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as unknown;
+      const parsed = JSON.parse(utf8FromBytes(plaintext)) as unknown;
 
       if (!isRecord(parsed) || typeof parsed.type !== "string") {
         throw new ProtocolValidationError("invalidPayload", "Invalid plaintext");
@@ -170,7 +169,7 @@ export class SecureTransportSession {
 function buildAad(sequence: number, nonce: string): Uint8Array {
   // The envelope metadata is authenticated so attackers cannot rewrite version,
   // nonce, or sequence fields without failing decryption.
-  return utf8ToBytes(
+  return utf8Bytes(
     JSON.stringify({
       type: "encrypted",
       protocolVersion: PROTOCOL_VERSION,
@@ -202,25 +201,130 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 }
 
 function base64UrlToBytes(value: string): Uint8Array {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(
-    Math.ceil(value.length / 4) * 4,
-    "=",
-  );
-  const binary =
-    typeof atob === "function"
-      ? atob(padded)
-      : "";
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
 
-  if (!binary) {
-    throw new ProtocolValidationError("invalidEncryptedEnvelope", "Missing base64 decoder");
-  }
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+  if (normalized.length % 4 === 1) {
+    throw new ProtocolValidationError(
+      "invalidEncryptedEnvelope",
+      "Invalid base64url length",
+    );
   }
 
-  return bytes;
+  const output: number[] = [];
+
+  for (let offset = 0; offset < normalized.length; offset += 4) {
+    const chunk = normalized.slice(offset, offset + 4);
+    const values = [...chunk].map((char) => chars.indexOf(char));
+
+    if (values.some((item) => item < 0)) {
+      throw new ProtocolValidationError(
+        "invalidEncryptedEnvelope",
+        "Invalid base64url character",
+      );
+    }
+
+    const paddedValues = [...values, 0, 0, 0].slice(0, 4);
+    const triplet =
+      (paddedValues[0] << 18) |
+      (paddedValues[1] << 12) |
+      (paddedValues[2] << 6) |
+      paddedValues[3];
+
+    output.push((triplet >>> 16) & 0xff);
+    if (chunk.length > 2) {
+      output.push((triplet >>> 8) & 0xff);
+    }
+    if (chunk.length > 3) {
+      output.push(triplet & 0xff);
+    }
+  }
+
+  return new Uint8Array(output);
+}
+
+function utf8Bytes(value: string): Uint8Array {
+  const bytes: number[] = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    let codePoint = value.charCodeAt(index);
+
+    if (
+      codePoint >= 0xd800 &&
+      codePoint <= 0xdbff &&
+      index + 1 < value.length
+    ) {
+      const next = value.charCodeAt(index + 1);
+
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        codePoint =
+          0x10000 + ((codePoint - 0xd800) << 10) + (next - 0xdc00);
+        index += 1;
+      }
+    }
+
+    if (codePoint < 0x80) {
+      bytes.push(codePoint);
+    } else if (codePoint < 0x800) {
+      bytes.push(0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f));
+    } else if (codePoint < 0x10000) {
+      bytes.push(
+        0xe0 | (codePoint >> 12),
+        0x80 | ((codePoint >> 6) & 0x3f),
+        0x80 | (codePoint & 0x3f),
+      );
+    } else {
+      bytes.push(
+        0xf0 | (codePoint >> 18),
+        0x80 | ((codePoint >> 12) & 0x3f),
+        0x80 | ((codePoint >> 6) & 0x3f),
+        0x80 | (codePoint & 0x3f),
+      );
+    }
+  }
+
+  return new Uint8Array(bytes);
+}
+
+function utf8FromBytes(bytes: Uint8Array): string {
+  let output = "";
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    const first = bytes[index];
+
+    if (first < 0x80) {
+      output += String.fromCharCode(first);
+    } else if ((first & 0xe0) === 0xc0) {
+      const second = bytes[++index];
+      output += String.fromCharCode(((first & 0x1f) << 6) | (second & 0x3f));
+    } else if ((first & 0xf0) === 0xe0) {
+      const second = bytes[++index];
+      const third = bytes[++index];
+      output += String.fromCharCode(
+        ((first & 0x0f) << 12) |
+          ((second & 0x3f) << 6) |
+          (third & 0x3f),
+      );
+    } else {
+      const second = bytes[++index];
+      const third = bytes[++index];
+      const fourth = bytes[++index];
+      const codePoint =
+        ((first & 0x07) << 18) |
+        ((second & 0x3f) << 12) |
+        ((third & 0x3f) << 6) |
+        (fourth & 0x3f);
+      const adjusted = codePoint - 0x10000;
+
+      output += String.fromCharCode(
+        0xd800 + (adjusted >> 10),
+        0xdc00 + (adjusted & 0x3ff),
+      );
+    }
+  }
+
+  return output;
 }
 
 function assertRecord(value: unknown): Record<string, unknown> {

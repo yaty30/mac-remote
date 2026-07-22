@@ -1,4 +1,4 @@
-import { ProtocolValidationError } from "./errors.js";
+import { ProtocolValidationError } from "./errors";
 import type {
   ApplicationHostMessage,
   ApplicationRemoteMessage,
@@ -14,8 +14,8 @@ import type {
   PingMessage,
   PongMessage,
   RemoteMessage,
-} from "./messages.js";
-import { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version.js";
+} from "./messages";
+import { ENCRYPTION_VERSION, PROTOCOL_VERSION } from "./version";
 
 const SHORTCUTS = new Set(["netflix", "disney", "amazon", "youtube", "spotify"]);
 const TEXT_COMMANDS = new Set([

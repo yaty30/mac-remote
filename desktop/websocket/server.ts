@@ -206,10 +206,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
               this.publishStatus();
               this.onAuthChange?.(publicResponse, parsed.clientId);
               this.sendHostState(socket).catch((error) => {
-                this.emit(
-                  "error",
-                  error instanceof Error ? error : new Error(String(error)),
-                );
+                this.publishError(error);
               });
             } else {
               sendPlainJson(socket, response);
@@ -220,10 +217,7 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
 
           throw new ProtocolValidationError("invalidPayload", "Expected auth request");
         } catch (error) {
-          this.emit(
-            "error",
-            error instanceof Error ? error : new Error(String(error)),
-          );
+          this.publishError(error);
           if (
             error instanceof ProtocolValidationError &&
             (error.reason === "plaintextAfterSecureMode" ||
@@ -248,7 +242,15 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       });
     });
 
-    this.server.on("error", (error) => this.emit("error", error));
+    this.server.on("error", (error) => this.publishError(error));
+  }
+
+  private publishError(error: unknown): void {
+    if (this.listenerCount("error") === 0) {
+      return;
+    }
+
+    this.emit("error", error instanceof Error ? error : new Error(String(error)));
   }
 
   private async sendHostState(socket: WebSocket): Promise<void> {

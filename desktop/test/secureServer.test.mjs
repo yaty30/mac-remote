@@ -66,8 +66,9 @@ test(
     assert.equal(typeof encryptedHostState.ciphertext, "string");
     assert.equal(receivedMessages.length, 0);
 
+    const closed = waitForClose(socket);
     socket.send(JSON.stringify({ type: "leftClick" }));
-    await waitForClose(socket);
+    await closed;
   } finally {
     await server.close();
   }
