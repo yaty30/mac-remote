@@ -685,7 +685,7 @@ export function RemoteControlMaster() {
           >
             <View style={styles.deviceSwitchSpinner}>
               <Animated.View style={deviceSwitchSpinnerAnimatedStyle}>
-                <Ionicons name="sync" size={22} color="#f0a942" />
+                <Ionicons name="radio" size={22} color="#f0a942" />
               </Animated.View>
             </View>
             <Text style={styles.deviceSwitchTitle}>Connecting</Text>

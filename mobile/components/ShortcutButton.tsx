@@ -27,6 +27,7 @@ export function ShortcutButton({
   onLongPress,
   size = 70,
 }: ShortcutButtonProps) {
+  const addShortcut = label === "Add Shortcut";
   const iconSize = Math.max(24, Math.round(size * 0.51));
   const initialSize = Math.max(18, Math.round(size * 0.34));
 
@@ -51,7 +52,7 @@ export function ShortcutButton({
   ) : (
     <Ionicons
       name={icon ?? "apps-outline"}
-      size={Math.max(22, Math.round(size * 0.46))}
+      size={addShortcut ? 28 : Math.max(22, Math.round(size * 0.46))}
       color={iconColor}
     />
   );
@@ -61,14 +62,14 @@ export function ShortcutButton({
       accessibilityLabel={label}
       action={onPress}
       buttonStyle={[
-        styles.button,
+        addShortcut ? styles.addButton : styles.button,
         {
           borderRadius: Math.max(12, Math.round(size * 0.26)),
           height: size,
-          width: size,
+          width: addShortcut ? 50 : size,
         },
       ]}
-      colors={["#2b211a", "#1b1714", "#11100e"]}
+      colors={addShortcut ? ["#00000000", "#00000000", "#00000000"] : ["#2b211a", "#1b1714", "#11100e"]}
       gradientStyle={styles.buttonGradient}
       icon={shortcutIcon}
       longAction={onLongPress}
@@ -87,6 +88,15 @@ const styles = StyleSheet.create({
     elevation: 5,
     overflow: "hidden",
     shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    justifyContent: "center",
+  },
+  addButton: {
+    alignItems: "center",
+    elevation: 5,
+    overflow: "hidden",
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.28,
     shadowRadius: 12,
