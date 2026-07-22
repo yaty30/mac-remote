@@ -1,4 +1,20 @@
-import type { CustomShortcut } from "./types";
+import type { CustomShortcut, PresetIconKey } from "./types";
+import type { ShortcutId } from "../../types/protocol";
+
+const PRESET_ICON_KEYS = new Set<PresetIconKey>([
+  "amazon",
+  "disney",
+  "netflix",
+  "spotify",
+  "youtube",
+]);
+const SHORTCUT_IDS = new Set<ShortcutId>([
+  "amazon",
+  "disney",
+  "netflix",
+  "spotify",
+  "youtube",
+]);
 
 export function parseCustomShortcuts(raw: string): CustomShortcut[] {
   try {
@@ -36,6 +52,18 @@ export function parseCustomShortcuts(raw: string): CustomShortcut[] {
           iconUri:
             "iconUri" in item && typeof item.iconUri === "string"
               ? item.iconUri
+              : undefined,
+          iconKey:
+            "iconKey" in item &&
+            typeof item.iconKey === "string" &&
+            PRESET_ICON_KEYS.has(item.iconKey as PresetIconKey)
+              ? (item.iconKey as PresetIconKey)
+              : undefined,
+          shortcutId:
+            "shortcutId" in item &&
+            typeof item.shortcutId === "string" &&
+            SHORTCUT_IDS.has(item.shortcutId as ShortcutId)
+              ? (item.shortcutId as ShortcutId)
               : undefined,
         },
       ];

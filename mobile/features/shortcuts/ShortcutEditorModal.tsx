@@ -17,10 +17,16 @@ import {
 
 import { ScanGradientButton } from "../../components/GradientButton";
 import { withHaptic } from "../../utils/haptics";
+import DisneyPlusIcon from "../../assets/shortcuts/disneyplus.svg";
+import NetflixIcon from "../../assets/shortcuts/netflix.svg";
+import PrimeIcon from "../../assets/shortcuts/prime.svg";
+import SpotifyIcon from "../../assets/shortcuts/spotify.svg";
+import type { PresetIconKey } from "./types";
 
 interface ShortcutEditorModalProps {
   editingShortcutId: string | null;
   formError: string;
+  iconKey?: PresetIconKey;
   iconUri?: string;
   isVisible: boolean;
   name: string;
@@ -58,6 +64,7 @@ const GRADIENT_END = { x: 0.9, y: 1 };
 export function ShortcutEditorModal({
   editingShortcutId,
   formError,
+  iconKey,
   iconUri,
   isVisible,
   name,
@@ -72,6 +79,7 @@ export function ShortcutEditorModal({
 }: ShortcutEditorModalProps) {
   const isEditing = editingShortcutId !== null;
   const actionLabel = isEditing ? "Save" : "Add";
+  const presetIcon = getPresetIconPreview(iconKey);
 
   return (
     <Modal
@@ -158,6 +166,8 @@ export function ShortcutEditorModal({
                     source={{ uri: iconUri }}
                     style={styles.iconPreviewImage}
                   />
+                ) : presetIcon ? (
+                  presetIcon
                 ) : (
                   <Text style={styles.iconPreviewText}>
                     {(name.trim()[0] ?? "?").toUpperCase()}
@@ -305,6 +315,25 @@ export function ShortcutEditorModal({
       </View>
     </Modal>
   );
+}
+
+function getPresetIconPreview(iconKey?: PresetIconKey) {
+  const iconSize = 32;
+
+  switch (iconKey) {
+    case "netflix":
+      return <NetflixIcon width={iconSize} height={iconSize} />;
+    case "youtube":
+      return <Ionicons name="logo-youtube" size={34} color="#ff0033" />;
+    case "disney":
+      return <DisneyPlusIcon width={iconSize} height={iconSize} />;
+    case "amazon":
+      return <PrimeIcon width={iconSize} height={iconSize} />;
+    case "spotify":
+      return <SpotifyIcon width={iconSize} height={iconSize} />;
+    default:
+      return null;
+  }
 }
 
 const styles = StyleSheet.create({

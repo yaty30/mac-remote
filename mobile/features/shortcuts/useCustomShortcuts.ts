@@ -1,12 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
-import { CUSTOM_SHORTCUTS_STORAGE_KEY } from "./storageKeys";
+import {
+  CUSTOM_SHORTCUTS_STORAGE_KEY,
+  EDITABLE_SHORTCUT_DEFAULTS_MIGRATED_KEY,
+} from "./storageKeys";
 import { normalizeWebsiteUrl, parseCustomShortcuts } from "./shortcutUtils";
-import type { CustomShortcut } from "./types";
+import type { CustomShortcut, PresetIconKey } from "./types";
+import { DEFAULT_EDITABLE_SHORTCUTS } from "./predefinedShortcuts";
 
 export function useCustomShortcuts() {
-  const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
+  const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>(
+    DEFAULT_EDITABLE_SHORTCUTS,
+  );
   const [shortcutModalVisible, setShortcutModalVisible] = useState(false);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
     null,
@@ -15,17 +21,47 @@ export function useCustomShortcuts() {
   const [shortcutWebsite, setShortcutWebsite] = useState("");
   const [shortcutIconUri, setShortcutIconUri] = useState<string | undefined>();
   const [shortcutFormError, setShortcutFormError] = useState("");
+  const shortcutIconKey: PresetIconKey | undefined = editingShortcutId
+    ? customShortcuts.find((shortcut) => shortcut.id === editingShortcutId)
+        ?.iconKey
+    : undefined;
 
   useEffect(() => {
     let cancelled = false;
 
-    AsyncStorage.getItem(CUSTOM_SHORTCUTS_STORAGE_KEY)
-      .then((saved) => {
-        if (cancelled || !saved) {
+    AsyncStorage.multiGet([
+      CUSTOM_SHORTCUTS_STORAGE_KEY,
+      EDITABLE_SHORTCUT_DEFAULTS_MIGRATED_KEY,
+    ])
+      .then((entries) => {
+        if (cancelled) {
           return;
         }
 
-        setCustomShortcuts(parseCustomShortcuts(saved));
+        const saved = entries.find(
+          ([key]) => key === CUSTOM_SHORTCUTS_STORAGE_KEY,
+        )?.[1];
+        const migrated = entries.find(
+          ([key]) => key === EDITABLE_SHORTCUT_DEFAULTS_MIGRATED_KEY,
+        )?.[1];
+
+        if (!saved) {
+          persistCustomShortcuts(DEFAULT_EDITABLE_SHORTCUTS);
+          markDefaultShortcutMigrationComplete();
+          return;
+        }
+
+        const parsedShortcuts = parseCustomShortcuts(saved);
+
+        if (migrated === "true") {
+          setCustomShortcuts(parsedShortcuts);
+          return;
+        }
+
+        const migratedShortcuts = mergeDefaultShortcuts(parsedShortcuts);
+
+        persistCustomShortcuts(migratedShortcuts);
+        markDefaultShortcutMigrationComplete();
       })
       .catch(() => {
         // Ignore storage errors.
@@ -102,6 +138,12 @@ export function useCustomShortcuts() {
       name: name.slice(0, 40),
       url,
       iconUri: shortcutIconUri,
+      iconKey: customShortcuts.find(
+        (shortcut) => shortcut.id === editingShortcutId,
+      )?.iconKey,
+      shortcutId: customShortcuts.find(
+        (shortcut) => shortcut.id === editingShortcutId,
+      )?.shortcutId,
     };
     const nextShortcuts = editingShortcutId
       ? customShortcuts.map((shortcut) =>
@@ -147,9 +189,27 @@ export function useCustomShortcuts() {
     setShortcutName,
     setShortcutWebsite,
     shortcutFormError,
+    shortcutIconKey,
     shortcutIconUri,
     shortcutModalVisible,
     shortcutName,
     shortcutWebsite,
   };
+}
+
+function markDefaultShortcutMigrationComplete() {
+  AsyncStorage.setItem(EDITABLE_SHORTCUT_DEFAULTS_MIGRATED_KEY, "true").catch(
+    () => {
+      // Ignore storage errors.
+    },
+  );
+}
+
+function mergeDefaultShortcuts(shortcuts: CustomShortcut[]): CustomShortcut[] {
+  const existingIds = new Set(shortcuts.map((shortcut) => shortcut.id));
+  const missingDefaults = DEFAULT_EDITABLE_SHORTCUTS.filter(
+    (shortcut) => !existingIds.has(shortcut.id),
+  );
+
+  return [...shortcuts, ...missingDefaults];
 }

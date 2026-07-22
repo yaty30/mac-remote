@@ -1,7 +1,4 @@
-import type {
-  PredefinedShortcut,
-  PresetIconKey,
-} from "./types";
+import type { PredefinedShortcut, PresetIconKey } from "./types";
 import type { ShortcutId } from "../../types/protocol";
 
 interface PredefinedShortcutDefinition {
@@ -54,9 +51,17 @@ export function createPredefinedShortcut(
   definition: PredefinedShortcutDefinition,
 ): PredefinedShortcut {
   return {
-    ...definition,
-    kind: "predefined",
     defaultName: definition.name,
     defaultWebsite: definition.website,
+    iconKey: definition.iconKey,
+    id: definition.id,
+    kind: "predefined",
+    name: definition.name,
+    shortcutId: definition.shortcutId,
+    url: definition.website,
   };
 }
+
+export const DEFAULT_EDITABLE_SHORTCUTS = PREDEFINED_SHORTCUTS.map(
+  createPredefinedShortcut,
+);
