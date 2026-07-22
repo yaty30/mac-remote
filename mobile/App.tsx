@@ -14,23 +14,13 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppSplashOverlay } from "./components/AppSplashOverlay";
-import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
-import { LoginPage } from "./components/LoginPage";
-import { SignUpPage } from "./components/SignUpPage";
 import { AppTourProvider } from "./components/tour/AppTourProvider";
-import type { AuthSignInInput } from "./features/auth/authSession";
-import { useAuthSession } from "./features/auth/useAuthSession";
-import { GetStartedScreen } from "./screens/GetStartedScreen";
-import { RemoteScreen } from "./screens/RemoteScreen";
+import { AppNavigator } from "./navigation/AppNavigator";
+import { shouldRenderNavigation } from "./navigation/navigationState";
+import { useOnboardingCompletion } from "./navigation/onboardingStorage";
 
 const UBUNTU_FONT_FAMILY = "Ubuntu";
 const APP_SPLASH_MIN_DURATION_MS = 950;
-type ActiveScreen =
-  | "forgotPassword"
-  | "getStarted"
-  | "login"
-  | "remote"
-  | "signUp";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // The native splash may already be hidden during development reloads.
@@ -60,16 +50,16 @@ function applyDefaultFont() {
 
 export default function App() {
   const {
-    isAuthenticated,
-    isRestoringSession,
-    signIn,
-    signOut,
-  } = useAuthSession();
+    completeOnboarding,
+    onboardingCompleted,
+    onboardingStateResolved,
+  } = useOnboardingCompletion();
   const [fontsReady, setFontsReady] = useState(false);
   const [appSplashVisible, setAppSplashVisible] = useState(true);
-  const [activeScreen, setActiveScreen] =
-    useState<ActiveScreen>("login");
-  const [getStartedInitialPage, setGetStartedInitialPage] = useState(0);
+  const navigationReady = shouldRenderNavigation({
+    fontsReady,
+    onboardingStateResolved,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +88,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!fontsReady || isRestoringSession) {
+    if (!navigationReady) {
       return;
     }
 
@@ -113,34 +103,9 @@ export default function App() {
     return () => {
       clearTimeout(splashTimer);
     };
-  }, [fontsReady, isRestoringSession]);
+  }, [navigationReady]);
 
-  useEffect(() => {
-    if (isRestoringSession) {
-      return;
-    }
-
-    setActiveScreen(isAuthenticated ? "remote" : "login");
-  }, [isAuthenticated, isRestoringSession]);
-
-  function handleLogin(input: AuthSignInInput) {
-    void signIn(input)
-      .then(() => {
-        setActiveScreen("remote");
-      })
-      .catch(() => {
-        setActiveScreen("login");
-      });
-  }
-
-  function handleLogout() {
-    void signOut().finally(() => {
-      setGetStartedInitialPage(0);
-      setActiveScreen("login");
-    });
-  }
-
-  if (!fontsReady || isRestoringSession) {
+  if (!navigationReady) {
     return null;
   }
 
@@ -150,50 +115,10 @@ export default function App() {
         <AppTourProvider>
           <View style={styles.appRoot}>
             <StatusBar style="light" />
-            {activeScreen === "getStarted" ? (
-              <GetStartedScreen
-                initialPage={getStartedInitialPage}
-                onComplete={(fromPage) => {
-                  setGetStartedInitialPage(fromPage);
-                  setActiveScreen("login");
-                }}
-                onLogin={(fromPage) => {
-                  setGetStartedInitialPage(fromPage);
-                  setActiveScreen("login");
-                }}
-              />
-            ) : null}
-            {activeScreen === "login" ? (
-              <LoginPage
-                onBack={() => setActiveScreen("getStarted")}
-                onForgotPassword={() => setActiveScreen("forgotPassword")}
-                onLogin={handleLogin}
-                onSignUp={() => setActiveScreen("signUp")}
-              />
-            ) : null}
-            {activeScreen === "forgotPassword" ? (
-              <ForgotPasswordPage
-                onBack={() => setActiveScreen("login")}
-                onComplete={() => setActiveScreen("login")}
-              />
-            ) : null}
-            {activeScreen === "signUp" ? (
-              <SignUpPage
-                onBack={() => setActiveScreen("login")}
-                onComplete={(email) =>
-                  handleLogin({
-                    email,
-                    method: "signUp",
-                  })
-                }
-              />
-            ) : null}
-            {activeScreen === "remote" ? (
-              <RemoteScreen
-                onLogout={handleLogout}
-                showInitialSplash={false}
-              />
-            ) : null}
+            <AppNavigator
+              onboardingCompleted={onboardingCompleted}
+              onCompleteOnboarding={completeOnboarding}
+            />
             <AppSplashOverlay visible={appSplashVisible} />
           </View>
         </AppTourProvider>
