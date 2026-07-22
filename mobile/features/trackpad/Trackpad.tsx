@@ -1,11 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  Signal,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-} from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -27,6 +21,8 @@ import { triggerLongPressHaptic } from "../../utils/haptics";
 import type { ConnectionStatus } from "../../types/protocol";
 import { useAppTour } from "../../components/tour/useAppTour";
 import { useTrackpadGestures } from "./useTrackpadGestures";
+import { LatencyPill } from "./LatencyPill";
+import { ScrollHandle, SCROLL_HANDLE_SIZE } from "./ScrollHandle";
 
 interface TrackpadProps {
   latencyMs?: number | null;
@@ -41,7 +37,7 @@ interface TrackpadProps {
 }
 
 const SCROLL_DOT_RANGE = 22;
-const SCROLL_DOT_SIZE = 62;
+const SCROLL_DOT_SIZE = SCROLL_HANDLE_SIZE;
 const SCROLL_DOT_MIN_FRAME_DELTA = 1.2;
 const SCROLL_DOT_MAX_FRAME_DELTA = 26;
 const SCROLL_DOT_MAX_SPEED_DISTANCE = 140;
@@ -127,14 +123,6 @@ export function Trackpad({
   const [scrollDotHome, setScrollDotHome] = useState<ScrollDotPosition | null>(
     null,
   );
-  const latencyBand =
-    status === "connected" && typeof latencyMs === "number"
-      ? getLatencyBand(latencyMs)
-      : null;
-  const roundedLatencyMs =
-    typeof latencyMs === "number" ? Math.round(latencyMs) : null;
-  const LatencyIcon = latencyBand?.Icon;
-
   useEffect(
     () => registerTourTarget("scroll-handle", scrollDotTourRef),
     [registerTourTarget],
@@ -689,23 +677,7 @@ export function Trackpad({
                   onTouchEnd={resetTouchMark}
                 >
                   <View pointerEvents="none" style={styles.infoDisplay}>
-                    {latencyBand && LatencyIcon && roundedLatencyMs !== null ? (
-                      <View style={styles.infoLatencyPill}>
-                        <LatencyIcon
-                          color={latencyBand.color}
-                          size={12}
-                          strokeWidth={2.5}
-                        />
-                        <Text
-                          style={[
-                            styles.infoLatencyText,
-                            { color: latencyBand.color },
-                          ]}
-                        >
-                          {roundedLatencyMs}ms
-                        </Text>
-                      </View>
-                    ) : null}
+                    <LatencyPill latencyMs={latencyMs} status={status} />
                   </View>
                   <PanGestureHandler
                     ref={scrollDotPanRef}
@@ -717,65 +689,15 @@ export function Trackpad({
                     onGestureEvent={handleScrollDotPan}
                     onHandlerStateChange={handleScrollDotState}
                   >
-                    <Animated.View
+                    <ScrollHandle
                       ref={scrollDotTourRef}
-                      collapsable={false}
-                      style={[
-                        styles.scrollDot,
-                        scrollDotPositionStyle,
-                      ]}
-                    >
-                      <Animated.View
-                        style={[
-                          styles.scrollDotInner,
-                          scrollDotActive ? styles.scrollDotActive : null,
-                          scrollDotPlacing ? styles.scrollDotPlacing : null,
-                          {
-                            transform: [
-                              { translateX: scrollDotX },
-                              { translateY: scrollDotY },
-                              { scale: scrollDotScale },
-                            ],
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.scrollDotFace,
-                            scrollDotActive ? styles.scrollDotFaceActive : null,
-                            scrollDotPlacing ? styles.scrollDotFacePlacing : null,
-                          ]}
-                        >
-                          <View style={styles.scrollDotAxisVertical} />
-                          <View style={styles.scrollDotAxisHorizontal} />
-                          <Ionicons
-                            name="chevron-up"
-                            size={15}
-                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                            style={styles.scrollDotChevronUp}
-                          />
-                          <Ionicons
-                            name="chevron-back"
-                            size={15}
-                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                            style={styles.scrollDotChevronLeft}
-                          />
-                          <View style={styles.scrollDotCenter} />
-                          <Ionicons
-                            name="chevron-forward"
-                            size={15}
-                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                            style={styles.scrollDotChevronRight}
-                          />
-                          <Ionicons
-                            name="chevron-down"
-                            size={15}
-                            color={scrollDotActive ? "#ffffff" : "#c7bdb1"}
-                            style={styles.scrollDotChevronDown}
-                          />
-                        </View>
-                      </Animated.View>
-                    </Animated.View>
+                      active={scrollDotActive}
+                      placing={scrollDotPlacing}
+                      positionStyle={scrollDotPositionStyle}
+                      scale={scrollDotScale}
+                      translateX={scrollDotX}
+                      translateY={scrollDotY}
+                    />
                   </PanGestureHandler>
                   {/* {scrollDotActive ? (
                     <View pointerEvents="none" style={styles.scrollCursor}>
@@ -814,34 +736,6 @@ export function Trackpad({
   );
 }
 
-function getLatencyBand(latencyMs: number) {
-  if (latencyMs <= 50) {
-    return {
-      Icon: Signal,
-      color: "#74f0a7",
-    };
-  }
-
-  if (latencyMs <= 100) {
-    return {
-      Icon: SignalHigh,
-      color: "#ffd166",
-    };
-  }
-
-  if (latencyMs <= 150) {
-    return {
-      Icon: SignalMedium,
-      color: "#ff941f",
-    };
-  }
-
-  return {
-    Icon: SignalLow,
-    color: "#ff603c",
-  };
-}
-
 const styles = StyleSheet.create({
   trackpad: {
     alignItems: "center",
@@ -864,18 +758,6 @@ const styles = StyleSheet.create({
     left: 14,
     top: 14,
     zIndex: 3,
-  },
-  infoLatencyPill: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-    minHeight: 14,
-    paddingHorizontal: 4,
-    opacity: 0.8,
-  },
-  infoLatencyText: {
-    fontSize: 12,
-    fontWeight: "800",
   },
   centerMark: {
     alignItems: "center",
