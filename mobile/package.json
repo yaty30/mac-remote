@@ -11,6 +11,7 @@
     "ios": "expo start --host lan --ios",
     "android": "expo start --host lan --android",
     "web": "expo start --web",
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
