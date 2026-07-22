@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
-  "react-native": "src/index.ts",
+  "react-native": "src/index.native.ts",
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.mjs",
