@@ -18,12 +18,12 @@ import {
   View,
 } from "react-native";
 import {
-  LogOut as LogOutIcon,
   Volume2 as VolumeOnIcon,
   VolumeX as VolumeMutedIcon,
 } from "lucide-react-native";
 import { HeaderGradientButton } from "../../components/GradientButton";
 import { TourTarget } from "../../components/tour/TourTarget";
+import { FEATURES } from "../../navigation/featureFlags";
 import type {
   ConnectionStatus,
   HostDisplayInfo,
@@ -560,30 +560,32 @@ export const RemoteSettingsPanel = forwardRef<
           </Pressable>
         </View>
 
-        <View style={styles.sensitivityCard}>
-          <View style={styles.settingsCardHeader}>
-            <View style={styles.settingsCardTitleRow}>
-              <View style={[styles.settingsCardIcon, styles.dangerIcon]}>
-                <LogOutIcon size={18} color="#ffffff" />
+        {FEATURES.accountAuthentication ? (
+          <View style={styles.sensitivityCard}>
+            <View style={styles.settingsCardHeader}>
+              <View style={styles.settingsCardTitleRow}>
+                <View style={[styles.settingsCardIcon, styles.dangerIcon]}>
+                  <Ionicons name="log-out-outline" size={18} color="#ffffff" />
+                </View>
+                <Text style={styles.sensitivityLabel}>Account</Text>
               </View>
-              <Text style={styles.sensitivityLabel}>Account</Text>
             </View>
+            <Pressable
+              accessibilityLabel="Log out"
+              accessibilityRole="button"
+              disabled={!onLogout}
+              onPress={withHaptic(confirmLogout)}
+              style={({ pressed }) => [
+                styles.logoutButton,
+                pressed ? styles.logoutButtonPressed : null,
+                !onLogout ? styles.disabledControl : null,
+              ]}
+            >
+              <Ionicons name="log-out-outline" size={19} color="#ffffff" />
+              <Text style={styles.logoutText}>Log Out</Text>
+            </Pressable>
           </View>
-          <Pressable
-            accessibilityLabel="Log out"
-            accessibilityRole="button"
-            disabled={!onLogout}
-            onPress={withHaptic(confirmLogout)}
-            style={({ pressed }) => [
-              styles.logoutButton,
-              pressed ? styles.logoutButtonPressed : null,
-              !onLogout ? styles.disabledControl : null,
-            ]}
-          >
-            <LogOutIcon size={19} color="#ffffff" />
-            <Text style={styles.logoutText}>Log Out</Text>
-          </Pressable>
-        </View>
+        ) : null}
       </ScrollView>
     </SettingsBottomSheet>
   );
