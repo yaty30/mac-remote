@@ -2,15 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   Monitor as MonitorIcon,
   MonitorX as MonitorOffIcon,
+  QrCode,
 } from "lucide-react-native";
-import {
-  LinearGradient as ExpoLinearGradient,
-  type LinearGradientProps,
-} from "expo-linear-gradient";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import type { ConnectionStatus } from "../types/protocol";
-import { useState, type ComponentType, type ReactNode } from "react";
-import { withHaptic } from "../utils/haptics";
+import { useState, type ReactNode } from "react";
+import { HeaderGradientButton } from "./GradientButton";
+import { TourTarget } from "./tour/TourTarget";
 
 interface HeaderProps {
   latencyMs?: number | null;
@@ -22,9 +20,6 @@ interface HeaderProps {
   settingsDisabled?: boolean;
   onSleep?: () => void;
 }
-
-const HeaderButtonGradient =
-  ExpoLinearGradient as unknown as ComponentType<LinearGradientProps>;
 
 export function Header({
   title = "Remote Control",
@@ -49,82 +44,69 @@ export function Header({
         </View>
 
         <View style={styles.actionRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.headerActionButton,
-              styles.scanButton,
-              pressed ? styles.headerActionButtonPressed : null,
-            ]}
-            onPress={withHaptic(onScan)}
-          >
-            <HeaderButtonGradient
-              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
-              start={{ x: 0.15, y: 0 }}
-              end={{ x: 0.85, y: 1 }}
-              style={styles.headerActionGradient}
-            >
-              <Ionicons name="qr-code-outline" size={20} color="#f0a942" />
-            </HeaderButtonGradient>
-          </Pressable>
-
-          <Pressable
-            disabled={settingsDisabled || !onToggleSettings}
-            style={({ pressed }) => [
-              styles.headerActionButton,
-              styles.settingsButton,
-              pressed && !settingsDisabled && onToggleSettings
-                ? styles.headerActionButtonPressed
-                : null,
-              settingsDisabled || !onToggleSettings
-                ? styles.headerActionButtonDisabled
-                : null,
-            ]}
-            onPress={withHaptic(onToggleSettings)}
-          >
-            <HeaderButtonGradient
-              colors={["rgba(44, 33, 23, 0.72)", "rgba(24, 20, 16, 0.72)", "rgba(14, 13, 11, 0.72)"]}
-              start={{ x: 0.15, y: 0 }}
-              end={{ x: 0.85, y: 1 }}
-              style={styles.headerActionGradient}
-            >
-              <Ionicons name="settings" size={20} color="#f0a942" />
-            </HeaderButtonGradient>
-          </Pressable>
-
-          <Pressable
-            disabled={!onSleep}
-            style={({ pressed }) => [
-              styles.headerActionButton,
-              monitorIsOn ? styles.monitorOffButton : styles.monitorOnButton,
-              pressed && onSleep ? styles.headerActionButtonPressed : null,
-              !onSleep ? styles.headerActionButtonDisabled : null,
-            ]}
-            onPress={withHaptic(() => {
-              if (!onSleep) {
-                return;
+          <TourTarget targetKey="scan-qr">
+            <HeaderGradientButton
+              accessibilityLabel="Scan QR code"
+              action={onScan}
+              buttonStyle={[styles.headerActionButton, styles.scanButton]}
+              gradientStyle={styles.headerActionGradient}
+              icon={
+                <QrCode size={20} color="#f0a942" />
               }
+              pressedStyle={styles.headerActionButtonPressed}
+            />
+          </TourTarget>
 
-              setSleep((s) => !s);
-              onSleep();
-            })}
-          >
-            <HeaderButtonGradient
+          <TourTarget targetKey="settings-button">
+            <HeaderGradientButton
+              accessibilityLabel="Open settings"
+              action={onToggleSettings}
+              buttonStyle={[styles.headerActionButton, styles.settingsButton]}
+              disabled={settingsDisabled || !onToggleSettings}
+              disabledStyle={styles.headerActionButtonDisabled}
+              gradientStyle={styles.headerActionGradient}
+              icon={<Ionicons name="settings" size={20} color="#f0a942" />}
+              pressedStyle={styles.headerActionButtonPressed}
+            />
+          </TourTarget>
+
+          <TourTarget targetKey="sleep-control">
+            <HeaderGradientButton
+              accessibilityLabel={
+                monitorIsOn ? "Lock or sleep computer" : "Wake computer"
+              }
+              action={() => {
+                if (!onSleep) {
+                  return;
+                }
+
+                setSleep((s) => !s);
+                onSleep();
+              }}
+              buttonStyle={[
+                styles.headerActionButton,
+                monitorIsOn ? styles.monitorOffButton : styles.monitorOnButton,
+              ]}
               colors={
                 monitorIsOn
                   ? ["#442019", "#2b1613", "#18100e"]
                   : ["#2b211a", "#1b1714", "#11100e"]
               }
-              start={{ x: 0.18, y: 0 }}
+              disabled={!onSleep}
+              disabledStyle={styles.headerActionButtonDisabled}
               end={{ x: 0.82, y: 1 }}
-              style={styles.headerActionGradient}
-            >
-              {monitorIsOn ? (
-                <MonitorOffIcon size={21} color="#ff8a72" />
-              ) : (
-                <MonitorIcon size={21} color="#efe8dd" />
-              )}
-            </HeaderButtonGradient>
-          </Pressable>
+              gradientStyle={styles.headerActionGradient}
+              icon={
+                monitorIsOn ? (
+                  <MonitorOffIcon size={21} color="#ff8a72" />
+                ) : (
+                  <MonitorIcon size={21} color="#efe8dd" />
+                )
+              }
+              pressedStyle={styles.headerActionButtonPressed}
+              start={{ x: 0.18, y: 0 }}
+            />
+          </TourTarget>
         </View>
       </View>
     </View>

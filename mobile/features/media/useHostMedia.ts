@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HostStateMessage } from "../../types/protocol";
 import type { RemoteSocket } from "../../websocket/RemoteSocket";
 import {
@@ -28,6 +28,13 @@ export function useHostMedia(
   const volumeStep = percentToStep(volume);
   const volumeMuted = volume === 0;
   const volumeButtonColor = volumeAdjustable ? "#ffffff" : "#5c554e";
+
+  useEffect(
+    () => () => {
+      clearBrightnessCommitTimer();
+    },
+    [],
+  );
 
   function applyHostState(message: HostStateMessage) {
     if (

@@ -17,6 +17,7 @@ import { AppSplashOverlay } from "./components/AppSplashOverlay";
 import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { LoginPage } from "./components/LoginPage";
 import { SignUpPage } from "./components/SignUpPage";
+import { AppTourProvider } from "./components/tour/AppTourProvider";
 import { GetStartedScreen } from "./screens/GetStartedScreen";
 import { RemoteScreen } from "./screens/RemoteScreen";
 
@@ -113,46 +114,48 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <View style={styles.appRoot}>
-          <StatusBar style="light" />
-          {activeScreen === "getStarted" ? (
-            <GetStartedScreen
-              initialPage={getStartedInitialPage}
-              onComplete={(fromPage) => {
-                setGetStartedInitialPage(fromPage);
-                setActiveScreen("login");
-              }}
-              onLogin={(fromPage) => {
-                setGetStartedInitialPage(fromPage);
-                setActiveScreen("login");
-              }}
-            />
-          ) : null}
-          {activeScreen === "login" ? (
-            <LoginPage
-              onBack={() => setActiveScreen("getStarted")}
-              onForgotPassword={() => setActiveScreen("forgotPassword")}
-              onLogin={() => setActiveScreen("remote")}
-              onSignUp={() => setActiveScreen("signUp")}
-            />
-          ) : null}
-          {activeScreen === "forgotPassword" ? (
-            <ForgotPasswordPage
-              onBack={() => setActiveScreen("login")}
-              onComplete={() => setActiveScreen("login")}
-            />
-          ) : null}
-          {activeScreen === "signUp" ? (
-            <SignUpPage
-              onBack={() => setActiveScreen("login")}
-              onComplete={() => setActiveScreen("remote")}
-            />
-          ) : null}
-          {activeScreen === "remote" ? (
-            <RemoteScreen showInitialSplash={false} />
-          ) : null}
-          <AppSplashOverlay visible={appSplashVisible} />
-        </View>
+        <AppTourProvider>
+          <View style={styles.appRoot}>
+            <StatusBar style="light" />
+            {activeScreen === "getStarted" ? (
+              <GetStartedScreen
+                initialPage={getStartedInitialPage}
+                onComplete={(fromPage) => {
+                  setGetStartedInitialPage(fromPage);
+                  setActiveScreen("login");
+                }}
+                onLogin={(fromPage) => {
+                  setGetStartedInitialPage(fromPage);
+                  setActiveScreen("login");
+                }}
+              />
+            ) : null}
+            {activeScreen === "login" ? (
+              <LoginPage
+                onBack={() => setActiveScreen("getStarted")}
+                onForgotPassword={() => setActiveScreen("forgotPassword")}
+                onLogin={() => setActiveScreen("remote")}
+                onSignUp={() => setActiveScreen("signUp")}
+              />
+            ) : null}
+            {activeScreen === "forgotPassword" ? (
+              <ForgotPasswordPage
+                onBack={() => setActiveScreen("login")}
+                onComplete={() => setActiveScreen("login")}
+              />
+            ) : null}
+            {activeScreen === "signUp" ? (
+              <SignUpPage
+                onBack={() => setActiveScreen("login")}
+                onComplete={() => setActiveScreen("remote")}
+              />
+            ) : null}
+            {activeScreen === "remote" ? (
+              <RemoteScreen showInitialSplash={false} />
+            ) : null}
+            <AppSplashOverlay visible={appSplashVisible} />
+          </View>
+        </AppTourProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
