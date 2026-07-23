@@ -23,7 +23,8 @@ import {
   Icon,
   LucideProps,
   Fan,
-  Satellite
+  Satellite,
+  Hamburger
 } from "lucide-react-native";
 import { faceAlien, hockeyMask, pacMan, pumpkin, ufo, unicornHead } from "@lucide/lab";
 import { Clapperboard, ClosedCaption, CupSoda, Popcorn, Projector, Sofa, TvMinimalPlay, VenetianMask, Video } from "lucide-react-native/icons";
@@ -70,7 +71,8 @@ const DEFAULT_ICONS: FloatingLucideIcon[] = [
   PackMan,
   Pumpkin,
   UnicornHead,
-  UFO
+  UFO,
+  Hamburger
 ];
 
 interface FloatingIconParticle {

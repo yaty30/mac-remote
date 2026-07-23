@@ -20,6 +20,8 @@ import {
 import {
   Volume2 as VolumeOnIcon,
   VolumeX as VolumeMutedIcon,
+  Cog,
+  SlidersHorizontal,
 } from "lucide-react-native";
 import { HeaderGradientButton } from "../../components/GradientButton";
 import { TourTarget } from "../../components/tour/TourTarget";
@@ -88,7 +90,7 @@ export function Settings({
         disabled={disabled}
         disabledStyle={styles.headerActionButtonDisabled}
         gradientStyle={styles.headerActionGradient}
-        icon={<Ionicons name="settings" size={20} color="#f0a942" />}
+        icon={<SlidersHorizontal size={20} color="#f0a942" />}
         pressedStyle={styles.headerActionButtonPressed}
       />
     </TourTarget>

@@ -1,4 +1,5 @@
 import {
+  Icon,
   LayoutPanelTop as LayoutPanelTopIcon,
   Minimize2 as Minimize2Icon,
   MouseRight as MouseRightIcon,
@@ -11,6 +12,7 @@ import { ScanGradientButton } from "../../components/GradientButton";
 import { TourTarget } from "../../components/tour/TourTarget";
 import { withHaptic } from "../../utils/haptics";
 import { KeyboardControlButton, type RemoteKeyboardHandle } from "./Keyboard";
+import { tabX } from '@lucide/lab';
 
 const BODY_HORIZONTAL_PADDING = 10;
 
@@ -81,7 +83,7 @@ export function RemoteControlMasterFooter({
               accessibilityLabel="Close current browser tab"
               onPress={withHaptic(onCloseTab)}
             >
-              <SquareXIcon size={22} color="#f0c17c" />
+              <Icon iconNode={tabX} size={22} color="#f0c17c" />
             </Pressable>
           </View>
         </TourTarget>

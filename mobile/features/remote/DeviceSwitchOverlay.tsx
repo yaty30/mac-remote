@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { FloatingIconOverlay } from "../../components/FloatingIconOverlay";
 import { withHaptic } from "../../utils/haptics";
+import { Podcast, Radiation, Radius } from "lucide-react-native";
 
 interface DeviceSwitchOverlayProps {
   cancelAnimatedStyle: object;
@@ -34,7 +35,8 @@ export function DeviceSwitchOverlay({
         <Animated.View style={[styles.card, overlayAnimatedStyle]}>
           <View style={styles.spinner}>
             <Animated.View style={spinnerAnimatedStyle}>
-              <Ionicons name="radio" size={22} color="#f0a942" />
+              {/* <Ionicons name="radio" size={22} color="#f0a942" /> */}
+              <Radiation size={22} color="#f0a942"/>
             </Animated.View>
           </View>
           <Text style={styles.title}>Connecting</Text>

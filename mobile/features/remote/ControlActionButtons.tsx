@@ -7,6 +7,7 @@ import {
   SquareX as SquareXIcon,
   Undo2,
   Redo2,
+  FileInput,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { TourTarget } from "../../components/tour/TourTarget";
@@ -89,11 +90,11 @@ export function ControlActionButtons({
 
       <View style={[styles.shortcutGroup, styles.shortcutGroupPrimary]}>
         <Pressable
-          style={styles.desktopSwitchButton}
+          style={{...styles.desktopSwitchButton, transform: [{ scaleX: -1 }],}}
           accessibilityLabel="Previous browser page"
           onPress={withHaptic(onBrowserBack)}
         >
-          <Undo2 size={22} color="#f0c17c" />
+          <FileInput size={22} color="#f0c17c" />
         </Pressable>
         <View style={[styles.shortcutDivider, styles.shortcutDividerPrimary]} />
         <Pressable
@@ -101,7 +102,7 @@ export function ControlActionButtons({
           accessibilityLabel="Next browser page"
           onPress={withHaptic(onBrowserForward)}
         >
-          <Redo2 size={22} color="#f0c17c" />
+          <FileInput size={22} color="#f0c17c" />
         </Pressable>
       </View>
 

@@ -15,6 +15,10 @@ import {
 const DEVICE_SWITCH_MIN_OVERLAY_MS = 1000;
 const DEVICE_SWITCH_CANCEL_DELAY_MS = 3000;
 
+const DEVICE_SWITCH_SPINNER_STEP_COUNT = 3;
+const DEVICE_SWITCH_SPINNER_FIRST_HALF_MS = 810;
+const DEVICE_SWITCH_SPINNER_SECOND_HALF_MS = 680;
+
 interface UseDeviceSwitchFlowParams {
   cancelConnection: () => void;
   cancelPendingConnection: () => void;
@@ -46,25 +50,52 @@ export function useDeviceSwitchFlow({
   status,
 }: UseDeviceSwitchFlowParams) {
   const deviceSwitchStartedAtRef = useRef(0);
+
   const deviceSwitchDismissTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+
   const deviceSwitchCancelTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
-  const previousDeviceRef = useRef<{ host: string; name?: string } | null>(
-    null,
-  );
+
+  const previousDeviceRef = useRef<{
+    host: string;
+    name?: string;
+  } | null>(null);
+
   const deviceSwitchCancellingRef = useRef(false);
-  const deviceSwitchOverlayAnim = useRef(new Animated.Value(0)).current;
-  const deviceSwitchSpinnerAnim = useRef(new Animated.Value(0)).current;
-  const deviceSwitchCancelAnim = useRef(new Animated.Value(0)).current;
+
+  const deviceSwitchOverlayAnim = useRef(
+    new Animated.Value(0),
+  ).current;
+
+  /*
+   * Spinner value:
+   *
+   * 0 = 0deg
+   * 1 = 45deg
+   * 2 = 90deg
+   * ...
+   * 8 = 360deg
+   */
+  const deviceSwitchSpinnerAnim = useRef(
+    new Animated.Value(0),
+  ).current;
+
+  const deviceSwitchCancelAnim = useRef(
+    new Animated.Value(0),
+  ).current;
+
   const [deviceSwitchOverlayMounted, setDeviceSwitchOverlayMounted] =
     useState(false);
+
   const [deviceSwitchCancelVisible, setDeviceSwitchCancelVisible] =
     useState(false);
+
   const [deviceSwitchUiSnapshot, setDeviceSwitchUiSnapshot] =
     useState<DeviceSwitchUiSnapshot | null>(null);
+
   const [switchingDeviceName, setSwitchingDeviceName] = useState("");
   const [switchingDeviceHost, setSwitchingDeviceHost] = useState("");
 
@@ -82,6 +113,7 @@ export function useDeviceSwitchFlow({
 
   function resetDeviceSwitchCancelButton() {
     setDeviceSwitchCancelVisible(false);
+
     deviceSwitchCancelAnim.stopAnimation();
     deviceSwitchCancelAnim.setValue(0);
   }
@@ -94,14 +126,14 @@ export function useDeviceSwitchFlow({
   }
 
   useEffect(() => {
-    if (
-      !shouldCompleteDeviceSwitch({
-        host,
-        hostPlatform,
-        status,
-        switchingDeviceHost,
-      })
-    ) {
+    const shouldComplete = shouldCompleteDeviceSwitch({
+      host,
+      hostPlatform,
+      status,
+      switchingDeviceHost,
+    });
+
+    if (!shouldComplete) {
       return;
     }
 
@@ -111,11 +143,15 @@ export function useDeviceSwitchFlow({
     }
 
     const elapsed = Date.now() - deviceSwitchStartedAtRef.current;
-    const remaining = Math.max(0, DEVICE_SWITCH_MIN_OVERLAY_MS - elapsed);
+    const remaining = Math.max(
+      0,
+      DEVICE_SWITCH_MIN_OVERLAY_MS - elapsed,
+    );
 
     deviceSwitchDismissTimerRef.current = setTimeout(() => {
       deviceSwitchDismissTimerRef.current = null;
       setDeviceSwitchUiSnapshot(null);
+
       Animated.timing(deviceSwitchOverlayAnim, {
         toValue: 0,
         duration: 180,
@@ -142,28 +178,56 @@ export function useDeviceSwitchFlow({
       return;
     }
 
+    deviceSwitchSpinnerAnim.stopAnimation();
     deviceSwitchSpinnerAnim.setValue(0);
+
+    /*
+     * Build eight 45-degree movements:
+     *
+     * 0 -> 1 = 0deg -> 45deg
+     * 1 -> 2 = 45deg -> 90deg
+     * ...
+     * 7 -> 8 = 315deg -> 360deg
+     *
+     * Each movement preserves the original two-part easing.
+     */
+    const spinnerSteps = Array.from(
+      { length: DEVICE_SWITCH_SPINNER_STEP_COUNT },
+      (_, stepIndex) => {
+        const stepStart = stepIndex;
+        const stepMiddle = stepStart + 0.5;
+        const stepEnd = stepStart + 1;
+
+        return [
+          Animated.timing(deviceSwitchSpinnerAnim, {
+            toValue: stepMiddle,
+            duration: DEVICE_SWITCH_SPINNER_FIRST_HALF_MS,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(deviceSwitchSpinnerAnim, {
+            toValue: stepEnd,
+            duration: DEVICE_SWITCH_SPINNER_SECOND_HALF_MS,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ];
+      },
+    ).flat();
+
     const spinnerAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(deviceSwitchSpinnerAnim, {
-          toValue: 0.5,
-          duration: 820,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(deviceSwitchSpinnerAnim, {
-          toValue: 1,
-          duration: 860,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]),
+      Animated.sequence(spinnerSteps),
+      {
+        iterations: -1,
+        resetBeforeIteration: true,
+      },
     );
 
     spinnerAnimation.start();
 
     return () => {
       spinnerAnimation.stop();
+      deviceSwitchSpinnerAnim.stopAnimation();
     };
   }, [deviceSwitchOverlayMounted, deviceSwitchSpinnerAnim]);
 
@@ -177,17 +241,23 @@ export function useDeviceSwitchFlow({
         clearTimeout(deviceSwitchCancelTimerRef.current);
         deviceSwitchCancelTimerRef.current = null;
       }
+
       resetDeviceSwitchCancelButton();
       return;
     }
 
     const elapsed = Date.now() - deviceSwitchStartedAtRef.current;
-    const delay = Math.max(0, DEVICE_SWITCH_CANCEL_DELAY_MS - elapsed);
+    const delay = Math.max(
+      0,
+      DEVICE_SWITCH_CANCEL_DELAY_MS - elapsed,
+    );
 
     deviceSwitchCancelTimerRef.current = setTimeout(() => {
       deviceSwitchCancelTimerRef.current = null;
+
       setDeviceSwitchCancelVisible(true);
       deviceSwitchCancelAnim.setValue(0);
+
       Animated.timing(deviceSwitchCancelAnim, {
         toValue: 1,
         duration: 220,
@@ -211,8 +281,16 @@ export function useDeviceSwitchFlow({
   useEffect(
     () => () => {
       clearDeviceSwitchTimers();
+
+      deviceSwitchOverlayAnim.stopAnimation();
+      deviceSwitchSpinnerAnim.stopAnimation();
+      deviceSwitchCancelAnim.stopAnimation();
     },
-    [],
+    [
+      deviceSwitchCancelAnim,
+      deviceSwitchOverlayAnim,
+      deviceSwitchSpinnerAnim,
+    ],
   );
 
   function switchSavedDevice(device: SavedDevice) {
@@ -233,20 +311,32 @@ export function useDeviceSwitchFlow({
       platform: hostPlatform,
       status,
     });
-    previousDeviceRef.current = snapshot ? { host, name: hostName } : null;
+
+    previousDeviceRef.current = snapshot
+      ? {
+          host,
+          name: hostName,
+        }
+      : null;
+
     setDeviceSwitchUiSnapshot(snapshot);
+
     deviceSwitchStartedAtRef.current = Date.now();
+
     setSwitchingDeviceHost(device.host);
     setSwitchingDeviceName(device.name);
     setDeviceSwitchOverlayMounted(true);
+
     deviceSwitchOverlayAnim.stopAnimation();
     deviceSwitchOverlayAnim.setValue(0);
+
     Animated.timing(deviceSwitchOverlayAnim, {
       toValue: 1,
       duration: 180,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
+
     selectSavedDevice(device);
   }
 
@@ -258,10 +348,14 @@ export function useDeviceSwitchFlow({
     const previousDevice = previousDeviceRef.current;
 
     clearDeviceSwitchTimers();
+
     deviceSwitchCancellingRef.current = true;
     previousDeviceRef.current = null;
 
-    if (previousDevice?.host && previousDevice.host !== switchingDeviceHost) {
+    if (
+      previousDevice?.host &&
+      previousDevice.host !== switchingDeviceHost
+    ) {
       cancelPendingConnection();
     } else {
       cancelConnection();
@@ -273,14 +367,18 @@ export function useDeviceSwitchFlow({
       easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) {
-        setDeviceSwitchOverlayMounted(false);
-        setSwitchingDeviceHost("");
-        setSwitchingDeviceName("");
-        deviceSwitchCancellingRef.current = false;
-        setDeviceSwitchUiSnapshot(null);
-        resetDeviceSwitchCancelButton();
+      if (!finished) {
+        return;
       }
+
+      setDeviceSwitchOverlayMounted(false);
+      setSwitchingDeviceHost("");
+      setSwitchingDeviceName("");
+
+      deviceSwitchCancellingRef.current = false;
+
+      setDeviceSwitchUiSnapshot(null);
+      resetDeviceSwitchCancelButton();
     });
   }
 
@@ -301,16 +399,18 @@ export function useDeviceSwitchFlow({
       },
     ],
   };
+
   const deviceSwitchSpinnerAnimatedStyle = {
     transform: [
       {
         rotate: deviceSwitchSpinnerAnim.interpolate({
-          inputRange: [0, 1],
+          inputRange: [0, DEVICE_SWITCH_SPINNER_STEP_COUNT],
           outputRange: ["0deg", "360deg"],
         }),
       },
     ],
   };
+
   const deviceSwitchCancelAnimatedStyle = {
     maxHeight: deviceSwitchCancelAnim.interpolate({
       inputRange: [0, 1],

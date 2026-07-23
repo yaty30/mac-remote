@@ -61,6 +61,8 @@ export function RemoteControlMaster({
   const qrScannerRef = useRef<QRScannerHandle | null>(null);
   const settingsRef = useRef<RemoteSettingsHandle | null>(null);
 
+  const [expand, setExpand] = useState(false)
+
   const [scannerVisible, setScannerVisible] = useState(false);
   const {
     applyHostProfile,
@@ -98,7 +100,7 @@ export function RemoteControlMaster({
     onResetHostState: () => {
       resetHostProfile();
     },
-    onUnmount: () => {},
+    onUnmount: () => { },
   });
   const {
     sensitivity,
@@ -309,29 +311,31 @@ export function RemoteControlMaster({
         visible={deviceSwitchOverlayMounted}
       />
 
-      <RemoteControlMasterHeader
-        deviceDropdownOpen={deviceDropdownOpen}
-        onConnectToHost={connectToHost}
-        onDeleteDevice={deleteSavedDevice}
-        onDeviceDropdownOpenChange={setDeviceDropdownOpen}
-        onRenameDevice={renameSavedDevice}
-        onScannerOpenStart={() => {
-          settingsRef.current?.close();
-          setDeviceDropdownOpen(false);
-        }}
-        onScannerVisibilityChange={setScannerVisible}
-        onScanError={setConnectionError}
-        onSettingsToggleStart={() => setDeviceDropdownOpen(false)}
-        onSleep={!showConnectionPrompt && sleepAvailable ? sendSleep : undefined}
-        onSwitchDevice={switchSavedDevice}
-        qrScannerRef={qrScannerRef}
-        savedDevices={savedDevices}
-        settingsDisabled={showConnectionPrompt}
-        settingsRef={settingsRef}
-        visibleDeviceHost={visibleDeviceHost}
-        visibleDeviceName={visibleDeviceName}
-        visibleHostPlatform={visibleHostPlatform}
-      />
+      {!expand && (
+        <RemoteControlMasterHeader
+          deviceDropdownOpen={deviceDropdownOpen}
+          onConnectToHost={connectToHost}
+          onDeleteDevice={deleteSavedDevice}
+          onDeviceDropdownOpenChange={setDeviceDropdownOpen}
+          onRenameDevice={renameSavedDevice}
+          onScannerOpenStart={() => {
+            settingsRef.current?.close();
+            setDeviceDropdownOpen(false);
+          }}
+          onScannerVisibilityChange={setScannerVisible}
+          onScanError={setConnectionError}
+          onSettingsToggleStart={() => setDeviceDropdownOpen(false)}
+          onSleep={!showConnectionPrompt && sleepAvailable ? sendSleep : undefined}
+          onSwitchDevice={switchSavedDevice}
+          qrScannerRef={qrScannerRef}
+          savedDevices={savedDevices}
+          settingsDisabled={showConnectionPrompt}
+          settingsRef={settingsRef}
+          visibleDeviceHost={visibleDeviceHost}
+          visibleDeviceName={visibleDeviceName}
+          visibleHostPlatform={visibleHostPlatform}
+        />
+      )}
 
       <RemoteKeyboard
         ref={keyboardRef}
@@ -371,24 +375,26 @@ export function RemoteControlMaster({
           />
         ) : (
           <>
-            <Shortcuts
-              onAddShortcut={openShortcutModal}
-              onEditShortcut={openEditShortcutModal}
-              onShortcutPress={sendCustomShortcut}
-              shortcuts={customShortcuts}
-            />
+            {!expand && (<>
+              <Shortcuts
+                onAddShortcut={openShortcutModal}
+                onEditShortcut={openEditShortcutModal}
+                onShortcutPress={sendCustomShortcut}
+                shortcuts={customShortcuts}
+              />
 
-            <ControlActionButtons
-              isWindowsHost={isWindowsHost}
-              onBrowserBack={() => socket.sendTextCommand("browserBack")}
-              onBrowserForward={() => socket.sendTextCommand("browserForward")}
-              onCloseTab={() => socket.sendTextCommand("closeTab")}
-              onEscape={() => socket.sendKey("escape")}
-              onLeftArrow={() => socket.sendKey("leftArrow")}
-              onPrimarySwitch={switchPrimaryHorizontal}
-              onRightArrow={() => socket.sendKey("rightArrow")}
-              primarySwitchAvailable={primarySwitchAvailable}
-            />
+              <ControlActionButtons
+                isWindowsHost={isWindowsHost}
+                onBrowserBack={() => socket.sendTextCommand("browserBack")}
+                onBrowserForward={() => socket.sendTextCommand("browserForward")}
+                onCloseTab={() => socket.sendTextCommand("closeTab")}
+                onEscape={() => socket.sendKey("escape")}
+                onLeftArrow={() => socket.sendKey("leftArrow")}
+                onPrimarySwitch={switchPrimaryHorizontal}
+                onRightArrow={() => socket.sendKey("rightArrow")}
+                primarySwitchAvailable={primarySwitchAvailable}
+              />
+            </>)}
 
             <View
               style={styles.trackpadWrap}
@@ -419,6 +425,7 @@ export function RemoteControlMaster({
                     }
                   }}
                   status={visibleStatus}
+                  // onExpand={() => {setExpand(!expand)}} // suppressed feature
                 />
               </TourTarget>
             </View>

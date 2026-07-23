@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   type LayoutChangeEvent,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -23,6 +24,7 @@ import { useAppTour } from "../../components/tour/useAppTour";
 import { useTrackpadGestures } from "./useTrackpadGestures";
 import { LatencyPill } from "./LatencyPill";
 import { ScrollHandle, SCROLL_HANDLE_SIZE } from "./ScrollHandle";
+import { Expand } from "lucide-react-native";
 
 interface TrackpadProps {
   latencyMs?: number | null;
@@ -34,6 +36,7 @@ interface TrackpadProps {
   onZoom: (direction: "in" | "out") => void;
   onSwipeSpaces: (direction: "left" | "right") => void;
   status: ConnectionStatus;
+  onExpand?: () => void;
 }
 
 const SCROLL_DOT_RANGE = 22;
@@ -69,6 +72,7 @@ export function Trackpad({
   onZoom,
   onSwipeSpaces,
   status,
+  onExpand = undefined
 }: TrackpadProps) {
   const { registerTourTarget } = useAppTour();
   const {
@@ -267,8 +271,8 @@ export function Trackpad({
       dx =
         SCROLL_DOT_MIN_FRAME_DELTA +
         (SCROLL_DOT_MAX_FRAME_DELTA - SCROLL_DOT_MIN_FRAME_DELTA) *
-          pressureX *
-          pressureX;
+        pressureX *
+        pressureX;
       dx *= Math.sign(x);
     }
 
@@ -276,8 +280,8 @@ export function Trackpad({
       dy =
         SCROLL_DOT_MIN_FRAME_DELTA +
         (SCROLL_DOT_MAX_FRAME_DELTA - SCROLL_DOT_MIN_FRAME_DELTA) *
-          pressureY *
-          pressureY;
+        pressureY *
+        pressureY;
       dy *= Math.sign(y);
     }
 
@@ -613,10 +617,10 @@ export function Trackpad({
 
   const scrollDotPositionStyle = scrollDotHome
     ? {
-        left: scrollDotHome.left,
-        marginTop: 0,
-        top: scrollDotHome.top,
-      }
+      left: scrollDotHome.left,
+      marginTop: 0,
+      top: scrollDotHome.top,
+    }
     : null;
 
   return (
@@ -679,6 +683,16 @@ export function Trackpad({
                   <View pointerEvents="none" style={styles.infoDisplay}>
                     <LatencyPill latencyMs={latencyMs} status={status} />
                   </View>
+
+                  {onExpand != undefined && 
+                    <Pressable style={({ pressed }) => [
+                      styles.expandButton,
+                      pressed ? styles.expandButtonPressed : null,
+                    ]} onPress={onExpand}>
+                      <Expand color="#ffb2479e" />
+                    </Pressable>
+                  }
+
                   <PanGestureHandler
                     ref={scrollDotPanRef}
                     minPointers={1}
@@ -758,6 +772,18 @@ const styles = StyleSheet.create({
     left: 14,
     top: 14,
     zIndex: 3,
+  },
+  expandButton: {
+    alignItems: "flex-start",
+    gap: 8,
+    position: "absolute",
+    right: 18,
+    top: 18,
+    zIndex: 3,
+  },
+  expandButtonPressed: {
+    opacity: 0.68,
+    transform: [{ scale: 0.96 }],
   },
   centerMark: {
     alignItems: "center",
