@@ -36,15 +36,18 @@ export async function readDeviceToken(
   }
 }
 
+// Returns true only when the token is durably stored in SecureStore. Callers
+// rely on this to decide whether it is safe to drop the AsyncStorage fallback,
+// so a failed write must never report success.
 export async function writeDeviceToken(
   deviceId: string,
   token: string,
-): Promise<void> {
+): Promise<boolean> {
   const cleanId = deviceId.trim();
   const cleanToken = token.trim();
 
   if (!cleanId || !cleanToken) {
-    return;
+    return false;
   }
 
   try {
@@ -53,9 +56,10 @@ export async function writeDeviceToken(
       cleanToken,
       SECURE_STORE_OPTIONS,
     );
+
+    return true;
   } catch {
-    // Ignore storage errors; the in-memory token still allows reconnecting
-    // until the app is restarted.
+    return false;
   }
 }
 

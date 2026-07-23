@@ -31,6 +31,27 @@ const deviceUtils = await importTypeScriptModule(
     "./storageKeys": 'export const DEVICES_STORAGE_KEY = "remote-control:devices";',
   },
 );
+const deviceCredentials = await importTypeScriptModule(
+  path.join(projectRoot, "features/connection/deviceCredentials.ts"),
+  {
+    "expo-secure-store": [
+      'export const WHEN_UNLOCKED_THIS_DEVICE_ONLY = "unlocked";',
+      "export async function getItemAsync(key) {",
+      "  return globalThis.__secureStore?.get(key) ?? null;",
+      "}",
+      "export async function setItemAsync(key, value) {",
+      "  if (globalThis.__secureStoreFailWrite) {",
+      '    throw new Error("secure store unavailable");',
+      "  }",
+      "  (globalThis.__secureStore ??= new Map()).set(key, value);",
+      "}",
+      "export async function deleteItemAsync(key) {",
+      "  globalThis.__secureStore?.delete(key);",
+      "}",
+    ].join("\n"),
+    "../security/tokenProof": 'export function hashToken(token) { return "hash-" + token; }',
+  },
+);
 
 test("keyboard text is split into text chunks and enter commands", () => {
   assert.deepEqual(
@@ -201,6 +222,40 @@ test("upserting a device does not reintroduce a credential field", () => {
   assert.equal("deviceToken" in merged[0], false);
   assert.equal(merged[0].platform, "darwin");
   assert.equal(merged[0].lastConnectedAt, 2);
+});
+
+test("writing a device token reports success and persists it", async () => {
+  globalThis.__secureStore = new Map();
+  globalThis.__secureStoreFailWrite = false;
+
+  const persisted = await deviceCredentials.writeDeviceToken(
+    "mac.local",
+    "trusted-token",
+  );
+
+  assert.equal(persisted, true);
+  assert.equal(
+    await deviceCredentials.readDeviceToken("mac.local"),
+    "trusted-token",
+  );
+});
+
+test("a failed SecureStore write reports failure instead of resolving ok", async () => {
+  globalThis.__secureStore = new Map();
+  globalThis.__secureStoreFailWrite = true;
+
+  const persisted = await deviceCredentials.writeDeviceToken(
+    "mac.local",
+    "trusted-token",
+  );
+
+  assert.equal(persisted, false);
+  assert.equal(
+    await deviceCredentials.readDeviceToken("mac.local"),
+    undefined,
+  );
+
+  globalThis.__secureStoreFailWrite = false;
 });
 
 async function importTypeScriptModule(sourcePath, moduleSources = {}) {
