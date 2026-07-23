@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { withHaptic } from "../utils/haptics";
+import type { AuthSignInInput } from "../features/auth/authSession";
 import { AuthBackButton, AuthPageLayout } from "./AuthPageLayout";
 import { FullScreenLoadingOverlay } from "./FullScreenLoadingOverlay";
 
@@ -23,7 +24,7 @@ const LOGIN_INPUT_ACCESSORY_ID = "login-input-accessory";
 interface LoginPageProps {
   onBack: () => void;
   onForgotPassword?: () => void;
-  onLogin?: () => void;
+  onLogin?: (input: AuthSignInInput) => void;
   onSignUp?: () => void;
 }
 
@@ -35,7 +36,6 @@ export function LoginPage({
 }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loginLoadingVisible, setLoginLoadingVisible] = useState(false);
   const [activeInput, setActiveInput] = useState<"email" | "password" | null>(
@@ -48,6 +48,7 @@ export function LoginPage({
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
   const shouldNavigateAfterLoginRef = useRef(false);
+  const pendingLoginInputRef = useRef<AuthSignInInput | null>(null);
   const screenAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -119,7 +120,7 @@ export function LoginPage({
     }),
   ).current;
 
-  const startLoginLoading = () => {
+  const startLoginLoading = (input: AuthSignInInput) => {
     if (isLoginLoadingRef.current || isLeavingRef.current) {
       return;
     }
@@ -127,6 +128,7 @@ export function LoginPage({
     isLoginLoadingRef.current = true;
     Keyboard.dismiss();
     shouldNavigateAfterLoginRef.current = false;
+    pendingLoginInputRef.current = input;
     setLoginLoadingVisible(true);
 
     loginTimerRef.current = setTimeout(() => {
@@ -152,12 +154,15 @@ export function LoginPage({
     }
 
     setErrorMessage(null);
-    startLoginLoading();
+    startLoginLoading({
+      email,
+      method: "password",
+    });
   };
 
-  const handleSocialLogin = () => {
+  const handleSocialLogin = (method: "apple" | "google") => {
     setErrorMessage(null);
-    startLoginLoading();
+    startLoginLoading({ method });
   };
 
   const focusEmailInput = () => {
@@ -178,7 +183,10 @@ export function LoginPage({
 
     if (shouldNavigateAfterLoginRef.current) {
       shouldNavigateAfterLoginRef.current = false;
-      onLogin?.();
+      const loginInput = pendingLoginInputRef.current ?? { method: "password" };
+
+      pendingLoginInputRef.current = null;
+      onLogin?.(loginInput);
     }
   };
 
@@ -303,24 +311,15 @@ export function LoginPage({
           <View style={styles.optionsRow}>
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: rememberMe }}
+              accessibilityState={{ checked: true }}
+              disabled
               style={styles.rememberButton}
-              onPress={withHaptic(() =>
-                setRememberMe((current) => !current),
-              )}
             >
-              <View
-                style={[
-                  styles.checkbox,
-                  rememberMe ? styles.checkboxChecked : null,
-                ]}
-              >
-                {rememberMe ? (
-                  <Ionicons name="checkmark" size={13} color="#14100b" />
-                ) : null}
+              <View style={[styles.checkbox, styles.checkboxChecked]}>
+                <Ionicons name="checkmark" size={13} color="#14100b" />
               </View>
 
-              <Text style={styles.optionText}>Remember me</Text>
+              <Text style={styles.optionText}>Stay signed in</Text>
             </Pressable>
 
             <Pressable
@@ -364,7 +363,7 @@ export function LoginPage({
               styles.socialButton,
               pressed ? styles.socialButtonPressed : null,
             ]}
-            onPress={withHaptic(handleSocialLogin)}
+            onPress={withHaptic(() => handleSocialLogin("apple"))}
           >
             <Ionicons name="logo-apple" size={20} color="#ffffff" />
           </Pressable>
@@ -376,7 +375,7 @@ export function LoginPage({
               styles.socialButton,
               pressed ? styles.socialButtonPressed : null,
             ]}
-            onPress={withHaptic(handleSocialLogin)}
+            onPress={withHaptic(() => handleSocialLogin("google"))}
           >
             <Ionicons name="logo-google" size={19} color="#ffffff" />
           </Pressable>

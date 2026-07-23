@@ -9,7 +9,7 @@
   },
   "main": "dist/electron/main.js",
   "scripts": {
-    "build": "tsc && node scripts/build-native.mjs && node scripts/copy-static.mjs",
+    "build": "npm run build --workspace @mac-remote/protocol && tsc && node scripts/build-native.mjs && node scripts/copy-static.mjs",
     "dev": "npm run build && node scripts/start-electron.mjs",
     "pack:app": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
@@ -60,6 +60,7 @@
     }
   },
   "dependencies": {
+    "@mac-remote/protocol": "0.1.0",
     "@nut-tree-fork/nut-js": "^4.2.6",
     "qrcode": "^1.5.4",
     "ws": "^8.18.3"

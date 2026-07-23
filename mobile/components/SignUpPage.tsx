@@ -35,7 +35,7 @@ const SIGN_UP_INPUT_ACCESSORY_ID = "sign-up-input-accessory";
 
 interface SignUpPageProps {
   onBack: () => void;
-  onComplete?: () => void;
+  onComplete?: (email: string) => void;
 }
 
 interface DetailsErrors extends PasswordResetErrors {
@@ -392,7 +392,7 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
 
     if (shouldCompleteAfterVerificationRef.current) {
       shouldCompleteAfterVerificationRef.current = false;
-      onComplete?.();
+      onComplete?.(email.trim());
       return;
     }
 

@@ -22,18 +22,19 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
   const autoStartAttemptedRef = useRef(false);
   const stepRunRef = useRef(0);
   const [currentStep, setCurrentStep] = useState(0);
+  const [preparedStep, setPreparedStep] = useState(0);
   const [steps, setSteps] = useState<TourStep[]>([]);
   const [isTourVisible, setIsTourVisible] = useState(false);
   const [completionLoaded, setCompletionLoaded] = useState(false);
   const [tourWasCompleted, setTourWasCompleted] = useState(true);
   const [autoStartEnabled, setTourAutoStartEnabled] = useState(false);
   const [stepReadyVersion, setStepReadyVersion] = useState(0);
-  const [isStepPreparing, setIsStepPreparing] = useState(false);
   const stepChangingRef = useRef(false);
   const activeStep = steps[currentStep];
   const activeStepId = activeStep?.id;
-  const isFirstStep = currentStep === 0;
-  const isLastStep = currentStep === steps.length - 1;
+  const displayedStep = steps[preparedStep];
+  const isFirstStep = preparedStep === 0;
+  const isLastStep = preparedStep === steps.length - 1;
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +80,9 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
 
   useEffect(() => {
     setCurrentStep((nextStep) => clamp(nextStep, 0, Math.max(steps.length - 1, 0)));
+    setPreparedStep((nextStep) =>
+      clamp(nextStep, 0, Math.max(steps.length - 1, 0)),
+    );
   }, [steps.length]);
 
   useEffect(() => {
@@ -89,7 +93,6 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
     const runId = stepRunRef.current + 1;
     stepRunRef.current = runId;
     const stepForRun = activeStep;
-    setIsStepPreparing(true);
 
     Promise.resolve(stepForRun.beforeShow?.())
       .catch(() => {
@@ -98,13 +101,13 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
       .finally(() => {
         const markReady = () => {
           if (stepRunRef.current === runId) {
-            setIsStepPreparing(false);
+            setPreparedStep(currentStep);
             setStepReadyVersion((version) => version + 1);
           }
         };
 
         requestAnimationFrame(() => {
-          setTimeout(markReady, 30);
+          markReady();
         });
       });
   }, [activeStepId, currentStep, isTourVisible]);
@@ -182,8 +185,8 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
   }, []);
 
   const runActiveStepExit = useCallback(async () => {
-    await activeStep?.afterHide?.();
-  }, [activeStep]);
+    await displayedStep?.afterHide?.();
+  }, [displayedStep]);
 
   const handleNextStep = useCallback(() => {
     if (stepChangingRef.current) {
@@ -240,14 +243,17 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
 
   const handleRestartTour = useCallback(() => {
     autoStartAttemptedRef.current = true;
+    setCompletionLoaded(true);
+    setTourWasCompleted(false);
+    setPreparedStep(0);
     setCurrentStep(0);
     setIsTourVisible(true);
   }, []);
 
   const contextValue = useMemo(
     () => ({
-      activeStep,
-      currentStep,
+      activeStep: displayedStep,
+      currentStep: preparedStep,
       handleCompleteTour,
       handleNextStep,
       handlePreviousStep,
@@ -264,8 +270,7 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
       stepReadyVersion,
     }),
     [
-      activeStep,
-      currentStep,
+      displayedStep,
       handleCompleteTour,
       handleNextStep,
       handlePreviousStep,
@@ -275,6 +280,7 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
       isLastStep,
       isTourVisible,
       measureTourTarget,
+      preparedStep,
       registerTourTarget,
       setTourSteps,
       steps,
@@ -286,11 +292,11 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
     <AppTourContext.Provider value={contextValue}>
       {children}
       <TourOverlay
-        activeStep={activeStep}
-        currentStep={currentStep}
+        activeStep={displayedStep}
+        currentStep={preparedStep}
         isFirstStep={isFirstStep}
         isLastStep={isLastStep}
-        isVisible={isTourVisible && !isStepPreparing}
+        isVisible={isTourVisible}
         measureTourTarget={measureTourTarget}
         onComplete={() => {
           void handleCompleteTour();

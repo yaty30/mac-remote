@@ -56,6 +56,7 @@ interface GetStartedScreenProps {
   initialPage?: number;
   onComplete: (fromPage: number) => void;
   onLogin?: (fromPage: number) => void;
+  showLoginShortcut?: boolean;
 }
 
 const PremiumGradient =
@@ -176,6 +177,7 @@ export function GetStartedScreen({
   initialPage = 0,
   onComplete,
   onLogin,
+  showLoginShortcut = true,
 }: GetStartedScreenProps) {
   const boundedInitialPage = Math.min(
     Math.max(initialPage, 0),
@@ -381,6 +383,9 @@ export function GetStartedScreen({
   };
 
   const page = pages[currentPage];
+  const shouldShowSecondaryButton =
+    page.secondaryButtonLabel &&
+    (currentPage !== 0 || showLoginShortcut);
   const shouldShowSkipButton =
     currentPage > 0 && currentPage < pages.length - 1;
   const animatedSkipButtonStyle = {
@@ -585,7 +590,7 @@ export function GetStartedScreen({
             />
           }
 
-          {page.secondaryButtonLabel && 
+          {shouldShowSecondaryButton &&
             <PremiumButton
               label={page.secondaryButtonLabel}
               variant="secondary"
