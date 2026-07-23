@@ -1,260 +1,448 @@
-# iPhone to iMac Remote Control MVP
+# Mac Remote
 
-This prototype lets an iPhone control an iMac over local Wi-Fi:
+Mac Remote is a local-network remote control for a macOS or Windows computer. An
+Expo/React Native phone app connects to an Electron desktop host over the local
+Wi-Fi network, pairs by scanning a QR code, and sends authenticated, encrypted
+control commands.
 
-- Move the mouse from a large React Native trackpad.
-- Tap the trackpad to left click.
-- Launch Netflix, YouTube, and Spotify from shortcut buttons.
-- Run a local Electron desktop app that hosts the WebSocket server.
+The product runs without a cloud service or user account. The desktop performs
+all mouse, keyboard, media, display, power, and shortcut actions on the host
+computer.
 
-## Project Structure
+## Implemented features
+
+### Phone app
+
+- Pair with a desktop by scanning its QR code.
+- Save multiple desktops, switch between them, rename them, and remove them.
+- Reconnect to a previously paired desktop without scanning a new QR code.
+- Use a trackpad with pointer movement, single click, double click, two-finger
+  right click, scrolling, pinch zoom, and three-finger workspace switching.
+- Adjust pointer sensitivity and scrolling direction per saved desktop.
+- Type text remotely, paste phone clipboard text, move the caret, press common
+  keys, and run editing, browser, tab, and media commands.
+- Switch workspaces and windows and open the host's overview interface.
+- Read and adjust host brightness and output volume when the active display and
+  operating system expose those controls.
+- Sleep or wake the macOS display, suspend Windows, and restart the host.
+- Launch Netflix, YouTube, Disney+, Prime Video, and Spotify.
+- Create, edit, and remove website shortcuts, including custom icons
+  selected from the phone's photo library.
+- Show connection status and measured WebSocket latency.
+- Persist onboarding, tour state, saved desktops, shortcuts, and per-device
+  settings locally on the phone.
+
+### Desktop app
+
+- Listen for phone connections on all local interfaces, on port `8787` by
+  default.
+- Display a rotating pairing QR code, LAN addresses, connection health,
+  platform capabilities, active-display information, and latency.
+- List paired phones and disconnect or forget them.
+- Show macOS Accessibility status and open the relevant System Settings page.
+- Enable or disable the source-development LaunchAgent on macOS.
+- In development builds, start the Expo server and show a separate Expo QR code
+  by default.
+
+## Supported platforms
+
+The desktop host supports:
+
+- macOS (`darwin`)
+- Windows (`win32`)
+
+Linux is rejected at startup because no Linux host adapter is implemented.
+Desktop packages must be built on their target operating system because the
+mouse and keyboard dependency includes native binaries.
+
+The phone app is configured for:
+
+- iOS phones; iPad support is disabled
+- Android phones
+
+The interface is portrait-oriented. A web start script exists for Expo
+development, but web is not configured or shipped as a supported release
+target.
+
+## Platform behavior
+
+macOS control uses nut.js plus native system tools and AppleScript. Mouse and
+keyboard control requires Accessibility permission. Workspace switching depends
+on the macOS Mission Control shortcuts being enabled. Website shortcuts open in
+Google Chrome; the Prime Video and Spotify presets expect those applications to
+be installed.
+
+Windows control uses nut.js, a PowerShell `SendInput` helper for relative mouse
+movement, WMI for supported internal-display brightness controls, Core Audio
+through an embedded PowerShell helper, and standard Windows shell commands.
+Website shortcuts use the system URL handler.
+
+The active display is the display nearest the desktop cursor. TV detection is a
+name-based heuristic; displays identified as TVs do not advertise brightness or
+volume controls. Hardware and driver support can still make brightness or
+volume unavailable.
+
+## Architecture
+
+This repository is an npm workspace with three runtime layers:
 
 ```text
-remote-control/
-├── desktop/
-│   ├── electron/
-│   ├── websocket/
-│   └── mouse-control/
-└── mobile/
-    ├── screens/
-    ├── components/
-    ├── websocket/
-    └── gestures/
+mobile (Expo / React Native)
+  └─ QR pairing, saved devices, controls, settings, local persistence
+       │
+       │ WebSocket handshake + encrypted application messages
+       ▼
+desktop (Electron / Node.js)
+  ├─ WebSocket server and pairing trust store
+  ├─ renderer connected through a preload IPC bridge
+  └─ macOS and Windows host adapters
+       │
+       ▼
+mouse, keyboard, display, audio, application, and power APIs
+
+packages/protocol
+  └─ shared message types, validation, versions, and secure transport
 ```
 
-## Desktop Setup
+Important source areas:
 
-The desktop app is an Electron + TypeScript app. It starts a WebSocket server on port `8787` and displays the iMac's local IPv4 addresses.
+- `mobile/App.tsx` and `mobile/navigation/`: mobile application and navigation
+- `mobile/features/`: pairing, trackpad, keyboard, shortcuts, settings, and
+  remote-control behavior
+- `mobile/websocket/`: connection lifecycle and command sending
+- `desktop/electron/`: Electron main process, renderer, preload bridge, and UI
+- `desktop/websocket/`: authenticated WebSocket server
+- `desktop/auth/`: pairing tokens, trusted-device persistence, and token proofs
+- `desktop/host/`: macOS and Windows implementations
+- `desktop/mouse-control/`: pointer and keyboard execution
+- `packages/protocol/`: protocol shared by desktop and mobile
 
-Use Node.js `20.19.4` or newer for the Expo SDK 54 dependency set. Node `22` LTS is recommended.
+The mobile app connects directly to the desktop. There is no relay, hosted API,
+database, analytics service, or account server.
 
-The public npm install uses `@nut-tree-fork/nut-js`, the installable community fork of nut.js. The official `@nut-tree/nut-js` package is now distributed from nut.js's private registry; if you have a paid nut.js registry token, you can switch the dependency and import back to `@nut-tree/nut-js`.
+## Pairing and security
+
+Mac Remote uses `ws://` on the LAN for reachability, but application traffic is
+encrypted after authentication.
+
+Pairing works as follows:
+
+1. The desktop creates a random pairing token and embeds it with its LAN
+   WebSocket URL in the displayed QR code.
+2. Pairing tokens expire after 10 minutes and are single-use. The QR rotates
+   shortly before expiry while a small number of still-valid previous tokens
+   remain accepted to avoid scan/refresh races.
+3. The desktop sends a random authentication challenge and server nonce.
+4. The phone proves possession of the pairing token with HMAC-SHA-256 instead
+   of sending the token in the authentication request.
+5. Both peers deterministically derive a device token. The desktop persists
+   only its SHA-256 hash; the phone saves the token with the desktop record.
+6. Later connections use a challenge-response proof of the saved device token.
+   A phone can be revoked from the desktop UI.
+
+After authentication:
+
+- HKDF-SHA-256 derives separate client-to-server and server-to-client keys from
+  the trusted secret hash, fresh client and server nonces, client ID, protocol
+  version, and encryption version.
+- XChaCha20-Poly1305 encrypts and authenticates each application message.
+- Envelope metadata is authenticated as additional data.
+- Strict sequence numbers reject replayed, stale, and out-of-order ciphertext.
+- Plaintext application messages are rejected after secure mode starts.
+- Protocol validators constrain message shapes, command values, text sizes,
+  URLs, and numeric ranges before host actions run.
+
+The authentication challenge, authentication request, acceptance, and rejection
+messages remain plaintext. Their proofs do not expose the pairing or device
+token, but LAN observers can see connection metadata such as client IDs,
+versions, and timing.
+
+Packaged desktop builds disable legacy raw-token authentication by default.
+Development builds allow it for migration compatibility. Override this only
+when testing:
 
 ```bash
-cd remote-control/desktop
-npm install
-npm run dev
+REMOTE_LEGACY_RAW_TOKEN_AUTH=0 npm run desktop:dev
 ```
 
-On macOS, grant the Electron app accessibility permissions:
+Security boundaries and limitations:
 
-1. Open **System Settings**.
-2. Go to **Privacy & Security > Accessibility**.
-3. Add and enable the Electron app used to launch it.
+- This is a LAN application, not an Internet-facing remote-access service.
+- The server binds to `0.0.0.0`; the application does not configure the host
+  firewall or restrict source subnets.
+- The transport does not use TLS certificates. The authenticated application
+  layer protects commands after pairing, while handshake metadata remains
+  visible.
+- Saved desktop credentials and settings are stored by the mobile app through
+  AsyncStorage, not a hardware-backed credential vault.
+- Anyone who can scan an unused desktop QR code before it expires can pair a
+  phone. Keep the QR visible only in a trusted environment and revoke unknown
+  devices from the desktop.
 
-In dev mode, the app is usually:
+## Prerequisites
+
+- Node.js `20.19.4` or newer; Node.js 22 LTS is recommended.
+- npm with workspace support.
+- A macOS or Windows computer and an iOS or Android phone on the same LAN.
+- macOS Accessibility permission for the Electron application used to run the
+  host.
+- Xcode Command Line Tools on macOS to compile the optional native display
+  brightness helper. A failed helper build is non-fatal, but can reduce
+  brightness support.
+- Expo tooling or EAS credentials when building the mobile app.
+
+The repository uses the public `@nut-tree-fork/nut-js` package. It does not
+require the private nut.js registry.
+
+## Development setup
+
+Install all workspaces from the repository root:
+
+```bash
+npm install
+```
+
+The simplest development startup is:
+
+```bash
+npm run desktop:dev
+```
+
+The desktop command builds the shared protocol and desktop code, launches
+Electron, starts the Expo server in development mode, and shows both pairing and
+Expo QR codes.
+
+To run both workspace commands explicitly while preventing the desktop process
+from starting a second Expo server:
+
+```bash
+REMOTE_MOBILE_SERVER=0 npm run dev
+```
+
+Individual commands are also available:
+
+```bash
+npm run mobile:start
+npm run desktop:dev
+```
+
+For native mobile development, use an Expo development build appropriate for
+the target platform. The secure transport requires a native-backed
+`crypto.getRandomValues`, installed at mobile startup by
+`react-native-get-random-values`.
+
+### macOS Accessibility
+
+In **System Settings > Privacy & Security > Accessibility**, enable the actual
+application running the desktop host. During development this is normally:
 
 ```text
-remote-control/node_modules/electron/dist/Electron.app
+node_modules/electron/dist/Electron.app
 ```
 
-If Terminal is already enabled but mouse movement still prints Accessibility warnings, add `Electron.app` too. After changing Accessibility permissions, fully quit and restart the desktop app.
+If Terminal is already enabled but input control still fails, add Electron.app
+as well. Fully quit and restart the desktop app after changing permissions.
 
-Without Accessibility permission, macOS may block mouse movement and clicks.
+For workspace switching, also verify:
 
-Desktop switching uses macOS `Ctrl+Left Arrow` and `Ctrl+Right Arrow`. If the arrow buttons do not switch fullscreen Spaces, enable **System Settings > Keyboard > Keyboard Shortcuts > Mission Control > Move left a space / Move right a space**.
+**System Settings > Keyboard > Keyboard Shortcuts > Mission Control > Move left
+a space / Move right a space**
 
-## Mobile Setup
+### Development configuration
 
-The mobile app is a React Native + TypeScript Expo app.
+Supported desktop environment variables include:
+
+- `REMOTE_CONTROL_PORT`: WebSocket port; defaults to `8787`
+- `REMOTE_DEVICE_NAME`: override the displayed host name
+- `REMOTE_MOBILE_SERVER=0|1`: disable or force automatic Expo startup
+- `REMOTE_MOBILE_DIR`: mobile workspace used by desktop Expo startup
+- `REMOTE_MOBILE_COMMAND`: command used to start the mobile server
+- `REMOTE_EXPO_URL`: show a specific already-running Expo URL
+- `REACT_NATIVE_PACKAGER_HOSTNAME`: host used when constructing the Expo URL
+- `REMOTE_DEVTOOLS=1`: open Electron developer tools
+- `REMOTE_LEGACY_RAW_TOKEN_AUTH=0|1`: control migration-only raw-token auth
+
+Example:
 
 ```bash
-cd remote-control/mobile
-npm install
-npx expo install --fix
-npm run start
+REMOTE_CONTROL_PORT=9000 REMOTE_DEVICE_NAME="Living Room Mac" npm run desktop:dev
 ```
 
-Open the app on your iPhone with Expo Go, or run it with an iOS simulator. Enter the desktop IP shown in the Electron window and tap **Connect**.
+## Verification
 
-## Example Startup Flow
-
-1. Start the desktop app:
-
-   ```bash
-   cd remote-control/desktop
-   npm run dev
-   ```
-
-2. Note the displayed IP address, for example `192.168.1.25`.
-3. Start the mobile app:
-
-   ```bash
-   cd remote-control/mobile
-   npm run start
-   ```
-
-4. On iPhone, enter `192.168.1.25` and connect.
-
-## Package Desktop App For Mac
-
-Build the macOS app on the iMac, not from Windows, because Electron and nut.js need macOS native binaries. The packaging script intentionally refuses to run on Windows so it does not create a broken Mac app.
+Run all protocol, mobile, and desktop tests followed by all TypeScript checks:
 
 ```bash
-cd remote-control
+npm run verify
+```
+
+Or run type checks alone:
+
+```bash
+npm run typecheck
+```
+
+The test suites cover protocol validation and encryption, pairing-token and
+device-token behavior, secure server behavior, and selected mobile navigation
+and remote-control logic. They do not replace manual permission, native input,
+multi-display, or device-to-device testing.
+
+## Desktop releases
+
+Desktop packaging is handled by electron-builder. The current desktop version
+and product metadata are in `desktop/package.json`. The packaged product name is
+**Remote Control**, while this repository and document refer to the product as
+Mac Remote.
+
+### macOS
+
+Run macOS builds on macOS:
+
+```bash
 npm install
 npm run desktop:pack:mac
 ```
 
-The unpacked app is created under:
+This creates an unpacked **Remote Control.app** under `desktop/release/`
+(normally `desktop/release/mac/Remote Control.app`; electron-builder may add an
+architecture suffix to the containing directory).
 
-```text
-desktop/release/mac/Mac Remote.app
-```
-
-When the desktop app runs in development, it also starts the Expo mobile server
-in the background with `npm run start -- --clear` from the mobile workspace and
-shows the Expo QR code. Packaged desktop apps do not start Expo and do not show
-the Expo QR by default; they show only the pairing QR for the mobile app.
-
-To disable the automatic mobile server:
-
-```bash
-REMOTE_MOBILE_SERVER=0 npm run desktop:dev
-```
-
-To force Expo tools back on, for example when testing a packaged desktop build
-with a separate mobile checkout:
-
-```bash
-REMOTE_MOBILE_SERVER=1 REMOTE_MOBILE_DIR=/path/to/remote-control/mobile open "desktop/release/mac/Mac Remote.app"
-```
-
-To show an Expo QR for an already-running Expo server without auto-starting it:
-
-```bash
-REMOTE_MOBILE_SERVER=0 REMOTE_EXPO_URL=exp://192.168.1.25:8081 npm run desktop:dev
-```
-
-For a DMG and ZIP:
+Create DMG and ZIP artifacts with:
 
 ```bash
 npm run desktop:dist:mac
 ```
 
-Those files are created in `desktop/release/`.
+The current configuration sets `identity: null`; generated macOS artifacts are
+not code-signed or notarized. Gatekeeper can warn or block them. A distributable
+release requires an owned application identifier, Developer ID signing,
+notarization, and a manual smoke test of Accessibility-controlled actions.
 
-This prototype is unsigned. On your own Mac, open it with right-click > **Open** the first time, then grant Accessibility permission in **System Settings > Privacy & Security > Accessibility**.
+### Windows
 
-## Package Desktop App For Windows
-
-Build the Windows app on Windows so Electron and nut.js use Windows native binaries.
+Run Windows builds on Windows:
 
 ```bash
-cd remote-control
 npm install
 npm run desktop:pack:win
 ```
 
-The unpacked app is created under:
+This creates an unpacked Windows application under `desktop/release/`.
 
-```text
-desktop/release/win-unpacked/
-```
-
-For an NSIS installer and ZIP:
+Create an NSIS installer and ZIP with:
 
 ```bash
 npm run desktop:dist:win
 ```
 
-Those files are created in `desktop/release/`.
+No Windows signing certificate is configured. SmartScreen can warn about the
+generated installer until it is signed by a trusted certificate.
 
-This prototype is unsigned. Windows SmartScreen may warn until the installer is code-signed with a trusted certificate.
+Packaged desktop apps do not start Expo or show an Expo QR by default. They show
+only the Mac Remote pairing QR.
 
-## Mobile Release Builds
+## Mobile releases
 
-The mobile app can still run through Expo Go for development. Release metadata is defined in `mobile/app.json` and `eas.json`:
+Mobile metadata is defined in `mobile/app.json`; EAS profiles are defined in
+`eas.json`.
+
+Current identifiers:
 
 - iOS bundle identifier: `local.remote-control.mobile`
 - Android package: `local.remotecontrol.mobile`
-- Android release build profile: `eas build --platform android --profile production`
-- Android internal APK build profile: `eas build --platform android --profile preview`
 
-For a real public release, replace the `local.*` identifiers with bundle IDs/package names that you control before submitting to the stores. iOS App Store and TestFlight distribution require an Apple Developer account.
-
-## Message Protocol
-
-The mobile app sends JSON over WebSocket:
-
-```ts
-{ type: "authChallenge", nonce: string }
-{ type: "authRequest", clientId: string, clientName: string, pairingTokenId?: string, pairingTokenProof?: string, deviceTokenProof?: string }
-{ type: "authAccepted", deviceToken?: string, paired: boolean }
-{ type: "authRejected", reason: "missingCredentials" | "pairingTokenExpired" | "pairingTokenInvalid" | "pairingTokenUsed" | "deviceNotTrusted" }
-{ type: "moveMouse", dx: number, dy: number }
-{ type: "leftClick" }
-{ type: "shortcut", shortcut: "netflix" | "disney" | "amazon" | "youtube" | "spotify" }
-{ type: "typeText", text: string }
-{ type: "pressKey", key: "backspace" | "enter" }
-{ type: "adjustBrightness", delta: -1 | 1 }
-{ type: "setVolume", value: number }
-{ type: "ping", id: string }
-{ type: "pong", id: string }
-```
-
-## Configuration
-
-Pointer sensitivity is controlled from the mobile app settings. The desktop
-host treats incoming pointer deltas as already scaled by the mobile app.
-
-The WebSocket port defaults to `8787` and can be changed with:
+Development and internal builds:
 
 ```bash
-REMOTE_CONTROL_PORT=9000 npm run dev
+npx eas build --platform ios --profile development
+npx eas build --platform android --profile development
+npx eas build --platform android --profile preview
 ```
 
-## Start On Mac Login
+The Android `preview` profile produces an internal APK. Production builds use:
 
-Register a macOS LaunchAgent to run `npm run dev` from this repo whenever your user logs in:
+```bash
+npx eas build --platform ios --profile production
+npx eas build --platform android --profile production
+```
+
+The production profile auto-increments build versions. The submit profile is
+otherwise empty, so store credentials, listing metadata, review compliance, and
+submission remain external release tasks.
+
+The `local.*` identifiers are development placeholders. Replace them with
+identifiers owned by the publisher before App Store or Play Store distribution.
+Apple distribution also requires an Apple Developer account.
+
+There is no release CI workflow in this repository. Releases are local,
+platform-specific operations and should be preceded by `npm run verify` plus
+manual macOS, Windows, iOS, and Android smoke tests for the platforms being
+shipped.
+
+## Operational limitations
+
+- Phone and desktop must be able to reach each other directly on the same
+  network. Guest Wi-Fi client isolation, VPN routing, firewalls, or changed DHCP
+  addresses can prevent connection or invalidate a saved host address.
+- The desktop application must remain running for remote control to work.
+- There is no cloud relay, NAT traversal, Internet remote access, or automatic
+  service discovery beyond the LAN address embedded in the QR code.
+- macOS input control depends on Accessibility permission; Windows input can be
+  constrained by privilege boundaries and system policy.
+- Brightness support is hardware-specific. Windows uses WMI-supported internal
+  displays; macOS uses Apple display interfaces and bundled brightness helpers.
+- TV classification is inferred from the display name and can be wrong.
+- Preset application behavior differs by host platform and can depend on
+  Chrome, Spotify, or Prime Video being installed.
+- The mobile UI is phone- and portrait-oriented; iPad and browser releases are
+  not supported.
+- Desktop and mobile releases are currently versioned `0.1.0` and use
+  development application identifiers.
+
+## Commercial and account model
+
+The implemented product has no commercial layer:
+
+- no subscription, purchase, trial, entitlement, advertisement, or paywall code
+- no billing SDK or store receipt validation
+- no hosted account, synchronization, telemetry, or licensing backend
+- no feature tiers; all implemented controls are local and available after
+  pairing
+
+Account and sign-in screens exist in the source tree, but the
+`accountAuthentication` feature flag is disabled. They create only a local
+placeholder session and do not authenticate against a service. They are not
+part of the active product flow.
+
+The npm workspaces are marked `private`, and this repository contains no license
+file. That does not establish a free, open-source, or paid distribution model.
+Pricing, customer licensing, support, code-signing identities, store ownership,
+and sales infrastructure are outside the implemented system.
+
+## macOS development autostart
+
+For a source checkout used as a development host, install a per-user LaunchAgent
+that runs `npm run dev` at login:
 
 ```bash
 npm run autostart:install
 ```
 
-To remove it:
+Remove it with:
 
 ```bash
 npm run autostart:uninstall
 ```
 
-LaunchAgent logs are written to `~/Library/Logs/local.remote-control.dev.out.log` and `~/Library/Logs/local.remote-control.dev.err.log`.
+Logs are written to:
 
-## Notes
+```text
+~/Library/Logs/local.remote-control.dev.out.log
+~/Library/Logs/local.remote-control.dev.err.log
+```
 
-- This is intended only for trusted home Wi-Fi.
-- Pairing QR codes include a short-lived single-use token. After first pairing,
-  the phone reconnects by proving it has a saved device token without sending
-  the raw token over the socket.
-- The shortcut commands are macOS-specific.
-- The mobile app is pinned to Expo SDK 54 so it works with Expo Go `54.x`.
-
-## Release Checklist
-
-- Replace `local.*` app identifiers with owned production identifiers.
-- Sign and notarize the macOS app before distributing outside your own Mac.
-- Sign the Windows installer to reduce SmartScreen warnings.
-- Build mobile release artifacts through EAS or native IDE tooling.
-- Keep the Expo QR/mobile dev server enabled only for development builds when moving to a production desktop app.
-- Run `npm test`, desktop and mobile typechecks, and a manual macOS/Windows/iOS/Android smoke test before release.
-
-## Encryption Plan
-
-Current auth uses a challenge-response proof so the saved device token is not
-sent raw over the LAN during normal reconnect. The WebSocket transport itself is
-still `ws://`, so the next security layer should be app-level encryption:
-
-1. Keep `authChallenge`, pairing token proof, and device token proof as the
-   readable handshake.
-2. Add a client nonce to the auth proof response and derive a per-session key
-   from the token hash, desktop nonce, client nonce, and protocol version.
-3. Add a new encrypted envelope message, for example
-   `{ type: "encrypted", nonce, sequence, payload }`.
-4. Encrypt control messages after auth using authenticated encryption such as
-   XChaCha20-Poly1305 or AES-GCM from a vetted cross-platform crypto package.
-5. Reject replayed or out-of-order encrypted command sequence numbers.
-6. Keep `ping`, `pong`, `authChallenge`, `authRequest`, and `authRejected`
-   readable so connection setup and latency checks remain simple.
-
-This avoids self-signed TLS certificate trust problems on iOS/Android while
-still protecting command payloads on the local network.
+The desktop UI controls the same kind of LaunchAgent: it writes a plist that
+runs `npm run dev` from a resolved working directory. It does not register the
+packaged application executable. This feature therefore requires a usable
+source checkout, Node.js, and npm, and should be treated as development
+autostart rather than packaged-app autostart.
