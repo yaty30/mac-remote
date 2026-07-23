@@ -48,6 +48,10 @@ export function useRemoteConnection(
   // Mirrors the trusted-device tokens held in SecureStore so the connection
   // flow can read a device's credential synchronously.
   const deviceTokensRef = useRef<Map<string, string>>(new Map());
+  // Tokens whose SecureStore write failed. They are kept inline in AsyncStorage
+  // as a durable fallback and retried, so a SecureStore failure never destroys
+  // an existing credential.
+  const pendingTokensRef = useRef<Map<string, string>>(new Map());
   const [host, setHost] = useState("");
   const [hostName, setHostName] = useState("");
   const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
@@ -153,12 +157,19 @@ export function useRemoteConnection(
           : devices;
 
       // Move any tokens stored inline by older builds into SecureStore, then
-      // load every known device's credential into the in-memory cache.
+      // load every known device's credential into the in-memory cache. A token
+      // is only dropped from AsyncStorage once SecureStore confirms the write;
+      // otherwise it stays inline (pendingTokensRef) and is retried next launch.
       const legacyTokens = extractLegacyDeviceTokens(savedDevicesRaw);
       await Promise.all(
         legacyTokens.map(async ({ id, deviceToken }) => {
-          await writeDeviceToken(id, deviceToken);
           deviceTokensRef.current.set(id, deviceToken);
+
+          const persisted = await writeDeviceToken(id, deviceToken);
+
+          if (!persisted) {
+            pendingTokensRef.current.set(id, deviceToken);
+          }
         }),
       );
       await Promise.all(
@@ -191,7 +202,7 @@ export function useRemoteConnection(
         legacyTokens.length > 0 ||
         (legacyHost && nextDevices.length !== devices.length)
       ) {
-        persistSavedDevices(nextDevices);
+        saveDeviceMetadata(nextDevices);
       }
 
       if (legacyHost) {
@@ -261,7 +272,7 @@ export function useRemoteConnection(
         device.host === cleanHost ? { ...device, platform } : device,
       );
 
-      persistSavedDevices(nextDevices);
+      saveDeviceMetadata(nextDevices);
       return nextDevices;
     });
   }
@@ -346,14 +357,7 @@ export function useRemoteConnection(
       onAccepted: (nextDeviceToken) => {
         const resolvedToken = nextDeviceToken ?? deviceToken;
 
-        if (resolvedToken) {
-          setStoredDeviceToken(cleanHost, resolvedToken);
-        }
-
-        persistDevice({
-          host: cleanHost,
-          name: displayName,
-        });
+        void persistTrustedDevice(cleanHost, displayName, resolvedToken);
       },
       onRejected: (reason) => {
         handleAuthRejected(cleanHost, reason);
@@ -406,26 +410,59 @@ export function useRemoteConnection(
 
     setSavedDevices((currentDevices) => {
       const nextDevices = upsertDevice(currentDevices, nextDevice);
-      persistSavedDevices(nextDevices);
+      saveDeviceMetadata(nextDevices);
       return nextDevices;
     });
+  }
+
+  function saveDeviceMetadata(devices: SavedDevice[]) {
+    persistSavedDevices(devices, pendingTokensRef.current);
   }
 
   function getStoredDeviceToken(deviceHost: string): string | undefined {
     return deviceTokensRef.current.get(getDeviceId(deviceHost));
   }
 
-  function setStoredDeviceToken(deviceHost: string, token: string) {
+  async function persistDeviceToken(
+    deviceHost: string,
+    token: string,
+  ): Promise<boolean> {
     const id = getDeviceId(deviceHost);
 
     deviceTokensRef.current.set(id, token);
-    void writeDeviceToken(id, token);
+
+    const persisted = await writeDeviceToken(id, token);
+
+    if (persisted) {
+      pendingTokensRef.current.delete(id);
+    } else {
+      // SecureStore failed; keep the token inline in AsyncStorage so a restart
+      // can retry instead of losing the credential.
+      pendingTokensRef.current.set(id, token);
+    }
+
+    return persisted;
+  }
+
+  async function persistTrustedDevice(
+    deviceHost: string,
+    displayName: string | undefined,
+    token: string | undefined,
+  ) {
+    // Persist the credential before the metadata so a failed SecureStore write
+    // is recorded as pending and retained inline by saveDeviceMetadata.
+    if (token) {
+      await persistDeviceToken(deviceHost, token);
+    }
+
+    persistDevice({ host: deviceHost, name: displayName });
   }
 
   function removeStoredDeviceToken(deviceHost: string) {
     const id = getDeviceId(deviceHost);
 
     deviceTokensRef.current.delete(id);
+    pendingTokensRef.current.delete(id);
     void removeDeviceToken(id);
   }
 
@@ -470,7 +507,7 @@ export function useRemoteConnection(
 
     setSavedDevices((currentDevices) => {
       const nextDevices = currentDevices.filter((item) => item.id !== device.id);
-      persistSavedDevices(nextDevices);
+      saveDeviceMetadata(nextDevices);
       return nextDevices;
     });
 
@@ -501,7 +538,7 @@ export function useRemoteConnection(
         item.id === device.id ? { ...item, name: cleanName } : item,
       );
 
-      persistSavedDevices(nextDevices);
+      saveDeviceMetadata(nextDevices);
       return nextDevices;
     });
 
