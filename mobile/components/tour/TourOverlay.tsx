@@ -62,8 +62,12 @@ export function TourOverlay({
   const [targetBounds, setTargetBounds] = useState<TourTargetBounds | null>(
     null,
   );
+  const [visibleStep, setVisibleStep] = useState<TourStep | undefined>();
+  const [visibleStepIndex, setVisibleStepIndex] = useState(0);
   const [tooltipHeight, setTooltipHeight] = useState(TOOLTIP_ESTIMATED_HEIGHT);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const renderedStep = visibleStep ?? activeStep;
+  const renderedStepIndex = visibleStep ? visibleStepIndex : currentStep;
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", (event) => {
@@ -80,6 +84,17 @@ export function TourOverlay({
   }, []);
 
   useEffect(() => {
+    if (isVisible) {
+      return;
+    }
+
+    setVisibleStep(undefined);
+    setTargetBounds(null);
+    tooltipOpacity.setValue(0);
+    tooltipTranslateY.setValue(8);
+  }, [isVisible, tooltipOpacity, tooltipTranslateY]);
+
+  useEffect(() => {
     if (!isVisible || !activeStep) {
       return;
     }
@@ -87,20 +102,7 @@ export function TourOverlay({
     let cancelled = false;
 
     const runTransition = async () => {
-      Animated.parallel([
-        Animated.timing(tooltipOpacity, {
-          duration: 70,
-          easing: Easing.out(Easing.cubic),
-          toValue: 0,
-          useNativeDriver: true,
-        }),
-        Animated.timing(tooltipTranslateY, {
-          duration: 70,
-          easing: Easing.out(Easing.cubic),
-          toValue: 8,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      await animateTooltipOut(tooltipOpacity, tooltipTranslateY);
 
       const measured = activeStep.targetRef?.current
         ? await measureRef(activeStep.targetRef)
@@ -112,6 +114,8 @@ export function TourOverlay({
 
       const nextBounds = measured ? expandBounds(measured) : null;
       setTargetBounds(nextBounds);
+      setVisibleStep(activeStep);
+      setVisibleStepIndex(currentStep);
 
       if (nextBounds) {
         Animated.parallel([
@@ -144,13 +148,13 @@ export function TourOverlay({
 
       Animated.parallel([
         Animated.timing(tooltipOpacity, {
-          duration: 150,
+          duration: 110,
           easing: Easing.out(Easing.cubic),
           toValue: 1,
           useNativeDriver: true,
         }),
         Animated.timing(tooltipTranslateY, {
-          duration: 150,
+          duration: 110,
           easing: Easing.out(Easing.cubic),
           toValue: 0,
           useNativeDriver: true,
@@ -192,7 +196,7 @@ export function TourOverlay({
       resolveTooltipPosition({
         insets,
         keyboardHeight,
-        placement: activeStep?.placement,
+        placement: renderedStep?.placement,
         targetBounds,
         tooltipHeight,
         tooltipWidth,
@@ -200,9 +204,9 @@ export function TourOverlay({
         windowWidth,
       }),
     [
-      activeStep?.placement,
       insets,
       keyboardHeight,
+      renderedStep?.placement,
       targetBounds,
       tooltipHeight,
       tooltipWidth,
@@ -211,7 +215,7 @@ export function TourOverlay({
     ],
   );
 
-  if (!isVisible || !activeStep) {
+  if (!isVisible || !renderedStep) {
     return null;
   }
 
@@ -242,20 +246,42 @@ export function TourOverlay({
             transform: [{ translateY: tooltipTranslateY }],
             width: tooltipWidth,
           }}
-          currentStep={currentStep}
-          isFirstStep={isFirstStep}
-          isLastStep={isLastStep}
+          currentStep={renderedStepIndex}
+          isFirstStep={renderedStepIndex === 0}
+          isLastStep={renderedStepIndex === totalSteps - 1}
           onComplete={onComplete}
           onLayout={setTooltipHeight}
           onNext={onNext}
           onPrevious={onPrevious}
           onSkip={onSkip}
-          step={activeStep}
+          step={renderedStep}
           totalSteps={totalSteps}
         />
       </View>
     </Modal>
   );
+}
+
+function animateTooltipOut(
+  opacity: Animated.Value,
+  translateY: Animated.Value,
+): Promise<void> {
+  return new Promise((resolve) => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        duration: 45,
+        easing: Easing.out(Easing.cubic),
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        duration: 45,
+        easing: Easing.out(Easing.cubic),
+        toValue: 8,
+        useNativeDriver: true,
+      }),
+    ]).start(() => resolve());
+  });
 }
 
 function DimmedBackdrop({ bounds }: { bounds: TourTargetBounds | null }) {

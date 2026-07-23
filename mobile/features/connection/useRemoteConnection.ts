@@ -544,5 +544,12 @@ function getAuthRejectedMessage(reason: AuthRejectedReason): string {
     return "This phone is not trusted anymore. Scan the desktop QR code again.";
   }
 
+  if (
+    reason === "unsupportedEncryptionVersion" ||
+    reason === "unsupportedProtocolVersion"
+  ) {
+    return "The desktop app needs the latest security update before this phone can pair.";
+  }
+
   return "Pairing failed. Scan the desktop QR code again.";
 }
