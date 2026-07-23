@@ -23,6 +23,14 @@ const playbackControls = await importTypeScriptModule(
     react: "export function useCallback(callback) { return callback; }\nexport function useState(initial) { return [initial, () => {}]; }",
   },
 );
+const deviceUtils = await importTypeScriptModule(
+  path.join(projectRoot, "features/connection/deviceUtils.ts"),
+  {
+    "@react-native-async-storage/async-storage":
+      "export default { setItem: async () => {}, getItem: async () => null };",
+    "./storageKeys": 'export const DEVICES_STORAGE_KEY = "remote-control:devices";',
+  },
+);
 
 test("keyboard text is split into text chunks and enter commands", () => {
   assert.deepEqual(
@@ -126,6 +134,73 @@ test("device switching completes only for the pending connected host", () => {
 test("playback toggle chooses the correct remote command", () => {
   assert.equal(playbackControls.getPlaybackToggleCommand(false), "mediaPause");
   assert.equal(playbackControls.getPlaybackToggleCommand(true), "mediaPlay");
+});
+
+test("parsed saved devices never expose credential fields", () => {
+  const raw = JSON.stringify([
+    {
+      host: "192.168.1.20:8787",
+      name: "Studio Mac",
+      platform: "darwin",
+      deviceToken: "secret-token",
+      lastConnectedAt: 42,
+    },
+  ]);
+
+  const devices = deviceUtils.parseSavedDevices(raw);
+
+  assert.deepEqual(devices, [
+    {
+      id: "192.168.1.20:8787",
+      name: "Studio Mac",
+      host: "192.168.1.20:8787",
+      platform: "darwin",
+      lastConnectedAt: 42,
+    },
+  ]);
+  assert.equal("deviceToken" in devices[0], false);
+});
+
+test("legacy device tokens are extracted for migration", () => {
+  const raw = JSON.stringify([
+    { host: "Studio-Mac.local", deviceToken: "  legacy-token  " },
+    { host: "No-Token.local", name: "No token" },
+    { host: "   ", deviceToken: "ignored" },
+  ]);
+
+  assert.deepEqual(deviceUtils.extractLegacyDeviceTokens(raw), [
+    {
+      id: "studio-mac.local",
+      host: "Studio-Mac.local",
+      deviceToken: "legacy-token",
+    },
+  ]);
+  assert.deepEqual(deviceUtils.extractLegacyDeviceTokens(null), []);
+});
+
+test("upserting a device does not reintroduce a credential field", () => {
+  const merged = deviceUtils.upsertDevice(
+    [
+      {
+        id: "mac.local",
+        name: "Mac",
+        host: "mac.local",
+        platform: "darwin",
+        lastConnectedAt: 1,
+      },
+    ],
+    {
+      id: "mac.local",
+      name: "Mac",
+      host: "mac.local",
+      lastConnectedAt: 2,
+    },
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal("deviceToken" in merged[0], false);
+  assert.equal(merged[0].platform, "darwin");
+  assert.equal(merged[0].lastConnectedAt, 2);
 });
 
 async function importTypeScriptModule(sourcePath, moduleSources = {}) {

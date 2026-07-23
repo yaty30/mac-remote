@@ -11,6 +11,5 @@ export interface SavedDevice {
   name: string;
   host: string;
   platform?: HostPlatform;
-  deviceToken?: string;
   lastConnectedAt: number;
 }

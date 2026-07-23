@@ -8,6 +8,7 @@ import type {
 } from "../../types/protocol";
 import type { AuthOptions, RemoteSocket } from "../../websocket/RemoteSocket";
 import {
+  extractLegacyDeviceTokens,
   getDeviceId,
   getDeviceNameFromHost,
   parseSavedDevices,
@@ -15,6 +16,11 @@ import {
   sanitizeHostName,
   upsertDevice,
 } from "./deviceUtils";
+import {
+  readDeviceToken,
+  removeDeviceToken,
+  writeDeviceToken,
+} from "./deviceCredentials";
 import {
   CLIENT_ID_STORAGE_KEY,
   DEVICES_STORAGE_KEY,
@@ -39,6 +45,9 @@ export function useRemoteConnection(
   const clientIdRef = useRef("");
   const hostRef = useRef("");
   const statusRef = useRef<ConnectionStatus>("idle");
+  // Mirrors the trusted-device tokens held in SecureStore so the connection
+  // flow can read a device's credential synchronously.
+  const deviceTokensRef = useRef<Map<string, string>>(new Map());
   const [host, setHost] = useState("");
   const [hostName, setHostName] = useState("");
   const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
@@ -115,66 +124,95 @@ export function useRemoteConnection(
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY),
-      AsyncStorage.getItem(HOST_STORAGE_KEY),
-      AsyncStorage.getItem(HOST_NAME_STORAGE_KEY),
-      AsyncStorage.getItem(DEVICES_STORAGE_KEY),
-    ])
-      .then(([savedClientId, savedHost, savedHostName, savedDevicesRaw]) => {
-        if (cancelled) {
-          return;
-        }
+    async function hydrateConnection() {
+      const [savedClientId, savedHost, savedHostName, savedDevicesRaw] =
+        await Promise.all([
+          AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY),
+          AsyncStorage.getItem(HOST_STORAGE_KEY),
+          AsyncStorage.getItem(HOST_NAME_STORAGE_KEY),
+          AsyncStorage.getItem(DEVICES_STORAGE_KEY),
+        ]);
 
-        const clientId = savedClientId?.trim() || createClientId();
-        const devices = parseSavedDevices(savedDevicesRaw);
-        const legacyHost = savedHost?.trim();
-        const legacyName = sanitizeHostName(savedHostName);
-        const nextDevices =
-          legacyHost && !devices.some((device) => device.host === legacyHost)
-            ? upsertDevice(devices, {
-                id: getDeviceId(legacyHost),
-                name: legacyName ?? getDeviceNameFromHost(legacyHost),
-                host: legacyHost,
-                platform: undefined,
-                lastConnectedAt: Date.now(),
-              })
-            : devices;
+      if (cancelled) {
+        return;
+      }
 
-        setSavedDevices(nextDevices);
-        clientIdRef.current = clientId;
+      const clientId = savedClientId?.trim() || createClientId();
+      const devices = parseSavedDevices(savedDevicesRaw);
+      const legacyHost = savedHost?.trim();
+      const legacyName = sanitizeHostName(savedHostName);
+      const nextDevices =
+        legacyHost && !devices.some((device) => device.host === legacyHost)
+          ? upsertDevice(devices, {
+              id: getDeviceId(legacyHost),
+              name: legacyName ?? getDeviceNameFromHost(legacyHost),
+              host: legacyHost,
+              platform: undefined,
+              lastConnectedAt: Date.now(),
+            })
+          : devices;
 
-        if (!savedClientId) {
-          AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId).catch(() => {
-            // Ignore storage errors.
-          });
-        }
-        if (legacyHost && nextDevices.length !== devices.length) {
-          persistSavedDevices(nextDevices);
-        }
-
-        if (legacyHost) {
-          const device = nextDevices.find((item) => item.host === legacyHost);
-
-          hostRef.current = legacyHost;
-          setHost(legacyHost);
-          setHostName(device?.name ?? legacyName ?? "");
-
-          if (!device?.deviceToken) {
-            setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
-            statusRef.current = "idle";
-            setStatus("idle");
+      // Move any tokens stored inline by older builds into SecureStore, then
+      // load every known device's credential into the in-memory cache.
+      const legacyTokens = extractLegacyDeviceTokens(savedDevicesRaw);
+      await Promise.all(
+        legacyTokens.map(async ({ id, deviceToken }) => {
+          await writeDeviceToken(id, deviceToken);
+          deviceTokensRef.current.set(id, deviceToken);
+        }),
+      );
+      await Promise.all(
+        nextDevices.map(async (device) => {
+          if (deviceTokensRef.current.has(device.id)) {
             return;
           }
 
-          connectSocket(
-            legacyHost,
-            device?.name ?? legacyName ?? undefined,
-            undefined,
-            device,
-          );
+          const token = await readDeviceToken(device.id);
+
+          if (token) {
+            deviceTokensRef.current.set(device.id, token);
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setSavedDevices(nextDevices);
+      clientIdRef.current = clientId;
+
+      if (!savedClientId) {
+        AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId).catch(() => {
+          // Ignore storage errors.
+        });
+      }
+      if (
+        legacyTokens.length > 0 ||
+        (legacyHost && nextDevices.length !== devices.length)
+      ) {
+        persistSavedDevices(nextDevices);
+      }
+
+      if (legacyHost) {
+        const device = nextDevices.find((item) => item.host === legacyHost);
+
+        hostRef.current = legacyHost;
+        setHost(legacyHost);
+        setHostName(device?.name ?? legacyName ?? "");
+
+        if (!getStoredDeviceToken(legacyHost)) {
+          setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
+          statusRef.current = "idle";
+          setStatus("idle");
+          return;
         }
-      })
+
+        connectSocket(legacyHost, device?.name ?? legacyName ?? undefined);
+      }
+    }
+
+    hydrateConnection()
       .catch(() => {
         // Ignore storage errors.
       })
@@ -278,7 +316,6 @@ export function useRemoteConnection(
       cleanHost,
       displayName,
       pairingToken,
-      matchingDevice,
       usePendingConnection ? "pending" : "active",
     );
   }
@@ -287,11 +324,10 @@ export function useRemoteConnection(
     cleanHost: string,
     displayName?: string,
     pairingToken?: string,
-    device?: SavedDevice,
     mode: ConnectionMode = "active",
   ) {
     const clientId = ensureStoredClientId(clientIdRef);
-    const deviceToken = pairingToken ? undefined : device?.deviceToken;
+    const deviceToken = pairingToken ? undefined : getStoredDeviceToken(cleanHost);
 
     if (!pairingToken && !deviceToken) {
       setAuthError(getAuthRejectedMessage("deviceNotTrusted"));
@@ -308,10 +344,15 @@ export function useRemoteConnection(
       pairingToken,
       deviceToken,
       onAccepted: (nextDeviceToken) => {
+        const resolvedToken = nextDeviceToken ?? deviceToken;
+
+        if (resolvedToken) {
+          setStoredDeviceToken(cleanHost, resolvedToken);
+        }
+
         persistDevice({
           host: cleanHost,
           name: displayName,
-          deviceToken: nextDeviceToken ?? deviceToken,
         });
       },
       onRejected: (reason) => {
@@ -347,11 +388,7 @@ export function useRemoteConnection(
     socket.connect(cleanHost, auth);
   }
 
-  function persistDevice(input: {
-    host: string;
-    name?: string;
-    deviceToken?: string;
-  }) {
+  function persistDevice(input: { host: string; name?: string }) {
     const cleanHost = input.host.trim();
 
     if (!cleanHost) {
@@ -364,7 +401,6 @@ export function useRemoteConnection(
       host: cleanHost,
       platform: savedDevices.find((device) => device.host === cleanHost)
         ?.platform,
-      deviceToken: input.deviceToken,
       lastConnectedAt: Date.now(),
     };
 
@@ -375,6 +411,24 @@ export function useRemoteConnection(
     });
   }
 
+  function getStoredDeviceToken(deviceHost: string): string | undefined {
+    return deviceTokensRef.current.get(getDeviceId(deviceHost));
+  }
+
+  function setStoredDeviceToken(deviceHost: string, token: string) {
+    const id = getDeviceId(deviceHost);
+
+    deviceTokensRef.current.set(id, token);
+    void writeDeviceToken(id, token);
+  }
+
+  function removeStoredDeviceToken(deviceHost: string) {
+    const id = getDeviceId(deviceHost);
+
+    deviceTokensRef.current.delete(id);
+    void removeDeviceToken(id);
+  }
+
   function selectSavedDevice(device: SavedDevice) {
     connectToHost(device.host, device.name);
   }
@@ -383,16 +437,7 @@ export function useRemoteConnection(
     setAuthError(getAuthRejectedMessage(reason));
 
     if (reason === "deviceNotTrusted") {
-      setSavedDevices((currentDevices) => {
-        const nextDevices = currentDevices.map((device) =>
-          device.host === hostToUpdate
-            ? { ...device, deviceToken: undefined }
-            : device,
-        );
-
-        persistSavedDevices(nextDevices);
-        return nextDevices;
-      });
+      removeStoredDeviceToken(hostToUpdate);
     }
   }
 
@@ -421,6 +466,8 @@ export function useRemoteConnection(
   }
 
   function deleteSavedDevice(device: SavedDevice) {
+    removeStoredDeviceToken(device.host);
+
     setSavedDevices((currentDevices) => {
       const nextDevices = currentDevices.filter((item) => item.id !== device.id);
       persistSavedDevices(nextDevices);
