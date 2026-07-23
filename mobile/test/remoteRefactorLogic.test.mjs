@@ -224,6 +224,28 @@ test("upserting a device does not reintroduce a credential field", () => {
   assert.equal(merged[0].lastConnectedAt, 2);
 });
 
+test("storage payload omits tokens once they are in SecureStore", () => {
+  const payload = deviceUtils.buildDeviceStoragePayload([
+    { id: "mac.local", name: "Mac", host: "mac.local", lastConnectedAt: 1 },
+  ]);
+
+  assert.equal("deviceToken" in payload[0], false);
+});
+
+test("storage payload retains tokens that failed to reach SecureStore", () => {
+  const pendingTokens = new Map([["mac.local", "fallback-token"]]);
+  const payload = deviceUtils.buildDeviceStoragePayload(
+    [
+      { id: "mac.local", name: "Mac", host: "mac.local", lastConnectedAt: 1 },
+      { id: "pc.local", name: "PC", host: "pc.local", lastConnectedAt: 2 },
+    ],
+    pendingTokens,
+  );
+
+  assert.equal(payload[0].deviceToken, "fallback-token");
+  assert.equal("deviceToken" in payload[1], false);
+});
+
 test("writing a device token reports success and persists it", async () => {
   globalThis.__secureStore = new Map();
   globalThis.__secureStoreFailWrite = false;

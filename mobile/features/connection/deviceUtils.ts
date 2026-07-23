@@ -141,8 +141,28 @@ export function upsertDevice(
     .slice(0, 20);
 }
 
-export function persistSavedDevices(devices: SavedDevice[]) {
-  AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(devices)).catch(
+// Builds the AsyncStorage payload. Device metadata is stored in the clear, but
+// a token is only ever written back inline when SecureStore could not persist
+// it (tracked in pendingTokens). This keeps a durable fallback so a failed
+// SecureStore write can never silently destroy a trusted-device credential.
+export function buildDeviceStoragePayload(
+  devices: SavedDevice[],
+  pendingTokens?: ReadonlyMap<string, string>,
+): Array<SavedDevice & { deviceToken?: string }> {
+  return devices.map((device) => {
+    const pendingToken = pendingTokens?.get(device.id);
+
+    return pendingToken ? { ...device, deviceToken: pendingToken } : { ...device };
+  });
+}
+
+export function persistSavedDevices(
+  devices: SavedDevice[],
+  pendingTokens?: ReadonlyMap<string, string>,
+) {
+  const payload = buildDeviceStoragePayload(devices, pendingTokens);
+
+  AsyncStorage.setItem(DEVICES_STORAGE_KEY, JSON.stringify(payload)).catch(
     () => {
       // Ignore storage errors; the in-memory device list is still updated.
     },
