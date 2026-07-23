@@ -55,10 +55,6 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
         "platform" in item && isHostPlatform(item.platform)
           ? item.platform
           : undefined;
-      const deviceToken =
-        "deviceToken" in item && typeof item.deviceToken === "string"
-          ? item.deviceToken.trim().slice(0, 256)
-          : undefined;
 
       return [
         {
@@ -66,10 +62,57 @@ export function parseSavedDevices(raw: string | null): SavedDevice[] {
           name: name || getDeviceNameFromHost(host),
           host,
           platform,
-          deviceToken,
           lastConnectedAt,
         },
       ];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export interface LegacyDeviceToken {
+  id: string;
+  host: string;
+  deviceToken: string;
+}
+
+// Reads trusted-device tokens that older builds serialized inline with the
+// device metadata, so they can be migrated into SecureStore on launch.
+export function extractLegacyDeviceTokens(
+  raw: string | null,
+): LegacyDeviceToken[] {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((item): LegacyDeviceToken[] => {
+      if (
+        typeof item !== "object" ||
+        item === null ||
+        !("host" in item) ||
+        typeof item.host !== "string" ||
+        !("deviceToken" in item) ||
+        typeof item.deviceToken !== "string"
+      ) {
+        return [];
+      }
+
+      const host = item.host.trim();
+      const deviceToken = item.deviceToken.trim().slice(0, 256);
+
+      if (!host || !deviceToken) {
+        return [];
+      }
+
+      return [{ id: getDeviceId(host), host, deviceToken }];
     });
   } catch {
     return [];
@@ -88,7 +131,6 @@ export function upsertDevice(
   const deviceWithPlatform = {
     ...nextDevice,
     platform: nextDevice.platform ?? existing?.platform,
-    deviceToken: nextDevice.deviceToken ?? existing?.deviceToken,
   };
   const withoutCurrent = devices.filter(
     (device) => device.host !== nextDevice.host,
