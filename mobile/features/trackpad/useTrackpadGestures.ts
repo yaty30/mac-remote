@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type {
   PanGestureHandlerGestureEvent,
   PanGestureHandlerStateChangeEvent,
@@ -19,6 +19,8 @@ interface TrackpadHandlers {
 
 const ZOOM_RATIO_THRESHOLD = 1.18;
 const SWIPE_DISTANCE = 60;
+const SINGLE_CLICK_DELAY_MS = 280;
+const DOUBLE_TAP_SUPPRESSION_MS = 120;
 
 export function useTrackpadGestures({
   onMove,
@@ -30,6 +32,17 @@ export function useTrackpadGestures({
 }: TrackpadHandlers) {
   const lastSinglePan = useRef({ x: 0, y: 0 });
   const pinchAnchor = useRef(1);
+  const pendingSingleClick = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDoubleTapAt = useRef(0);
+
+  const cancelPendingSingleClick = useCallback(() => {
+    if (pendingSingleClick.current !== null) {
+      clearTimeout(pendingSingleClick.current);
+      pendingSingleClick.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelPendingSingleClick, [cancelPendingSingleClick]);
 
   const handleSinglePan = useCallback(
     (event: PanGestureHandlerGestureEvent) => {
@@ -111,7 +124,18 @@ export function useTrackpadGestures({
   const handleSingleTap = useCallback(
     (event: TapGestureHandlerStateChangeEvent) => {
       if (event.nativeEvent.state === State.ACTIVE) {
-        onClick();
+        if (Date.now() - lastDoubleTapAt.current < DOUBLE_TAP_SUPPRESSION_MS) {
+          return;
+        }
+
+        if (pendingSingleClick.current !== null) {
+          return;
+        }
+
+        pendingSingleClick.current = setTimeout(() => {
+          pendingSingleClick.current = null;
+          onClick();
+        }, SINGLE_CLICK_DELAY_MS);
       }
     },
     [onClick],
@@ -120,19 +144,22 @@ export function useTrackpadGestures({
   const handleDoubleTap = useCallback(
     (event: TapGestureHandlerStateChangeEvent) => {
       if (event.nativeEvent.state === State.ACTIVE) {
+        lastDoubleTapAt.current = Date.now();
+        cancelPendingSingleClick();
         onDoubleClick();
       }
     },
-    [onDoubleClick],
+    [cancelPendingSingleClick, onDoubleClick],
   );
 
   const handleTwoFingerTap = useCallback(
     (event: TapGestureHandlerStateChangeEvent) => {
       if (event.nativeEvent.state === State.ACTIVE) {
+        cancelPendingSingleClick();
         onRightClick();
       }
     },
-    [onRightClick],
+    [cancelPendingSingleClick, onRightClick],
   );
 
   return {

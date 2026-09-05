@@ -629,7 +629,7 @@ export function Trackpad({
       maxDurationMs={180}
       maxDeltaX={12}
       maxDeltaY={12}
-      waitFor={[doubleTapRef, twoTapRef]}
+      simultaneousHandlers={[doubleTapRef, twoTapRef]}
       onHandlerStateChange={handleSingleTap}
     >
       <TapGestureHandler
@@ -639,6 +639,7 @@ export function Trackpad({
         maxDurationMs={180}
         maxDeltaX={14}
         maxDeltaY={14}
+        simultaneousHandlers={singleTapRef}
         onHandlerStateChange={handleDoubleTap}
       >
         <TapGestureHandler
@@ -647,6 +648,7 @@ export function Trackpad({
           maxDurationMs={220}
           maxDeltaX={16}
           maxDeltaY={16}
+          simultaneousHandlers={singleTapRef}
           onHandlerStateChange={handleTwoFingerTap}
         >
           <PanGestureHandler
