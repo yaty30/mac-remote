@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -21,26 +21,23 @@ import {
   Rose,
   Ghost,
   Icon,
-  LucideProps,
   Fan,
   Satellite,
-  Hamburger
+  Hamburger,
+  type LucideProps,
 } from "lucide-react-native";
 import { faceAlien, hockeyMask, pacMan, pumpkin, ufo, unicornHead } from "@lucide/lab";
 import { Clapperboard, ClosedCaption, CupSoda, Popcorn, Projector, Sofa, TvMinimalPlay, VenetianMask, Video } from "lucide-react-native/icons";
 
-/**
- * All Lucide React Native icons share the same component type.
- * Using an existing icon's type avoids relying on icon-name strings.
- */
-export type FloatingLucideIcon = typeof Rocket;
+type FloatingIconComponent = ComponentType<LucideProps>;
+export type FloatingLucideIcon = FloatingIconComponent;
 
-const FaceAlien = (props: LucideProps) => <Icon iconNode={faceAlien} {...props} />
-const UFO = (props: LucideProps) => <Icon iconNode={ufo} {...props} />
-const UnicornHead = (props: LucideProps) => <Icon iconNode={unicornHead} {...props} />
-const HockeyMask = (props: LucideProps) => <Icon iconNode={hockeyMask} {...props} />
-const PackMan = (props: LucideProps) => <Icon iconNode={pacMan} {...props} />
-const Pumpkin = (props: LucideProps) => <Icon iconNode={pumpkin} {...props} />;
+const FaceAlien: FloatingIconComponent = (props) => <Icon iconNode={faceAlien} {...props} />;
+const UFO: FloatingIconComponent = (props) => <Icon iconNode={ufo} {...props} />;
+const UnicornHead: FloatingIconComponent = (props) => <Icon iconNode={unicornHead} {...props} />;
+const HockeyMask: FloatingIconComponent = (props) => <Icon iconNode={hockeyMask} {...props} />;
+const PackMan: FloatingIconComponent = (props) => <Icon iconNode={pacMan} {...props} />;
+const Pumpkin: FloatingIconComponent = (props) => <Icon iconNode={pumpkin} {...props} />;
 
 const DEFAULT_ICONS: FloatingLucideIcon[] = [
   Balloon,
@@ -427,7 +424,7 @@ export function FloatingIconOverlay({
 
 const styles = StyleSheet.create({
   layer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "hidden",
   },
 

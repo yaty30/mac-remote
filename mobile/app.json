@@ -15,7 +15,10 @@
           "imageWidth": 128,
           "resizeMode": "contain"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "ios": {
       "supportsTablet": false,
@@ -31,8 +34,7 @@
         "foregroundImage": "./assets/splash/alien-splash.png",
         "backgroundColor": "#070707"
       },
-      "permissions": ["CAMERA"],
-      "edgeToEdgeEnabled": true
+      "permissions": ["CAMERA"]
     }
   }
 }

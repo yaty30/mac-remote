@@ -507,10 +507,10 @@ const styles = StyleSheet.create({
     position: "absolute",
   },
   fullBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: OVERLAY_COLOR,
   },
   root: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
 });

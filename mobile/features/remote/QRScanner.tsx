@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   scannerCamera: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   scannerGuide: {
     alignItems: "center",

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -10,9 +10,11 @@ import {
 } from "react-native";
 import { FloatingIconOverlay } from "./FloatingIconOverlay";
 
+type IoniconName = ComponentProps<typeof Ionicons>["name"];
+
 interface FullScreenLoadingOverlayProps {
   accessibilityLabel?: string;
-  icon?: string;
+  icon?: IoniconName;
   label: string;
   onHidden?: () => void;
   visible: boolean;
