@@ -3,26 +3,36 @@
   "private": true,
   "version": "0.1.0",
   "engines": {
-    "node": ">=20.19.4"
+    "node": ">=22.13.0"
   },
   "workspaces": [
     "desktop",
-    "mobile"
+    "mobile",
+    "packages/*"
   ],
   "scripts": {
     "dev": "concurrently -n desktop,mobile -c cyan,green \"npm run desktop:dev\" \"npm run mobile:start -- --clear\"",
     "start:all": "npm run dev",
     "desktop:install": "npm install --workspace desktop",
     "desktop:dev": "npm run dev --workspace desktop",
+    "desktop:pack:app": "npm run pack:app --workspace desktop",
     "desktop:pack:mac": "npm run pack:mac --workspace desktop",
+    "desktop:pack:win": "npm run pack:win --workspace desktop",
     "desktop:dist:mac": "npm run dist:mac --workspace desktop",
+    "desktop:dist:win": "npm run dist:win --workspace desktop",
     "mobile:install": "npm install --workspace mobile",
-    "mobile:start": "npm run start --workspace mobile"
+    "mobile:start": "npm run start --workspace mobile",
+    "test": "npm test --workspace desktop",
+    "typecheck": "npm run typecheck --workspace @mac-remote/protocol && npm run typecheck --workspace mobile && npm run typecheck --workspace desktop",
+    "verify": "npm test --workspace @mac-remote/protocol && npm test --workspace mobile && npm test --workspace desktop && npm run typecheck",
+    "autostart:install": "node scripts/install-launch-agent.mjs",
+    "autostart:uninstall": "node scripts/uninstall-launch-agent.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
   },
   "dependencies": {
+    "@lucide/lab": "^0.1.2",
     "@react-native-community/slider": "^5.2.0"
   }
 }

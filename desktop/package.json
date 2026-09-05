@@ -9,17 +9,22 @@
   },
   "main": "dist/electron/main.js",
   "scripts": {
-    "build": "tsc && node scripts/copy-static.mjs",
-    "dev": "npm run build && electron .",
+    "build": "npm run build --workspace @mac-remote/protocol && tsc && node scripts/build-native.mjs && node scripts/copy-static.mjs",
+    "dev": "npm run build && node scripts/start-electron.mjs",
+    "pack:app": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "pack:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dir",
     "dist:mac": "node scripts/assert-macos.mjs && npm run build && electron-builder --mac dmg zip",
-    "start": "electron .",
+    "pack:win": "node scripts/assert-windows.mjs && npm run build && electron-builder --win dir",
+    "dist:win": "node scripts/assert-windows.mjs && npm run build && electron-builder --win nsis zip",
+    "start": "node scripts/start-electron.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "build": {
     "appId": "local.remote-control.desktop",
-    "productName": "Remote Control Desktop",
+    "productName": "Remote Control",
     "electronVersion": "42.3.0",
+    "icon": "../iconset/playstore.png",
     "directories": {
       "output": "release"
     },
@@ -39,9 +44,23 @@
         "zip"
       ],
       "identity": null
+    },
+    "win": {
+      "target": [
+        "dir",
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
     }
   },
   "dependencies": {
+    "@mac-remote/protocol": "0.1.0",
     "@nut-tree-fork/nut-js": "^4.2.6",
     "qrcode": "^1.5.4",
     "ws": "^8.18.3"

@@ -13,26 +13,22 @@ interface TrackpadHandlers {
   onClick: () => void;
   onDoubleClick: () => void;
   onRightClick: () => void;
-  onScroll: (dx: number, dy: number) => void;
   onZoom: (direction: "in" | "out") => void;
   onSwipeSpaces: (direction: "left" | "right") => void;
 }
 
 const ZOOM_RATIO_THRESHOLD = 1.18;
 const SWIPE_DISTANCE = 60;
-const SCROLL_SENSITIVITY = 3.2;
 
 export function useTrackpadGestures({
   onMove,
   onClick,
   onDoubleClick,
   onRightClick,
-  onScroll,
   onZoom,
   onSwipeSpaces,
 }: TrackpadHandlers) {
   const lastSinglePan = useRef({ x: 0, y: 0 });
-  const lastTwoPan = useRef({ x: 0, y: 0 });
   const pinchAnchor = useRef(1);
 
   const handleSinglePan = useCallback(
@@ -59,42 +55,6 @@ export function useTrackpadGestures({
         event.nativeEvent.state === State.FAILED
       ) {
         lastSinglePan.current = { x: 0, y: 0 };
-      }
-    },
-    [],
-  );
-
-  const handleTwoPan = useCallback(
-    (event: PanGestureHandlerGestureEvent) => {
-      const { translationX, translationY } = event.nativeEvent;
-      const dx = translationX - lastTwoPan.current.x;
-      const dy = translationY - lastTwoPan.current.y;
-
-      lastTwoPan.current = { x: translationX, y: translationY };
-
-      if (dx !== 0 || dy !== 0) {
-        onScroll(dx * SCROLL_SENSITIVITY, dy * SCROLL_SENSITIVITY);
-      }
-    },
-    [onScroll],
-  );
-
-  const handleTwoPanState = useCallback(
-    (event: PanGestureHandlerStateChangeEvent) => {
-      const state = event.nativeEvent.state;
-
-      if (state === State.BEGAN) {
-        lastTwoPan.current = { x: 0, y: 0 };
-        return;
-      }
-
-      if (state === State.END) {
-        lastTwoPan.current = { x: 0, y: 0 };
-        return;
-      }
-
-      if (state === State.CANCELLED || state === State.FAILED) {
-        lastTwoPan.current = { x: 0, y: 0 };
       }
     },
     [],
@@ -178,8 +138,6 @@ export function useTrackpadGestures({
   return {
     handleSinglePan,
     handleSinglePanState,
-    handleTwoPan,
-    handleTwoPanState,
     handlePinch,
     handlePinchState,
     handleThreePanState,

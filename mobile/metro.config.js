@@ -9,12 +9,14 @@ const workspaceNodeModules = path.resolve(workspaceRoot, "node_modules");
 const config = getDefaultConfig(projectRoot);
 const { assetExts, sourceExts } = config.resolver;
 
+config.watchFolders = [workspaceRoot];
+
 config.transformer = {
   ...config.transformer,
   babelTransformerPath: require.resolve("react-native-svg-transformer/expo")
 };
 
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.disableHierarchicalLookup = false;
 config.resolver.nodeModulesPaths = [localNodeModules, workspaceNodeModules];
 config.resolver.assetExts = assetExts.filter((ext) => ext !== "svg");
 config.resolver.sourceExts = [...sourceExts, "svg"];

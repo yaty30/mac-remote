@@ -7,8 +7,12 @@
   "include": [
     "App.tsx",
     "components/**/*.tsx",
+    "features/**/*.ts",
+    "features/**/*.tsx",
     "gestures/**/*.ts",
     "metro.config.js",
+    "navigation/**/*.ts",
+    "navigation/**/*.tsx",
     "screens/**/*.tsx",
     "types/**/*.ts",
     "types/**/*.d.ts",

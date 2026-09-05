@@ -1,70 +1,443 @@
-import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  type BrowserWindowConstructorOptions,
+  clipboard,
+  ipcMain,
+  screen as electronScreen,
+  shell,
+  systemPreferences,
+} from "electron";
+import { execFileSync, spawn } from "node:child_process";
 import { createSocket } from "node:dgram";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, hostname } from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
+import { PairingAuthManager } from "../auth/pairingAuth";
+import { createHostAdapter } from "../host/createHostAdapter";
 import { KeyboardController } from "../mouse-control/keyboardController";
 import { MouseController } from "../mouse-control/mouseController";
 import type {
   DesktopStatus,
+  HostDisplayInfo,
+  HostPlatform,
   HostMessage,
-  RemoteMessage,
+  ApplicationRemoteMessage,
 } from "../types/protocol";
 import { RemoteWebSocketServer } from "../websocket/server";
-import { runShortcut, runWebsiteShortcut } from "../websocket/shortcuts";
 
 const port = Number.parseInt(process.env.REMOTE_CONTROL_PORT ?? "8787", 10);
-const sensitivity = Number.parseFloat(process.env.REMOTE_SENSITIVITY ?? "1.8");
 const protocolVersion = "remote-control-protocol:media-v1";
 const DEFAULT_EXPO_PORT = 8081;
+const PAIRING_QR_REFRESH_LEEWAY_MS = 30 * 1000;
+const hostName = getDeviceName();
+const startupAgentLabel = "local.remote-control.dev";
+const mobileServerDefaultCommand = "npm run start -- --clear";
 
 let mainWindow: BrowserWindow | null = null;
 let remoteServer: RemoteWebSocketServer | null = null;
+let mobileServerProcess: ReturnType<typeof spawn> | null = null;
+let pairingAuth: PairingAuthManager | null = null;
+let pairingQrRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let latestStatus: DesktopStatus = {
   status: "starting",
+  hostName,
+  protocolVersion,
+  platform: getSupportedPlatform(),
   port,
   addresses: [],
   connectedClients: 0,
 };
 
-const mouseController = new MouseController(
-  Number.isFinite(sensitivity) ? sensitivity : 1.8,
-);
 const keyboardController = new KeyboardController();
+const hostAdapter = createHostAdapter(keyboardController);
+const mouseController = new MouseController(hostAdapter.platform);
 
-function requestAccessibilityPermission(): void {
+function getSupportedPlatform(): HostPlatform {
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return process.platform;
+  }
+
+  throw new Error("Only macOS and Windows are supported.");
+}
+
+function getAccessibilityTarget(): { name: string; path: string } | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  const executablePath = process.execPath;
+  const appBundlePath = getAppBundlePath(executablePath);
+
+  return {
+    name: appBundlePath ? path.basename(appBundlePath) : path.basename(executablePath),
+    path: appBundlePath ?? executablePath,
+  };
+}
+
+function getAppBundlePath(executablePath: string): string | undefined {
+  const bundleMarker = ".app/Contents/MacOS/";
+  const markerIndex = executablePath.indexOf(bundleMarker);
+
+  if (markerIndex === -1) {
+    return undefined;
+  }
+
+  return executablePath.slice(0, markerIndex + ".app".length);
+}
+
+function checkAccessibilityPermission(): void {
   if (process.platform !== "darwin") {
     return;
   }
 
-  const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+  const trusted = systemPreferences.isTrustedAccessibilityClient(false);
 
   if (!trusted) {
+    const target = getAccessibilityTarget();
     console.warn(
       [
         "Accessibility permission is required for mouse and keyboard control.",
-        "Grant permission to Electron, then restart the desktop app.",
+        `Grant permission to ${target?.name ?? "this app"}, then restart the desktop app.`,
+        target ? `Target: ${target.path}` : "",
       ].join(" "),
     );
   }
 }
 
-async function getHostState(): Promise<HostMessage> {
-  let volume: number | undefined;
+function getAccessibilityTrusted(): boolean | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  return systemPreferences.isTrustedAccessibilityClient(false);
+}
+
+function getStartupSettings(): { available: boolean; enabled: boolean } {
+  if (process.platform !== "darwin") {
+    return {
+      available: false,
+      enabled: false,
+    };
+  }
+
+  return {
+    available: true,
+    enabled: existsSync(getStartupPlistPath()),
+  };
+}
+
+function setStartupEnabled(enabled: boolean): { available: boolean; enabled: boolean } {
+  if (process.platform !== "darwin") {
+    return getStartupSettings();
+  }
+
+  if (enabled) {
+    writeStartupAgent();
+  } else {
+    removeStartupAgent();
+  }
+
+  return getStartupSettings();
+}
+
+function writeStartupAgent(): void {
+  const launchAgentsDir = getLaunchAgentsDir();
+  const logsDir = path.join(homedir(), "Library", "Logs");
+  const plistPath = getStartupPlistPath();
+
+  mkdirSync(launchAgentsDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true });
+
+  writeFileSync(
+    plistPath,
+    buildStartupPlist(getStartupWorkingDirectory(), logsDir),
+    "utf8",
+  );
+}
+
+function removeStartupAgent(): void {
+  const plistPath = getStartupPlistPath();
+
+  if (existsSync(plistPath)) {
+    rmSync(plistPath);
+  }
+}
+
+function getLaunchAgentsDir(): string {
+  return path.join(homedir(), "Library", "LaunchAgents");
+}
+
+function getStartupPlistPath(): string {
+  return path.join(getLaunchAgentsDir(), `${startupAgentLabel}.plist`);
+}
+
+function getStartupWorkingDirectory(): string {
+  const appPath = app.getAppPath();
+
+  if (path.basename(appPath) === "desktop") {
+    return path.dirname(appPath);
+  }
+
+  if (path.basename(process.cwd()) === "desktop") {
+    return path.dirname(process.cwd());
+  }
+
+  return process.cwd();
+}
+
+function buildStartupPlist(workingDirectory: string, logsDir: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${escapeXml(startupAgentLabel)}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>npm run dev</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${escapeXml(workingDirectory)}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${escapeXml(path.join(logsDir, `${startupAgentLabel}.out.log`))}</string>
+  <key>StandardErrorPath</key>
+  <string>${escapeXml(path.join(logsDir, `${startupAgentLabel}.err.log`))}</string>
+</dict>
+</plist>
+`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function startMobileServer(): void {
+  if (!shouldAutoStartMobileServer()) {
+    console.log("[mobile-server] disabled");
+    return;
+  }
+
+  if (mobileServerProcess) {
+    return;
+  }
+
+  const mobileDirectory = resolveMobileServerDirectory();
+
+  if (!mobileDirectory) {
+    console.warn(
+      "[mobile-server] mobile workspace not found; set REMOTE_MOBILE_DIR to start Expo automatically",
+    );
+    return;
+  }
+
+  const command =
+    process.env.REMOTE_MOBILE_COMMAND?.trim() || mobileServerDefaultCommand;
+  const logsDirectory = app.getPath("logs");
+  mkdirSync(logsDirectory, { recursive: true });
+
+  const stdoutFd = openSync(path.join(logsDirectory, "mobile-server.out.log"), "a");
+  const stderrFd = openSync(path.join(logsDirectory, "mobile-server.err.log"), "a");
+
+  console.log(`[mobile-server] starting from ${mobileDirectory}`);
 
   try {
-    volume = await keyboardController.getOutputVolume();
+    mobileServerProcess = spawn(resolveShellCommand(), resolveShellArgs(command), {
+      cwd: mobileDirectory,
+      detached: process.platform !== "win32",
+      env: {
+        ...process.env,
+        BROWSER: "none",
+        EXPO_NO_TELEMETRY: "1",
+      },
+      stdio: ["ignore", stdoutFd, stderrFd],
+    });
+  } catch (error) {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    console.error("[mobile-server] failed to start", error);
+    return;
+  }
+
+  mobileServerProcess.once("error", (error) => {
+    console.error("[mobile-server] failed to start", error);
+  });
+
+  mobileServerProcess.once("close", (code, signal) => {
+    console.log(
+      `[mobile-server] exited with code ${code ?? "null"} signal ${
+        signal ?? "null"
+      }`,
+    );
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    mobileServerProcess = null;
+  });
+}
+
+function resolveShellCommand(): string {
+  return process.platform === "win32" ? "cmd.exe" : "/bin/zsh";
+}
+
+function resolveShellArgs(command: string): string[] {
+  return process.platform === "win32"
+    ? ["/d", "/s", "/c", command]
+    : ["-lc", command];
+}
+
+function resolveMobileServerDirectory(): string | null {
+  const explicitDirectory = process.env.REMOTE_MOBILE_DIR?.trim();
+
+  if (explicitDirectory && isMobileProjectDirectory(explicitDirectory)) {
+    return explicitDirectory;
+  }
+
+  return findWorkspaceMobileDirectory() || findBundledMobileDirectory();
+}
+
+function findWorkspaceMobileDirectory(): string | null {
+  const startDirectories = [
+    process.cwd(),
+    app.getAppPath(),
+    process.resourcesPath,
+    __dirname,
+  ];
+
+  for (const startDirectory of startDirectories) {
+    let currentDirectory = path.resolve(startDirectory);
+
+    for (let depth = 0; depth < 10; depth += 1) {
+      if (isWorkspaceRootDirectory(currentDirectory)) {
+        const candidate = path.join(currentDirectory, "mobile");
+        return candidate;
+      }
+
+      const parentDirectory = path.dirname(currentDirectory);
+
+      if (parentDirectory === currentDirectory) {
+        break;
+      }
+
+      currentDirectory = parentDirectory;
+    }
+  }
+
+  return null;
+}
+
+function isWorkspaceRootDirectory(directory: string): boolean {
+  return (
+    existsSync(path.join(directory, "package.json")) &&
+    existsSync(path.join(directory, "desktop", "package.json")) &&
+    isMobileProjectDirectory(path.join(directory, "mobile"))
+  );
+}
+
+function findBundledMobileDirectory(): string | null {
+  const candidate = path.join(process.resourcesPath, "mobile");
+  return isMobileProjectDirectory(candidate) ? candidate : null;
+}
+
+function isMobileProjectDirectory(directory: string): boolean {
+  return (
+    existsSync(path.join(directory, "package.json")) &&
+    existsSync(path.join(directory, "app.json"))
+  );
+}
+
+async function stopMobileServer(): Promise<void> {
+  const child = mobileServerProcess;
+
+  if (!child) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let resolved = false;
+    const finish = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    child.once("close", finish);
+
+    try {
+      if (process.platform !== "win32" && child.pid) {
+        process.kill(-child.pid, "SIGTERM");
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch (error) {
+      console.warn("[mobile-server] failed to stop gracefully", error);
+      finish();
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        if (process.platform !== "win32" && child.pid) {
+          process.kill(-child.pid, "SIGKILL");
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch {
+        // Process already exited.
+      }
+
+      finish();
+    }, 2500).unref();
+  });
+}
+
+async function getHostState(): Promise<HostMessage> {
+  let brightness: number | undefined;
+  let volume: number | undefined;
+  const display = getCurrentDisplayInfo();
+
+  try {
+    brightness = await hostAdapter.getDisplayBrightness();
+  } catch (error) {
+    console.warn("[desktop] failed to read display brightness", error);
+  }
+
+  try {
+    volume = await hostAdapter.getOutputVolume();
   } catch (error) {
     console.warn("[desktop] failed to read output volume", error);
   }
 
   return {
     type: "hostState",
+    hostName,
+    platform: hostAdapter.platform,
+    capabilities: hostAdapter.getCapabilities(display),
+    brightness,
     volume,
+    display,
   };
 }
 
 async function handleRemoteMessage(
-  message: RemoteMessage,
+  message: ApplicationRemoteMessage,
 ): Promise<HostMessage | void> {
   switch (message.type) {
     case "moveMouse":
@@ -83,28 +456,81 @@ async function handleRemoteMessage(
       await mouseController.scroll(message.dx, message.dy);
       break;
     case "zoom":
-      await keyboardController.zoom(message.direction);
+      await hostAdapter.zoom(message.direction);
+      break;
+    case "switchWorkspace":
+      await hostAdapter.switchWorkspace(message.direction);
+      break;
+    case "switchWindow":
+      await hostAdapter.switchWindow(message.direction);
+      break;
+    case "showOverview":
+      await hostAdapter.showOverview();
       break;
     case "swipeSpaces":
-      await keyboardController.switchSpace(message.direction);
+      await hostAdapter.switchWorkspace(message.direction);
       break;
-    case "adjustBrightness":
-      await keyboardController.adjustBrightness(message.delta);
+    case "missionControl":
+      await hostAdapter.showOverview();
       break;
-    case "setVolume":
-      await keyboardController.setVolume(message.value);
-      return { type: "hostState", volume: message.value };
+    case "requestHostState":
+      return await getHostState();
+    case "ping":
+      return { type: "pong", id: message.id };
+    case "pong":
+      break;
+    case "adjustBrightness": {
+      const display = getCurrentDisplayInfo();
+      if (!display.brightnessAdjustable) {
+        return await getHostState();
+      }
+
+      await hostAdapter.adjustBrightness(message.delta);
+      return await getHostState();
+    }
+    case "setBrightness": {
+      const display = getCurrentDisplayInfo();
+      if (!display.brightnessAdjustable) {
+        return await getHostState();
+      }
+
+      await hostAdapter.setBrightness(message.value);
+      return await getHostState();
+    }
+    case "setVolume": {
+      const display = getCurrentDisplayInfo();
+      if (!display.volumeAdjustable) {
+        return await getHostState();
+      }
+
+      await hostAdapter.setVolume(message.value);
+      return await getHostState();
+    }
     case "sleep":
-      await keyboardController.sleep();
+      await hostAdapter.sleep();
+      break;
+    case "restartHost":
+      await hostAdapter.restartHost();
       break;
     case "shortcut":
-      await runShortcut(message.shortcut);
+      await hostAdapter.runShortcut(message.shortcut);
       break;
     case "websiteShortcut":
-      await runWebsiteShortcut(message.url);
+      await hostAdapter.runWebsiteShortcut(message.url);
       break;
     case "typeText":
       await keyboardController.typeText(message.text);
+      break;
+    case "pasteText": {
+      clipboard.writeText(message.text);
+      await hostAdapter.textCommand("paste");
+      break;
+    }
+    case "textCommand":
+      await hostAdapter.textCommand(message.command);
+      break;
+    case "moveCaret":
+      await keyboardController.moveCaret(message.direction, message.count);
       break;
     case "pressKey":
       await keyboardController.pressKey(message.key);
@@ -117,16 +543,35 @@ async function handleRemoteMessage(
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 520,
-    height: 780,
-    resizable: false,
-    title: "Remote Control Desktop",
-    backgroundColor: "#0c0d10",
+  const isMac = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
+  const windowOptions: BrowserWindowConstructorOptions = {
+    width: 1310,
+    height: 800,
+    minWidth: 720,
+    minHeight: 520,
+    resizable: true,
+    frame: !isMac && !isWindows,
+    autoHideMenuBar: isWindows,
+    title: "Remote Control",
+    backgroundColor: "#080808",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
-  });
+  };
+
+  if (isMac) {
+    windowOptions.titleBarStyle = "hidden";
+    // mac traffic light buttons padding
+    windowOptions.trafficLightPosition = { x: 10, y: 10 };
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+
+  if (isWindows) {
+    mainWindow.setMenu(null);
+    mainWindow.maximize();
+  }
 
   mainWindow.loadFile(path.join(__dirname, "index.html"));
 
@@ -140,8 +585,28 @@ function createWindow(): void {
 }
 
 async function publishStatus(status: DesktopStatus): Promise<void> {
-  latestStatus = await withPairingQr(status);
+  latestStatus = await withPairingQr(withDesktopContext(status));
   mainWindow?.webContents.send("status:update", latestStatus);
+}
+
+function withDesktopContext(status: DesktopStatus): DesktopStatus {
+  const accessibilityTarget = getAccessibilityTarget();
+  const display = getCurrentDisplayInfo();
+  const activeClientIds =
+    remoteServer?.getAuthenticatedClientIds() ?? new Set<string>();
+
+  return {
+    ...status,
+    hostName,
+    protocolVersion,
+    platform: hostAdapter.platform,
+    capabilities: hostAdapter.getCapabilities(display),
+    accessibilityTrusted: getAccessibilityTrusted(),
+    accessibilityTargetName: accessibilityTarget?.name,
+    accessibilityTargetPath: accessibilityTarget?.path,
+    display,
+    pairedDevices: pairingAuth?.listDevices(activeClientIds) ?? [],
+  };
 }
 
 async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
@@ -152,16 +617,44 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
   }
 
   const pairingUrl = `ws://${address}:${status.port}`;
-  const expoUrl = await resolveExpoUrl(status.addresses);
+  const expoDevToolsEnabled = shouldShowExpoDevTools();
+  const expoUrl = expoDevToolsEnabled
+    ? await resolveExpoUrl(status.addresses)
+    : undefined;
+  const pairingToken = pairingAuth?.getPairingToken();
+  schedulePairingQrRefresh(pairingToken?.expiresAt);
+
+  if (
+    latestStatus.pairingUrl === pairingUrl &&
+    latestStatus.pairingTokenExpiresAt === pairingToken?.expiresAt &&
+    latestStatus.pairingQrDataUrl &&
+    (!expoDevToolsEnabled ||
+      (latestStatus.expoUrl === expoUrl && latestStatus.expoQrDataUrl))
+  ) {
+    return {
+      ...status,
+      hostName,
+      pairingUrl,
+      expoUrl,
+      pairingTokenExpiresAt: pairingToken?.expiresAt,
+      pairingQrDataUrl: latestStatus.pairingQrDataUrl,
+      expoQrDataUrl: expoDevToolsEnabled ? latestStatus.expoQrDataUrl : undefined,
+    };
+  }
+
   const payload = JSON.stringify({
     type: "remote-control",
+    name: hostName,
     url: pairingUrl,
+    pairingToken: pairingToken?.token,
   });
 
   return {
     ...status,
+    hostName,
     pairingUrl,
     expoUrl,
+    pairingTokenExpiresAt: pairingToken?.expiresAt,
     pairingQrDataUrl: await QRCode.toDataURL(payload, {
       margin: 1,
       scale: 7,
@@ -170,15 +663,83 @@ async function withPairingQr(status: DesktopStatus): Promise<DesktopStatus> {
         light: "#ffffff",
       },
     }),
-    expoQrDataUrl: await QRCode.toDataURL(expoUrl, {
-      margin: 1,
-      scale: 7,
-      color: {
-        dark: "#0b0d12",
-        light: "#ffffff",
-      },
-    }),
+    expoQrDataUrl:
+      expoDevToolsEnabled && expoUrl
+        ? await QRCode.toDataURL(expoUrl, {
+            margin: 1,
+            scale: 7,
+            color: {
+              dark: "#0b0d12",
+              light: "#ffffff",
+            },
+          })
+        : undefined,
   };
+}
+
+function shouldShowExpoDevTools(): boolean {
+  if (process.env.REMOTE_EXPO_URL?.trim()) {
+    return true;
+  }
+
+  return shouldAutoStartMobileServer();
+}
+
+function shouldAutoStartMobileServer(): boolean {
+  const override = process.env.REMOTE_MOBILE_SERVER?.trim();
+
+  if (override === "1") {
+    return true;
+  }
+
+  if (override === "0") {
+    return false;
+  }
+
+  return !app.isPackaged;
+}
+
+function shouldAllowLegacyRawTokenAuth(): boolean {
+  const override = process.env.REMOTE_LEGACY_RAW_TOKEN_AUTH?.trim();
+
+  if (override === "1") {
+    return true;
+  }
+
+  if (override === "0") {
+    return false;
+  }
+
+  return !app.isPackaged;
+}
+
+function schedulePairingQrRefresh(expiresAt: number | undefined): void {
+  if (pairingQrRefreshTimer) {
+    clearTimeout(pairingQrRefreshTimer);
+    pairingQrRefreshTimer = null;
+  }
+
+  if (!expiresAt) {
+    return;
+  }
+
+  const delayMs = Math.max(
+    1000,
+    expiresAt - Date.now() - PAIRING_QR_REFRESH_LEEWAY_MS,
+  );
+
+  pairingQrRefreshTimer = setTimeout(() => {
+    pairingQrRefreshTimer = null;
+
+    if (!remoteServer) {
+      return;
+    }
+
+    pairingAuth?.rotatePairingToken();
+    publishStatus(remoteServer.getStatus()).catch((error) => {
+      console.error("[desktop] failed to refresh pairing QR", error);
+    });
+  }, delayMs);
 }
 
 async function resolveExpoUrl(addresses: string[]): Promise<string> {
@@ -189,14 +750,17 @@ async function resolveExpoUrl(addresses: string[]): Promise<string> {
   }
 
   const explicitHost = process.env.REACT_NATIVE_PACKAGER_HOSTNAME?.trim();
-  const host = explicitHost || (await resolveLanAddress(addresses)) || "127.0.0.1";
+  const host =
+    explicitHost || (await resolveLanAddress(addresses)) || "127.0.0.1";
   const expoPort = await findExpoPort();
 
   return `exp://${host}:${expoPort}`;
 }
 
 async function resolveLanAddress(addresses: string[]): Promise<string | null> {
-  return (await getDefaultRouteAddress(addresses)) || chooseLanAddress(addresses);
+  return (
+    (await getDefaultRouteAddress(addresses)) || chooseLanAddress(addresses)
+  );
 }
 
 async function findExpoPort(): Promise<number> {
@@ -279,12 +843,173 @@ function getAddressPriority(address: string): number {
   return 1;
 }
 
+function getDeviceName(): string {
+  const override = process.env.REMOTE_DEVICE_NAME?.trim();
+
+  if (override) {
+    return override.slice(0, 80);
+  }
+
+  if (process.platform === "darwin") {
+    for (const key of ["ComputerName", "LocalHostName"]) {
+      try {
+        const value = execFileSync("scutil", ["--get", key], {
+          encoding: "utf8",
+          timeout: 500,
+        }).trim();
+
+        if (value) {
+          return value.slice(0, 80);
+        }
+      } catch {
+        // fall back to the system hostname below
+      }
+    }
+  }
+
+  return (
+    hostname()
+      .replace(/\.local$/i, "")
+      .slice(0, 80) || "Desktop"
+  );
+}
+
+function getCurrentDisplayInfo(): HostDisplayInfo {
+  const cursorPoint = electronScreen.getCursorScreenPoint();
+  const display = electronScreen.getDisplayNearestPoint(cursorPoint);
+  const name = getDisplayName(display);
+  const isTv = isTvDisplayName(name);
+  const controlCapabilities = hostAdapter.getDisplayControlCapabilities({
+    display,
+    info: { isTv },
+  });
+
+  return {
+    id: display.id,
+    name,
+    isTv,
+    brightnessAdjustable: controlCapabilities.brightnessAdjustable,
+    volumeAdjustable: controlCapabilities.volumeAdjustable,
+  };
+}
+
+function getDisplayName(display: Electron.Display): string {
+  const label = display.label.trim();
+
+  if (label) {
+    return label.slice(0, 80);
+  }
+
+  const { width, height } = display.size;
+  return `${display.internal ? "Built-in" : "External"} Display ${width}x${height}`;
+}
+
+function isTvDisplayName(name: string): boolean {
+  return /\b(tv|television|oled|qled|bravia|roku)\b/i.test(name);
+}
+
 app.whenReady().then(() => {
   console.log(`[desktop] ${protocolVersion}`);
-  requestAccessibilityPermission();
-  ipcMain.handle("status:get", () => latestStatus);
+  checkAccessibilityPermission();
+  startMobileServer();
+  pairingAuth = new PairingAuthManager(
+    path.join(app.getPath("userData"), "paired-devices.json"),
+    { allowLegacyRawTokenAuth: shouldAllowLegacyRawTokenAuth() },
+  );
+  ipcMain.handle("status:get", () => withDesktopContext(latestStatus));
+  ipcMain.handle("clipboard:write", (_event, text: unknown) => {
+    if (typeof text !== "string") {
+      return false;
+    }
 
-  remoteServer = new RemoteWebSocketServer(port, handleRemoteMessage, getHostState);
+    clipboard.writeText(text.slice(0, 2048));
+    return true;
+  });
+  ipcMain.handle("settings:accessibility", () => {
+    if (process.platform !== "darwin") {
+      return false;
+    }
+
+    if (getAccessibilityTrusted()) {
+      return true;
+    }
+
+    shell.openExternal(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+    );
+    return true;
+  });
+  ipcMain.handle("startup:get", () => getStartupSettings());
+  ipcMain.handle("startup:set", (_event, enabled: unknown) => {
+    if (typeof enabled !== "boolean") {
+      throw new Error("Invalid startup setting");
+    }
+
+    return setStartupEnabled(enabled);
+  });
+  ipcMain.handle("window:control", (_event, action: unknown) => {
+    if (!mainWindow) {
+      return false;
+    }
+
+    if (action === "minimize") {
+      mainWindow.minimize();
+      return true;
+    }
+
+    if (action === "maximize") {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+
+      return true;
+    }
+
+    if (action === "close") {
+      mainWindow.close();
+      return true;
+    }
+
+    return false;
+  });
+  ipcMain.handle("devices:revoke", async (_event, clientId: unknown) => {
+    if (typeof clientId !== "string" || !pairingAuth) {
+      return false;
+    }
+
+    const revoked = pairingAuth.revokeDevice(clientId);
+    remoteServer?.disconnectClient(clientId);
+
+    if (remoteServer) {
+      await publishStatus(remoteServer.getStatus());
+    }
+
+    return revoked;
+  });
+
+  remoteServer = new RemoteWebSocketServer(
+    port,
+    handleRemoteMessage,
+    (message, challengeNonce) => {
+      if (!pairingAuth) {
+        return { type: "authRejected", reason: "pairingTokenExpired" };
+      }
+
+      return pairingAuth.authenticate(message, challengeNonce);
+    },
+    getHostState,
+    () => {
+      setTimeout(() => {
+        if (remoteServer) {
+          publishStatus(remoteServer.getStatus()).catch((error) => {
+            console.error("[desktop] failed to refresh pairing QR", error);
+          });
+        }
+      }, 0);
+    },
+  );
   publishStatus(remoteServer.getStatus()).catch((error) => {
     console.error("[desktop] failed to publish initial status", error);
   });
@@ -313,6 +1038,13 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", async () => {
+  if (pairingQrRefreshTimer) {
+    clearTimeout(pairingQrRefreshTimer);
+    pairingQrRefreshTimer = null;
+  }
+
+  await stopMobileServer();
+
   if (remoteServer) {
     await remoteServer.close();
   }

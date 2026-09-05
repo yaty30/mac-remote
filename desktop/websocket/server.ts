@@ -1,10 +1,45 @@
 import { EventEmitter } from "node:events";
+import { randomBytes } from "node:crypto";
 import { networkInterfaces } from "node:os";
+import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
-import type { DesktopStatus, HostMessage, RemoteMessage } from "../types/protocol";
+import type {
+  AuthAcceptedMessage,
+  ApplicationRemoteMessage,
+  AuthRequestMessage,
+  DesktopStatus,
+  HostMessage,
+} from "../types/protocol";
+import {
+  ENCRYPTION_VERSION,
+  PROTOCOL_VERSION,
+  ProtocolValidationError,
+  type SecurePlainMessage,
+  SecureTransportSession,
+  createSecureNonce,
+  validateApplicationRemoteMessage,
+  validateRemoteMessage,
+} from "../types/protocol";
 
-type MessageHandler = (message: RemoteMessage) => Promise<HostMessage | void>;
+type MessageHandler = (message: ApplicationRemoteMessage) => Promise<HostMessage | void>;
+type AuthHandler = (
+  message: AuthRequestMessage,
+  challengeNonce: string | undefined,
+) => Promise<AuthHandlerResult> | AuthHandlerResult;
+type AuthChangeHandler = (
+  message: AuthAcceptedMessage,
+  clientId: string,
+) => void;
 type HostStateProvider = () => Promise<HostMessage>;
+type ClientLatencyState = {
+  latencyMs?: number;
+  pendingId?: string;
+  pendingStartedAt?: number;
+  timer: ReturnType<typeof setInterval>;
+};
+type AuthHandlerResult =
+  | (AuthAcceptedMessage & { transportSecretHash?: string })
+  | Exclude<HostMessage, AuthAcceptedMessage>;
 
 interface RemoteServerEvents {
   status: [DesktopStatus];
@@ -15,11 +50,19 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
   private readonly server: WebSocketServer;
   private connectedClients = 0;
   private currentStatus: DesktopStatus;
+  private readonly clientLatency = new Map<WebSocket, ClientLatencyState>();
+  private readonly authenticatedSockets = new Set<WebSocket>();
+  private readonly authenticatedClients = new Map<WebSocket, string>();
+  private readonly authChallenges = new Map<WebSocket, string>();
+  private readonly serverNonces = new Map<WebSocket, string>();
+  private readonly secureSessions = new Map<WebSocket, SecureTransportSession>();
 
   constructor(
     private readonly port: number,
     private readonly onMessage: MessageHandler,
+    private readonly onAuth: AuthHandler,
     private readonly getHostState?: HostStateProvider,
+    private readonly onAuthChange?: AuthChangeHandler,
   ) {
     super();
 
@@ -32,7 +75,44 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     return this.currentStatus;
   }
 
+  getAuthenticatedClientIds(): Set<string> {
+    return new Set(this.authenticatedClients.values());
+  }
+
+  disconnectClient(clientId: string): number {
+    let disconnected = 0;
+
+    for (const [socket, authenticatedClientId] of this.authenticatedClients) {
+      if (authenticatedClientId !== clientId) {
+        continue;
+      }
+
+      disconnected += 1;
+      this.authenticatedSockets.delete(socket);
+      this.authenticatedClients.delete(socket);
+      this.authChallenges.delete(socket);
+      socket.close(1000, "Device disconnected");
+    }
+
+    if (disconnected > 0) {
+      this.publishStatus();
+    }
+
+    return disconnected;
+  }
+
   close(): Promise<void> {
+    for (const state of this.clientLatency.values()) {
+      clearInterval(state.timer);
+    }
+    this.clientLatency.clear();
+    this.authChallenges.clear();
+    this.serverNonces.clear();
+    for (const session of this.secureSessions.values()) {
+      session.clear();
+    }
+    this.secureSessions.clear();
+
     return new Promise((resolve, reject) => {
       this.server.close((error) => {
         if (error) {
@@ -49,38 +129,128 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
     this.server.on("listening", () => this.publishStatus());
 
     this.server.on("connection", (socket) => {
-      this.connectedClients += 1;
-      this.publishStatus();
-      this.sendHostState(socket).catch((error) => {
-        this.emit(
-          "error",
-          error instanceof Error ? error : new Error(String(error)),
-        );
+      const authNonce = randomBytes(32).toString("base64url");
+      const serverNonce = createSecureNonce();
+      this.authChallenges.set(socket, authNonce);
+      this.serverNonces.set(socket, serverNonce);
+      sendPlainJson(socket, {
+        type: "authChallenge",
+        protocolVersion: PROTOCOL_VERSION,
+        encryptionVersion: ENCRYPTION_VERSION,
+        nonce: authNonce,
+        serverNonce,
       });
+      this.publishStatus();
 
       socket.on("message", async (raw) => {
         try {
-          const message = parseRemoteMessage(raw.toString());
-          const response = await this.onMessage(message);
+          const parsed = validateRemoteMessage(JSON.parse(raw.toString()) as unknown);
+          const session = this.secureSessions.get(socket);
 
-          if (response) {
-            sendJson(socket, response);
+          if (session) {
+            if (parsed.type !== "encrypted") {
+              throw new ProtocolValidationError(
+                "plaintextAfterSecureMode",
+                "Plaintext message after secure mode",
+              );
+            }
+
+            const message = validateApplicationRemoteMessage(session.decrypt(parsed));
+            await this.handleApplicationMessage(socket, message);
+            return;
           }
+
+          if (parsed.type === "authRequest") {
+            const response = await this.onAuth(
+              parsed,
+              this.authChallenges.get(socket),
+            );
+
+            if (response.type === "authAccepted") {
+              if (
+                !response.transportSecretHash ||
+                !parsed.clientNonce ||
+                !this.serverNonces.get(socket)
+              ) {
+                sendPlainJson(socket, {
+                  type: "authRejected",
+                  reason: "unsupportedEncryptionVersion",
+                });
+                socket.close(1002, "Secure handshake failed");
+                return;
+              }
+
+              const publicResponse: AuthAcceptedMessage = {
+                type: "authAccepted",
+                protocolVersion: PROTOCOL_VERSION,
+                encryptionVersion: ENCRYPTION_VERSION,
+                deviceToken: response.deviceToken,
+                paired: response.paired,
+              };
+              sendPlainJson(socket, publicResponse);
+              this.secureSessions.set(
+                socket,
+                new SecureTransportSession({
+                  clientId: parsed.clientId,
+                  clientNonce: parsed.clientNonce,
+                  role: "server",
+                  secretHash: response.transportSecretHash,
+                  serverNonce: this.serverNonces.get(socket) ?? "",
+                }),
+              );
+              this.authenticatedSockets.add(socket);
+              this.authenticatedClients.set(socket, parsed.clientId);
+              this.authChallenges.delete(socket);
+              this.serverNonces.delete(socket);
+              this.startLatencyMonitoring(socket);
+              this.publishStatus();
+              this.onAuthChange?.(publicResponse, parsed.clientId);
+              this.sendHostState(socket).catch((error) => {
+                this.publishError(error);
+              });
+            } else {
+              sendPlainJson(socket, response);
+            }
+
+            return;
+          }
+
+          throw new ProtocolValidationError("invalidPayload", "Expected auth request");
         } catch (error) {
-          this.emit(
-            "error",
-            error instanceof Error ? error : new Error(String(error)),
-          );
+          this.publishError(error);
+          if (
+            error instanceof ProtocolValidationError &&
+            (error.reason === "plaintextAfterSecureMode" ||
+              error.reason === "decryptionFailed" ||
+              error.reason === "invalidSequence" ||
+              error.reason === "replayDetected")
+          ) {
+            socket.close(1002, "Protocol violation");
+          }
         }
       });
 
       socket.on("close", () => {
-        this.connectedClients = Math.max(0, this.connectedClients - 1);
+        this.authenticatedSockets.delete(socket);
+        this.authenticatedClients.delete(socket);
+        this.authChallenges.delete(socket);
+        this.serverNonces.delete(socket);
+        this.secureSessions.get(socket)?.clear();
+        this.secureSessions.delete(socket);
+        this.stopLatencyMonitoring(socket);
         this.publishStatus();
       });
     });
 
-    this.server.on("error", (error) => this.emit("error", error));
+    this.server.on("error", (error) => this.publishError(error));
+  }
+
+  private publishError(error: unknown): void {
+    if (this.listenerCount("error") === 0) {
+      return;
+    }
+
+    this.emit("error", error instanceof Error ? error : new Error(String(error)));
   }
 
   private async sendHostState(socket: WebSocket): Promise<void> {
@@ -88,10 +258,43 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       return;
     }
 
-    sendJson(socket, await this.getHostState());
+    this.sendHostMessage(socket, await this.getHostState());
+  }
+
+  private async handleApplicationMessage(
+    socket: WebSocket,
+    message: ApplicationRemoteMessage,
+  ): Promise<void> {
+    if (message.type === "ping") {
+      this.sendHostMessage(socket, { type: "pong", id: message.id });
+      return;
+    }
+
+    if (message.type === "pong") {
+      this.recordLatency(socket, message.id);
+      return;
+    }
+
+    const response = await this.onMessage(message);
+
+    if (response) {
+      this.sendHostMessage(socket, response);
+    }
+  }
+
+  private sendHostMessage(socket: WebSocket, message: HostMessage): void {
+    const session = this.secureSessions.get(socket);
+
+    if (!session) {
+      sendPlainJson(socket, message);
+      return;
+    }
+
+    sendPlainJson(socket, session.encrypt(message as unknown as SecurePlainMessage));
   }
 
   private publishStatus(): void {
+    this.connectedClients = this.authenticatedSockets.size;
     this.currentStatus = this.buildStatus(
       this.connectedClients > 0 ? "connected" : "waiting",
     );
@@ -104,159 +307,74 @@ export class RemoteWebSocketServer extends EventEmitter<RemoteServerEvents> {
       port: this.port,
       addresses: getLocalIPv4Addresses(),
       connectedClients: this.connectedClients,
+      latencyMs: this.getAverageLatency(),
     };
+  }
+
+  private startLatencyMonitoring(socket: WebSocket): void {
+    const state: ClientLatencyState = {
+      timer: setInterval(() => this.sendLatencyPing(socket), 2000),
+    };
+
+    this.clientLatency.set(socket, state);
+    this.sendLatencyPing(socket);
+  }
+
+  private stopLatencyMonitoring(socket: WebSocket): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state) {
+      return;
+    }
+
+    clearInterval(state.timer);
+    this.clientLatency.delete(socket);
+  }
+
+  private sendLatencyPing(socket: WebSocket): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    state.pendingId = id;
+    state.pendingStartedAt = performance.now();
+    this.sendHostMessage(socket, { type: "ping", id });
+  }
+
+  private recordLatency(socket: WebSocket, id: string): void {
+    const state = this.clientLatency.get(socket);
+
+    if (!state || state.pendingId !== id || state.pendingStartedAt === undefined) {
+      return;
+    }
+
+    state.latencyMs = Math.max(
+      0,
+      Math.round(performance.now() - state.pendingStartedAt),
+    );
+    state.pendingId = undefined;
+    state.pendingStartedAt = undefined;
+    this.publishStatus();
+  }
+
+  private getAverageLatency(): number | undefined {
+    const latencies = [...this.clientLatency.values()]
+      .map((state) => state.latencyMs)
+      .filter((latency): latency is number => latency !== undefined);
+
+    if (latencies.length === 0) {
+      return undefined;
+    }
+
+    const total = latencies.reduce((sum, latency) => sum + latency, 0);
+    return Math.round(total / latencies.length);
   }
 }
 
-function parseRemoteMessage(raw: string): RemoteMessage {
-  const data = JSON.parse(raw) as unknown;
-
-  if (!isRecord(data) || typeof data.type !== "string") {
-    throw new Error("Invalid remote message");
-  }
-
-  if (data.type === "moveMouse") {
-    if (typeof data.dx !== "number" || typeof data.dy !== "number") {
-      throw new Error("Invalid moveMouse payload");
-    }
-
-    return {
-      type: "moveMouse",
-      dx: clampDelta(data.dx),
-      dy: clampDelta(data.dy),
-    };
-  }
-
-  if (data.type === "leftClick") {
-    return { type: "leftClick" };
-  }
-
-  if (data.type === "doubleClick") {
-    return { type: "doubleClick" };
-  }
-
-  if (data.type === "rightClick") {
-    return { type: "rightClick" };
-  }
-
-  if (data.type === "scroll") {
-    if (typeof data.dx !== "number" || typeof data.dy !== "number") {
-      throw new Error("Invalid scroll payload");
-    }
-
-    return {
-      type: "scroll",
-      dx: clampScroll(data.dx),
-      dy: clampScroll(data.dy),
-    };
-  }
-
-  if (data.type === "zoom") {
-    if (data.direction === "in" || data.direction === "out") {
-      return { type: "zoom", direction: data.direction };
-    }
-
-    throw new Error("Invalid zoom payload");
-  }
-
-  if (data.type === "swipeSpaces") {
-    if (data.direction === "left" || data.direction === "right") {
-      return { type: "swipeSpaces", direction: data.direction };
-    }
-
-    throw new Error("Invalid swipeSpaces payload");
-  }
-
-  if (data.type === "adjustBrightness") {
-    if (data.delta === -1 || data.delta === 1) {
-      return { type: "adjustBrightness", delta: data.delta };
-    }
-
-    throw new Error("Invalid adjustBrightness payload");
-  }
-
-  if (data.type === "setVolume") {
-    if (typeof data.value !== "number") {
-      throw new Error("Invalid setVolume payload");
-    }
-
-    return {
-      type: "setVolume",
-      value: clampPercent(data.value),
-    };
-  }
-
-  if (data.type === "sleep") {
-    return { type: "sleep" };
-  }
-
-  if (data.type === "shortcut") {
-    if (
-      data.shortcut === "netflix" ||
-      data.shortcut === "disney" ||
-      data.shortcut === "amazon" ||
-      data.shortcut === "youtube" ||
-      data.shortcut === "spotify"
-    ) {
-      return {
-        type: "shortcut",
-        shortcut: data.shortcut,
-      };
-    }
-
-    throw new Error("Invalid shortcut payload");
-  }
-
-  if (data.type === "websiteShortcut") {
-    if (typeof data.name !== "string" || typeof data.url !== "string") {
-      throw new Error("Invalid websiteShortcut payload");
-    }
-
-    const name = data.name.trim().slice(0, 40);
-    const url = normalizeWebsiteUrl(data.url);
-
-    if (!name || !url) {
-      throw new Error("Invalid websiteShortcut payload");
-    }
-
-    return {
-      type: "websiteShortcut",
-      name,
-      url,
-    };
-  }
-
-  if (data.type === "typeText") {
-    if (typeof data.text !== "string") {
-      throw new Error("Invalid typeText payload");
-    }
-
-    return {
-      type: "typeText",
-      text: data.text.slice(0, 128),
-    };
-  }
-
-  if (data.type === "pressKey") {
-    if (
-      data.key === "backspace" ||
-      data.key === "enter" ||
-      data.key === "leftArrow" ||
-      data.key === "rightArrow"
-    ) {
-      return {
-        type: "pressKey",
-        key: data.key,
-      };
-    }
-
-    throw new Error("Invalid pressKey payload");
-  }
-
-  throw new Error(`Unsupported message type: ${data.type}`);
-}
-
-function sendJson(socket: WebSocket, message: HostMessage): void {
+function sendPlainJson(socket: WebSocket, message: HostMessage): void {
   if (socket.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -264,61 +382,9 @@ function sendJson(socket: WebSocket, message: HostMessage): void {
   socket.send(JSON.stringify(message));
 }
 
-function clampDelta(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.max(-80, Math.min(80, value));
-}
-
-function clampScroll(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.max(-200, Math.min(200, value));
-}
-
-function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function normalizeWebsiteUrl(value: string): string | null {
-  const cleanValue = value.trim();
-
-  if (cleanValue.length === 0) {
-    return null;
-  }
-
-  const withProtocol = /^https?:\/\//i.test(cleanValue)
-    ? cleanValue
-    : `https://${cleanValue}`;
-
-  try {
-    const url = new URL(withProtocol);
-
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return null;
-    }
-
-    return url.toString().slice(0, 2048);
-  } catch {
-    return null;
-  }
-}
-
 function getLocalIPv4Addresses(): string[] {
   return Object.values(networkInterfaces())
     .flatMap((items) => items ?? [])
     .filter((item) => item.family === "IPv4" && !item.internal)
     .map((item) => item.address);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

@@ -1,64 +1,121 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentType } from "react";
-import { Image, Pressable, StyleSheet, Text } from "react-native";
+import { Image, StyleSheet, Text } from "react-native";
 import type { SvgProps } from "react-native-svg";
-import { withHaptic } from "../utils/haptics";
+import { ScanGradientButton } from "./GradientButton";
 
 interface ShortcutButtonProps {
   icon?: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
   imageUri?: string;
   initial?: string;
   SvgIcon?: ComponentType<SvgProps>;
   label: string;
   onPress: () => void;
   onLongPress?: () => void;
+  size?: number;
 }
 
 export function ShortcutButton({
   icon,
+  iconColor = "#ff941f",
   imageUri,
   initial,
   SvgIcon,
   label,
   onPress,
   onLongPress,
+  size = 70,
 }: ShortcutButtonProps) {
+  const addShortcut = label === "Add Shortcut";
+  const iconSize = Math.max(24, Math.round(size * 0.51));
+  const initialSize = Math.max(18, Math.round(size * 0.34));
+
+  const shortcutIcon = SvgIcon ? (
+    <SvgIcon width={iconSize} height={iconSize} />
+  ) : imageUri ? (
+    <Image
+      source={{ uri: imageUri }}
+      style={[
+        styles.imageIcon,
+        {
+          borderRadius: Math.max(6, Math.round(size * 0.11)),
+          height: iconSize,
+          width: iconSize,
+        },
+      ]}
+    />
+  ) : initial ? (
+    <Text style={[styles.initialIcon, { fontSize: initialSize }]}>
+      {initial.slice(0, 1).toUpperCase()}
+    </Text>
+  ) : (
+    <Ionicons
+      name={icon ?? "apps-outline"}
+      size={addShortcut ? 28 : Math.max(22, Math.round(size * 0.46))}
+      color={iconColor}
+    />
+  );
+
   return (
-    <Pressable
+    <ScanGradientButton
       accessibilityLabel={label}
-      style={styles.button}
-      onPress={withHaptic(onPress)}
-      onLongPress={withHaptic(onLongPress)}
-    >
-      {SvgIcon ? (
-        <SvgIcon width={44} height={44} />
-      ) : imageUri ? (
-        <Image source={{ uri: imageUri }} style={styles.imageIcon} />
-      ) : initial ? (
-        <Text style={styles.initialIcon}>{initial.slice(0, 1).toUpperCase()}</Text>
-      ) : (
-        <Ionicons name={icon ?? "apps-outline"} size={32} color="#ff0033" />
-      )}
-    </Pressable>
+      action={onPress}
+      buttonStyle={[
+        addShortcut ? styles.addButton : styles.button,
+        {
+          borderRadius: Math.max(12, Math.round(size * 0.26)),
+          height: size,
+          width: addShortcut ? 50 : size,
+        },
+      ]}
+      colors={addShortcut ? ["#00000000", "#00000000", "#00000000"] : ["#2b211a", "#1b1714", "#11100e"]}
+      gradientStyle={styles.buttonGradient}
+      icon={shortcutIcon}
+      longAction={onLongPress}
+      pressedStyle={styles.buttonPressed}
+    />
   );
 }
 
 const styles = StyleSheet.create({
   button: {
     alignItems: "center",
-    backgroundColor: "transparent",
-    borderColor: "#1a1d30",
-    borderRadius: 8,
+    backgroundColor: "#15120f",
+    borderColor: "#4a3124",
+    borderRadius: 18,
     borderWidth: 1,
+    elevation: 5,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
     justifyContent: "center",
-    minHeight: 70,
-    width: 68,
+  },
+  addButton: {
+    alignItems: "center",
+    elevation: 5,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    justifyContent: "center",
+  },
+  buttonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+  buttonGradient: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
     paddingHorizontal: 8,
   },
   imageIcon: {
     borderRadius: 8,
-    height: 44,
-    width: 44,
   },
   initialIcon: {
     color: "#ffffff",

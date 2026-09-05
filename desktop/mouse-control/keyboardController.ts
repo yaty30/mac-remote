@@ -1,149 +1,177 @@
-import { execFile } from "node:child_process";
 import { Key, keyboard } from "@nut-tree-fork/nut-js";
+import type { TextCommand } from "../types/protocol";
 
 const MAX_TEXT_CHUNK = 128;
+const KEY_SEQUENCE_DELAY_MS = 35;
 
 export class KeyboardController {
-  private displaySleeping = false;
+  private commandQueue: Promise<void> = Promise.resolve();
 
   constructor() {
     keyboard.config.autoDelayMs = 0;
   }
 
   async typeText(text: string): Promise<void> {
-    const safeText = text.slice(0, MAX_TEXT_CHUNK);
+    await this.enqueue(async () => {
+      const safeText = text.slice(0, MAX_TEXT_CHUNK);
 
-    if (safeText.length > 0) {
-      await keyboard.type(safeText);
-    }
+      if (safeText.length > 0) {
+        await keyboard.type(safeText);
+      }
+    });
   }
 
   async pressKey(
-    key: "backspace" | "enter" | "leftArrow" | "rightArrow",
+    key: "backspace" | "enter" | "escape" | "leftArrow" | "rightArrow",
   ): Promise<void> {
     const keyMap = {
       backspace: Key.Backspace,
       enter: Key.Return,
+      escape: Key.Escape,
       leftArrow: Key.Left,
       rightArrow: Key.Right,
     } as const;
-    const nutKey = keyMap[key];
 
-    await keyboard.pressKey(nutKey);
-    await keyboard.releaseKey(nutKey);
+    await this.enqueue(() => this.pressAndReleaseRaw(keyMap[key]));
   }
 
-  async zoom(direction: "in" | "out"): Promise<void> {
-    const target = direction === "in" ? Key.Equal : Key.Minus;
-    await keyboard.pressKey(Key.LeftCmd, target);
-    await keyboard.releaseKey(Key.LeftCmd, target);
+  async pressAndRelease(...keys: Key[]): Promise<void> {
+    await this.enqueue(() => this.pressAndReleaseRaw(...keys));
   }
 
-  async switchSpace(direction: "left" | "right"): Promise<void> {
-    if (process.platform === "darwin") {
+  async holdAndPress(heldKeys: Key[], tapKey: Key): Promise<void> {
+    await this.enqueue(async () => {
+      await keyboard.pressKey(...heldKeys);
+
       try {
-        await switchMacSpace(direction);
-        return;
-      } catch (error) {
-        console.warn(
-          "[keyboard] osascript space switch failed, falling back to nut.js",
-          error,
-        );
+        await delay(KEY_SEQUENCE_DELAY_MS);
+        await this.pressAndReleaseRaw(tapKey);
+        await delay(KEY_SEQUENCE_DELAY_MS);
+      } finally {
+        await keyboard.releaseKey(...[...heldKeys].reverse());
       }
-    }
-
-    const arrow = direction === "left" ? Key.Left : Key.Right;
-    await keyboard.pressKey(Key.LeftControl, arrow);
-    await keyboard.releaseKey(Key.LeftControl, arrow);
+    });
   }
 
-  async adjustBrightness(delta: -1 | 1): Promise<void> {
-    if (process.platform !== "darwin") {
+  async moveCaret(direction: "left" | "right", count: number): Promise<void> {
+    const key = direction === "left" ? Key.Left : Key.Right;
+    const safeCount = Math.max(0, Math.min(500, Math.round(count)));
+
+    if (safeCount === 0) {
       return;
     }
 
-    await runAppleScriptKeyCode(delta > 0 ? "144" : "145");
+    await this.enqueue(async () => {
+      for (let index = 0; index < safeCount; index += 1) {
+        await this.pressAndReleaseRaw(key);
+      }
+    });
   }
 
-  async setVolume(value: number): Promise<void> {
-    const volume = Math.max(0, Math.min(100, Math.round(value)));
-
-    if (process.platform === "darwin") {
-      await runAppleScript(`set volume output volume ${volume}`);
-      return;
-    }
-
-    console.warn("[keyboard] setVolume is only implemented for macOS");
-  }
-
-  async getOutputVolume(): Promise<number | undefined> {
-    if (process.platform !== "darwin") {
-      return undefined;
-    }
-
-    const output = await runAppleScriptOutput(
-      "output volume of (get volume settings)",
-    );
-    const volume = Number.parseInt(output.trim(), 10);
-
-    if (!Number.isFinite(volume)) {
-      return undefined;
-    }
-
-    return Math.max(0, Math.min(100, volume));
-  }
-
-  async sleep(): Promise<void> {
-    if (process.platform === "darwin") {
-      if (this.displaySleeping) {
-        await runExecutable("caffeinate", ["-u", "-t", "2"]);
-        this.displaySleeping = false;
+  async textCommand(
+    command: TextCommand,
+    modifiers: {
+      browser: Key;
+      command: Key;
+    },
+  ): Promise<void> {
+    await this.enqueue(async () => {
+      if (command === "clear") {
+        await this.textCommandRaw("selectAll", modifiers);
+        await this.pressAndReleaseRaw(Key.Backspace);
         return;
       }
 
-      await runExecutable("pmset", ["displaysleepnow"]);
-      this.displaySleeping = true;
+      await this.textCommandRaw(command, modifiers);
+    });
+  }
+
+  async zoom(direction: "in" | "out", commandKey: Key): Promise<void> {
+    await this.enqueue(async () => {
+      const target = direction === "in" ? Key.Equal : Key.Minus;
+
+      await this.pressAndReleaseRaw(commandKey, target);
+    });
+  }
+
+  async setPlayback(action: "pause" | "play"): Promise<void> {
+    await this.enqueue(() => this.setPlaybackRaw(action));
+  }
+
+  private async textCommandRaw(
+    command: TextCommand,
+    modifiers: {
+      browser: Key;
+      command: Key;
+    },
+  ): Promise<void> {
+    if (command === "browserBack" || command === "browserForward") {
+      const arrow = command === "browserBack" ? Key.Left : Key.Right;
+
+      await this.pressAndReleaseRaw(modifiers.browser, arrow);
       return;
     }
 
-    console.warn("[keyboard] display sleep/wake is only implemented for macOS");
+    if (command === "closeTab") {
+      await this.pressAndReleaseRaw(modifiers.command, Key.W);
+      return;
+    }
+
+    if (command === "mediaPause" || command === "mediaPlay") {
+      await this.setPlaybackRaw(command === "mediaPlay" ? "play" : "pause");
+      return;
+    }
+
+    if (command === "newLine") {
+      await this.pressAndReleaseRaw(Key.LeftShift, Key.Return);
+      return;
+    }
+
+    if (command === "clear") {
+      await this.textCommandRaw("selectAll", modifiers);
+      await this.pressAndReleaseRaw(Key.Backspace);
+      return;
+    }
+
+    const keyMap = {
+      selectAll: Key.A,
+      copy: Key.C,
+      paste: Key.V,
+      reload: Key.R,
+    } as const;
+
+    await this.pressAndReleaseRaw(modifiers.command, keyMap[command]);
+  }
+
+  private async pressAndReleaseRaw(...keys: Key[]): Promise<void> {
+    await keyboard.pressKey(...keys);
+    await keyboard.releaseKey(...keys);
+  }
+
+  private async setPlaybackRaw(action: "pause" | "play"): Promise<void> {
+    const target = action === "play" ? Key.AudioPlay : Key.AudioPause;
+
+    try {
+      await this.pressAndReleaseRaw(target);
+      return;
+    } catch (error) {
+      console.warn(
+        `[keyboard] media ${action} key failed, falling back to media play key`,
+        error,
+      );
+    }
+
+    await this.pressAndReleaseRaw(Key.AudioPlay);
+  }
+
+  private enqueue(action: () => Promise<void>): Promise<void> {
+    const next = this.commandQueue.catch(() => undefined).then(action);
+    this.commandQueue = next.catch(() => undefined);
+
+    return next;
   }
 }
 
-function switchMacSpace(direction: "left" | "right"): Promise<void> {
-  const keyCode = direction === "left" ? "123" : "124";
-
-  return runAppleScriptKeyCode(keyCode, "control down");
-}
-
-function runAppleScriptKeyCode(keyCode: string, modifier?: string): Promise<void> {
-  const modifierPart = modifier ? ` using ${modifier}` : "";
-  return runAppleScript(
-    `tell application "System Events" to key code ${keyCode}${modifierPart}`,
-  );
-}
-
-function runAppleScript(script: string): Promise<void> {
-  return runAppleScriptOutput(script).then(() => undefined);
-}
-
-function runAppleScriptOutput(script: string): Promise<string> {
-  return runExecutable("osascript", ["-e", script]);
-}
-
-function runExecutable(file: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      file,
-      args,
-      (error, stdout) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(stdout);
-      },
-    );
-  });
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
