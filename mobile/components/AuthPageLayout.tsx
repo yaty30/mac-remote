@@ -17,7 +17,7 @@ import { withHaptic } from "../utils/haptics";
 import { FloatingIconOverlay } from "./FloatingIconOverlay";
 
 interface AuthPageLayoutProps {
-  animatedStyle?: Animated.WithAnimatedObject<ViewStyle>;
+  animatedStyle?: Animated.WithAnimatedValue<ViewStyle>;
   children: React.ReactNode;
   contentGap?: number;
   contentMaxWidth?: number;
@@ -35,7 +35,7 @@ interface AuthPageLayoutProps {
 
 interface AuthBackButtonProps {
   accessibilityLabel: string;
-  animatedStyle?: Animated.WithAnimatedObject<ViewStyle>;
+  animatedStyle?: Animated.WithAnimatedValue<ViewStyle>;
   onPress: () => void;
 }
 

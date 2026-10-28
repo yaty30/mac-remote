@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { StyleSheet, type StyleProp, View, type ViewStyle } from "react-native";
 import { useAppTour } from "./useAppTour";
+import type { TourViewRef } from "./tourTypes";
 
 interface TourTargetProps {
   children: ReactNode;
@@ -9,7 +10,7 @@ interface TourTargetProps {
 }
 
 export function TourTarget({ children, style, targetKey }: TourTargetProps) {
-  const targetRef = useRef<View>(null);
+  const targetRef = useRef<TourViewRef>(null);
   const { registerTourTarget } = useAppTour();
 
   useEffect(

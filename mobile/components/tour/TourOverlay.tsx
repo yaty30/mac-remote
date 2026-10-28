@@ -14,7 +14,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TourHighlight, expandBounds } from "./TourHighlight";
 import { TourTooltip } from "./TourTooltip";
-import type { TourPlacement, TourStep, TourTargetBounds } from "./tourTypes";
+import type {
+  TourPlacement,
+  TourStep,
+  TourTargetBounds,
+  TourViewRef,
+} from "./tourTypes";
 
 interface TourOverlayProps {
   activeStep?: TourStep;
@@ -328,7 +333,7 @@ function DimmedBackdrop({ bounds }: { bounds: TourTargetBounds | null }) {
 }
 
 async function measureRef(
-  targetRef: RefObject<View | null>,
+  targetRef: RefObject<TourViewRef | null>,
 ): Promise<TourTargetBounds | null> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => {

@@ -77,7 +77,7 @@ export function useAnimatedAuthStep<Step extends string>(initialStep: Step) {
     return true;
   };
 
-  const animatedStyle: Animated.WithAnimatedObject<ViewStyle> = {
+  const animatedStyle: Animated.WithAnimatedValue<ViewStyle> = {
     opacity: stepAnimation,
     transform: [
       {

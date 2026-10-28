@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { KeyboardIcon } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import {
   Animated,
   InputAccessoryView,
@@ -45,8 +45,8 @@ export function LoginPage({
   const isLeavingRef = useRef(false);
   const isLoginLoadingRef = useRef(false);
   const loginTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const emailInputRef = useRef<TextInput>(null);
-  const passwordInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const passwordInputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const shouldNavigateAfterLoginRef = useRef(false);
   const pendingLoginInputRef = useRef<AuthSignInInput | null>(null);
   const screenAnimation = useRef(new Animated.Value(0)).current;

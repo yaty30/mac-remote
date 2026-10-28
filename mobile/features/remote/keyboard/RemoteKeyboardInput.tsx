@@ -1,25 +1,20 @@
 import {
   StyleSheet,
   TextInput,
-  type NativeSyntheticEvent,
-  type TextInputKeyPressEventData,
-  type TextInputSelectionChangeEventData,
+  type TextInputKeyPressEvent,
+  type TextInputSelectionChangeEvent,
 } from "react-native";
-import type { RefObject } from "react";
+import type { ComponentRef, RefObject } from "react";
 import type { KeyboardSelection } from "./types";
 
 interface RemoteKeyboardInputProps {
   inputKey: number;
-  inputRef: RefObject<TextInput | null>;
+  inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   keyboardBuffer: string;
   keyboardOverlay: boolean;
   keyboardSelection: KeyboardSelection;
-  onKeyPress: (
-    event: NativeSyntheticEvent<TextInputKeyPressEventData>,
-  ) => void;
-  onSelectionChange: (
-    event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
-  ) => void;
+  onKeyPress: (event: TextInputKeyPressEvent) => void;
+  onSelectionChange: (event: TextInputSelectionChangeEvent) => void;
   onTextChange: (nextText: string) => void;
 }
 

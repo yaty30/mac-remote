@@ -1,6 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
 import {
   Animated,
   Easing,
@@ -100,7 +106,7 @@ export function Trackpad({
   const threePanRef = useRef(null);
   const pinchRef = useRef(null);
   const scrollDotPanRef = useRef(null);
-  const scrollDotTourRef = useRef<View>(null);
+  const scrollDotTourRef = useRef<ComponentRef<typeof View>>(null);
   const scrollDotX = useRef(new Animated.Value(0)).current;
   const scrollDotY = useRef(new Animated.Value(0)).current;
   const scrollDotScale = useRef(new Animated.Value(1)).current;

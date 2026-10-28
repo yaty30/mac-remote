@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Eye, EyeOff, KeyboardIcon } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import {
   Animated,
   Easing,
@@ -105,9 +105,9 @@ export function SignUpPage({ onBack, onComplete }: SignUpPageProps) {
 
   const screenAnimation = useRef(new Animated.Value(0)).current;
   const keyboardLiftAnimation = useRef(new Animated.Value(0)).current;
-  const emailInputRef = useRef<TextInput>(null);
-  const passwordInputRef = useRef<TextInput>(null);
-  const confirmPasswordInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const passwordInputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const confirmPasswordInputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const isLeavingRef = useRef(false);
   const isSubmittingDetailsRef = useRef(false);
   const isVerifyingRef = useRef(false);

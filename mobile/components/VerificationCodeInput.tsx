@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ComponentRef } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -33,7 +33,7 @@ export function VerificationCodeInput({
   onChangeCode,
   onComplete,
 }: VerificationCodeInputProps) {
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const focusedIndex = Math.min(code.length, CODE_LENGTH - 1);
 
   useEffect(() => {

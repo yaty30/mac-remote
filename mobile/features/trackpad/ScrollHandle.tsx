@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { forwardRef } from "react";
+import { forwardRef, type ComponentRef } from "react";
 import {
   Animated,
   StyleSheet,
@@ -19,7 +19,10 @@ interface ScrollHandleProps {
   translateY: Animated.Value;
 }
 
-export const ScrollHandle = forwardRef<View, ScrollHandleProps>(
+export const ScrollHandle = forwardRef<
+  ComponentRef<typeof View>,
+  ScrollHandleProps
+>(
   (
     {
       active,

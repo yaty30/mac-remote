@@ -10,7 +10,7 @@ import {
 import { View } from "react-native";
 import { TourOverlay } from "./TourOverlay";
 import { getTourCompleted, setTourCompleted } from "./tourStorage";
-import type { TourStep, TourTargetBounds } from "./tourTypes";
+import type { TourStep, TourTargetBounds, TourViewRef } from "./tourTypes";
 import { AppTourContext } from "./useAppTour";
 
 interface AppTourProviderProps {
@@ -18,7 +18,7 @@ interface AppTourProviderProps {
 }
 
 export function AppTourProvider({ children }: AppTourProviderProps) {
-  const targetRefs = useRef(new Map<string, RefObject<View | null>>());
+  const targetRefs = useRef(new Map<string, RefObject<TourViewRef | null>>());
   const autoStartAttemptedRef = useRef(false);
   const stepRunRef = useRef(0);
   const [currentStep, setCurrentStep] = useState(0);
@@ -113,7 +113,7 @@ export function AppTourProvider({ children }: AppTourProviderProps) {
   }, [activeStepId, currentStep, isTourVisible]);
 
   const registerTourTarget = useCallback(
-    (targetKey: string, targetRef: RefObject<View | null>) => {
+    (targetKey: string, targetRef: RefObject<TourViewRef | null>) => {
       targetRefs.current.set(targetKey, targetRef);
 
       return () => {

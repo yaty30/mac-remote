@@ -8,28 +8,30 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		2A465FF315DAF6BD61E4F988 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9736578AEA90A4AB45CCDB7F /* ExpoModulesProvider.swift */; };
+		202953CA75595E9BA7D8B6E3 /* libPods-IVSsMacBookPro.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2914CEBEE2CCC5E3DA124E31 /* libPods-IVSsMacBookPro.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		745F0ED4E84B8F15C74FF340 /* libPods-IVSsMacBookPro.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 667AFB4C64D05B5E8A6919B0 /* libPods-IVSsMacBookPro.a */; };
+		44B9908F200653CE0E3E1F9F /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD63E4FD6337181ED88E2BA /* ExpoModulesProvider.swift */; };
+		9A4377BC5BDE39F966A18D46 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7145D51ABE6466B33BD9B081 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		DFAEBB799BE859A90983653C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = EED3981AE433EAC60BEE911D /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748432D0307B40044C1D9 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* IVSsMacBookPro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IVSsMacBookPro.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = IVSsMacBookPro/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = IVSsMacBookPro/Info.plist; sourceTree = "<group>"; };
-		667AFB4C64D05B5E8A6919B0 /* libPods-IVSsMacBookPro.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-IVSsMacBookPro.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9736578AEA90A4AB45CCDB7F /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-IVSsMacBookPro/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		2914CEBEE2CCC5E3DA124E31 /* libPods-IVSsMacBookPro.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-IVSsMacBookPro.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		56C890A6BFC26F8E0C33615C /* Pods-IVSsMacBookPro.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IVSsMacBookPro.release.xcconfig"; path = "Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro.release.xcconfig"; sourceTree = "<group>"; };
+		7145D51ABE6466B33BD9B081 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = IVSsMacBookPro/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = IVSsMacBookPro/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		CC29D8B325AA1DC71016C2C9 /* Pods-IVSsMacBookPro.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IVSsMacBookPro.release.xcconfig"; path = "Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro.release.xcconfig"; sourceTree = "<group>"; };
+		D7450BEF09FC1CF26E56E4BD /* Pods-IVSsMacBookPro.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IVSsMacBookPro.debug.xcconfig"; path = "Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro.debug.xcconfig"; sourceTree = "<group>"; };
+		EBD63E4FD6337181ED88E2BA /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-IVSsMacBookPro/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		EED3981AE433EAC60BEE911D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = IVSsMacBookPro/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = IVSsMacBookPro/AppDelegate.swift; sourceTree = "<group>"; };
+		F11748432D0307B40044C1D9 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SceneDelegate.swift; path = IVSsMacBookPro/SceneDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* IVSsMacBookPro-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "IVSsMacBookPro-Bridging-Header.h"; path = "IVSsMacBookPro/IVSsMacBookPro-Bridging-Header.h"; sourceTree = "<group>"; };
-		F65E1F4F89C18F816504B91D /* Pods-IVSsMacBookPro.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IVSsMacBookPro.debug.xcconfig"; path = "Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,7 +39,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				745F0ED4E84B8F15C74FF340 /* libPods-IVSsMacBookPro.a in Frameworks */,
+				202953CA75595E9BA7D8B6E3 /* libPods-IVSsMacBookPro.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -48,41 +50,40 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				F11748432D0307B40044C1D9 /* SceneDelegate.swift */,
 				F11748442D0722820044C1D9 /* IVSsMacBookPro-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				EED3981AE433EAC60BEE911D /* PrivacyInfo.xcprivacy */,
+				7145D51ABE6466B33BD9B081 /* PrivacyInfo.xcprivacy */,
 			);
 			name = IVSsMacBookPro;
-			sourceTree = "<group>";
-		};
-		2AD2B5D0D306445CE4C4CB06 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				E860C0032F8043D6CA1EB192 /* IVSsMacBookPro */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				667AFB4C64D05B5E8A6919B0 /* libPods-IVSsMacBookPro.a */,
+				2914CEBEE2CCC5E3DA124E31 /* libPods-IVSsMacBookPro.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		370AB04801B1E2601AB34DC2 /* Pods */ = {
+		4CE853259C37628E8AAE4840 /* IVSsMacBookPro */ = {
 			isa = PBXGroup;
 			children = (
-				F65E1F4F89C18F816504B91D /* Pods-IVSsMacBookPro.debug.xcconfig */,
-				CC29D8B325AA1DC71016C2C9 /* Pods-IVSsMacBookPro.release.xcconfig */,
+				EBD63E4FD6337181ED88E2BA /* ExpoModulesProvider.swift */,
 			);
-			name = Pods;
-			path = Pods;
+			name = IVSsMacBookPro;
+			sourceTree = "<group>";
+		};
+		5D85F0FF4CF74ABEE336D99A /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				4CE853259C37628E8AAE4840 /* IVSsMacBookPro */,
+			);
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -99,8 +100,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				370AB04801B1E2601AB34DC2 /* Pods */,
-				2AD2B5D0D306445CE4C4CB06 /* ExpoModulesProviders */,
+				C9B4AF6B8C5A7FEA704F3711 /* Pods */,
+				5D85F0FF4CF74ABEE336D99A /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -124,12 +125,14 @@
 			path = IVSsMacBookPro/Supporting;
 			sourceTree = "<group>";
 		};
-		E860C0032F8043D6CA1EB192 /* IVSsMacBookPro */ = {
+		C9B4AF6B8C5A7FEA704F3711 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				9736578AEA90A4AB45CCDB7F /* ExpoModulesProvider.swift */,
+				D7450BEF09FC1CF26E56E4BD /* Pods-IVSsMacBookPro.debug.xcconfig */,
+				56C890A6BFC26F8E0C33615C /* Pods-IVSsMacBookPro.release.xcconfig */,
 			);
-			name = IVSsMacBookPro;
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,13 +143,14 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "IVSsMacBookPro" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				008C585A7C7AF4989F34EEAF /* [Expo] Configure project */,
+				86FA2557DE67809AF1247957 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				CB0A6A2A6AA93A6851F81B30 /* [CP] Embed Pods Frameworks */,
+				6B7AB73D26EE4CCDB00FBFCB /* [Expo Dev Launcher] Strip Local Network Keys for Release */,
+				F72424F3A6B0189165F0BF30 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,37 +200,13 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				DFAEBB799BE859A90983653C /* PrivacyInfo.xcprivacy in Resources */,
+				9A4377BC5BDE39F966A18D46 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		008C585A7C7AF4989F34EEAF /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/IVSsMacBookPro/IVSsMacBookPro.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-IVSsMacBookPro/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-IVSsMacBookPro/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-IVSsMacBookPro/expo-configure-project.sh\"\n";
-		};
 		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -242,7 +222,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
+			shellScript = "if [[ -f \"$SRCROOT/.xcode.env\" ]]; then\n  source \"$SRCROOT/.xcode.env\"\nfi\nif [[ -f \"$SRCROOT/.xcode.env.local\" ]]; then\n  source \"$SRCROOT/.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$SRCROOT/.xcode.env.updates\" ]]; then\n  source \"$SRCROOT/.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$SRCROOT/.xcode.env.local\" ]]; then\n  source \"$SRCROOT/.xcode.env.local\"\nfi\n\n\"`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\"\n\n";
 		};
 		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -266,6 +246,20 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		6B7AB73D26EE4CCDB00FBFCB /* [Expo Dev Launcher] Strip Local Network Keys for Release */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "[Expo Dev Launcher] Strip Local Network Keys for Release";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Strip dev-launcher-specific local network permission keys from release builds.\n# This only removes _expo._tcp Bonjour services and the dev-launcher usage description.\n# Other Bonjour services and custom descriptions are preserved for production use.\n#\n# Detect debug builds via the DEBUG compile condition rather than the configuration name,\n# so custom debug configurations (e.g. \"Dev\", \"Staging\") that define DEBUG keep the keys.\ncase \" $SWIFT_ACTIVE_COMPILATION_CONDITIONS \" in\n  *\" DEBUG \"*) IS_DEBUG_BUILD=1 ;;\n  *) IS_DEBUG_BUILD=0 ;;\nesac\n\nif [ \"$IS_DEBUG_BUILD\" != \"1\" ]; then\n  PLIST_PATH=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  if [ -f \"$PLIST_PATH\" ]; then\n    # Check if NSBonjourServices exists\n    if /usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" >/dev/null 2>&1; then\n      # Get the count of services\n      COUNT=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null | grep \"^    \" | wc -l | tr -d ' ')\n\n      # Remove _expo._tcp\n      for ((i=COUNT-1; i>=0; i--)); do\n        SERVICE=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices:$i\" \"$PLIST_PATH\" 2>/dev/null || echo \"\")\n        if echo \"$SERVICE\" | grep -q \"_expo._tcp\"; then\n          /usr/libexec/PlistBuddy -c \"Delete :NSBonjourServices:$i\" \"$PLIST_PATH\" 2>/dev/null || true\n        fi\n      done\n\n      # If the array is now empty, remove it entirely\n      REMAINING=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null | grep \"^    \" | wc -l | tr -d ' ')\n      if [ \"$REMAINING\" -eq \"0\" ]; then\n        /usr/libexec/PlistBuddy -c \"Delete :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null || true\n      fi\n    fi\n\n    # Only delete the description if it matches the dev-launcher default text\n    DESC=$(/usr/libexec/PlistBuddy -c \"Print :NSLocalNetworkUsageDescription\" \"$PLIST_PATH\" 2>/dev/null || echo \"\")\n    if echo \"$DESC\" | grep -q \"Expo Dev Launcher\"; then\n      /usr/libexec/PlistBuddy -c \"Delete :NSLocalNetworkUsageDescription\" \"$PLIST_PATH\" 2>/dev/null || true\n    fi\n  fi\nfi\n";
+		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -278,7 +272,6 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-timing/React-timing_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
@@ -291,7 +284,6 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-timing_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
@@ -302,21 +294,59 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		CB0A6A2A6AA93A6851F81B30 /* [CP] Embed Pods Frameworks */ = {
+		86FA2557DE67809AF1247957 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/IVSsMacBookPro/IVSsMacBookPro.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-IVSsMacBookPro/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-IVSsMacBookPro/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-IVSsMacBookPro/expo-configure-project.sh\"\n";
+		};
+		F72424F3A6B0189165F0BF30 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-IVSsMacBookPro/Pods-IVSsMacBookPro-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCamera/ExpoCamera.framework/ExpoCamera",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCameraBarcodeScanning/ExpoCameraBarcodeScanning.framework/ExpoCameraBarcodeScanning",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCameraBarcodeScanning/ZXingObjC.framework/ZXingObjC",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesJSI/ExpoModulesJSI.framework/ExpoModulesJSI",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesWorklets/ExpoModulesWorklets.framework/ExpoModulesWorklets",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoCamera.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoCameraBarcodeScanning.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ZXingObjC.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFileSystem.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFont.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesCore.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesJSI.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesWorklets.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
@@ -334,7 +364,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				2A465FF315DAF6BD61E4F988 /* ExpoModulesProvider.swift in Sources */,
+				F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */,
+				44B9908F200653CE0E3E1F9F /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,7 +374,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = F65E1F4F89C18F816504B91D /* Pods-IVSsMacBookPro.debug.xcconfig */;
+			baseConfigurationReference = D7450BEF09FC1CF26E56E4BD /* Pods-IVSsMacBookPro.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -360,6 +391,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 13.4;
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -379,7 +411,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CC29D8B325AA1DC71016C2C9 /* Pods-IVSsMacBookPro.release.xcconfig */;
+			baseConfigurationReference = 56C890A6BFC26F8E0C33615C /* Pods-IVSsMacBookPro.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -391,6 +423,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 13.4;
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -474,7 +507,6 @@
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 			};
 			name = Debug;
@@ -537,7 +569,6 @@
 				PODFILE_DIR = "$(SRCROOT)";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
 			};

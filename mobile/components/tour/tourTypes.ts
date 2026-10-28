@@ -1,5 +1,7 @@
-import type { RefObject } from "react";
-import type { View } from "react-native";
+import type { ComponentRef, RefObject } from "react";
+import { View } from "react-native";
+
+export type TourViewRef = ComponentRef<typeof View>;
 
 export type TourPlacement = "top" | "bottom" | "left" | "right" | "center";
 
@@ -8,7 +10,7 @@ export interface TourStep {
   title: string;
   description: string;
   features?: string[];
-  targetRef?: RefObject<View | null>;
+  targetRef?: RefObject<TourViewRef | null>;
   targetKey?: string;
   placement?: TourPlacement;
   screen?: string;
@@ -37,7 +39,7 @@ export interface AppTourContextValue {
   measureTourTarget: (targetKey?: string) => Promise<TourTargetBounds | null>;
   registerTourTarget: (
     targetKey: string,
-    targetRef: RefObject<View | null>,
+    targetRef: RefObject<TourViewRef | null>,
   ) => () => void;
   setTourAutoStartEnabled: (isEnabled: boolean) => void;
   setTourSteps: (steps: TourStep[]) => void;

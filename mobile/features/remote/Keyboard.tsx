@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ComponentRef,
 } from "react";
 import {
   Keyboard as NativeKeyboard,
@@ -14,9 +15,8 @@ import {
   TextInput,
   useWindowDimensions,
   type KeyboardEvent,
-  type NativeSyntheticEvent,
-  type TextInputKeyPressEventData,
-  type TextInputSelectionChangeEventData,
+  type TextInputKeyPressEvent,
+  type TextInputSelectionChangeEvent,
 } from "react-native";
 import { ScanGradientButton } from "../../components/GradientButton";
 import { TourTarget } from "../../components/tour/TourTarget";
@@ -43,7 +43,7 @@ interface RemoteKeyboardProps {
 export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardProps>(
   ({ hostPlatform, screenLayoutHeight, socket }, ref) => {
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-    const inputRef = useRef<TextInput>(null);
+    const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
     const keyboardActiveRef = useRef(false);
     const bufferRef = useRef("");
     const keyboardSelectionRef = useRef({ start: 0, end: 0 });
@@ -283,7 +283,7 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     }
 
     function handleKeyboardSelectionChange(
-      event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
+      event: TextInputSelectionChangeEvent,
     ) {
       const { selection } = event.nativeEvent;
 
@@ -308,7 +308,7 @@ export const RemoteKeyboard = forwardRef<RemoteKeyboardHandle, RemoteKeyboardPro
     }
 
     function handleKeyboardKeyPress(
-      event: NativeSyntheticEvent<TextInputKeyPressEventData>,
+      event: TextInputKeyPressEvent,
     ) {
       if (
         keyboardActiveRef.current &&
